@@ -1,0 +1,9 @@
+# Initial GitHub publication — October 17, 2026
+
+The user explicitly requested committing and pushing the accepted work to their newly created GitHub repository, [gregokin/MASY](https://github.com/gregokin/MASY). The verified remote was empty. Local `main` and `origin` were initialized for this request; the original manifest-based task baselines are preserved as history rather than represented as earlier Git commits.
+
+The initial commit contains the MASY project specifications, agent instructions, examples, read-only preflight, clock contract, tests, current handoffs and selected source-only review/acceptance evidence under `tasks/masy01_20261017/`. These selected files are explicitly tracked despite the task-archive ignore rule. Full copied upstream trees, repeated snapshots, raw orchestration transcripts, caches and audit run directories stay local. Archive-only references in selected records describe local evidence and may not resolve in a fresh clone.
+
+All 24 accepted implementation/documentation files still match the published acceptance manifest exactly. The accepted checks remain 155 tests and 119 subtests plus 32 independent regression checks; this publication changes only repository setup and handoff bookkeeping. The preflight's MASY observation remains based on actual file hashes and an explicit lock; Git publication is recorded separately. No new physics, upstream code, environment, transport or GPU work is part of this publication.
+
+Historical acceptance records precede this Git initialization and retain their original statements about then-absent Git authorization and `committed=false`. The user's later explicit commit/push instruction supersedes that earlier restriction for MASY. Existing MAPLE and SYRUP source policies and the unresolved compatibility blockers remain in effect. `git log`, `git remote -v` and the remote branch identify the published commit; local task publication receipts record the actual push result.

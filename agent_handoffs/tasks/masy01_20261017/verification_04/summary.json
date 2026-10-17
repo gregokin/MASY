@@ -1,0 +1,176 @@
+{
+  "utc": "2026-10-17T19:25:37.756469+00:00",
+  "source": "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/correction_03_snapshot",
+  "preservation_before": {
+    "MAPLE": {
+      "files_equal": false,
+      "head_equal": false,
+      "changed_paths": [
+        "src/maple/aeolian/topographic_wind/continuation.py",
+        "src/maple/aeolian/topographic_wind/separation.py",
+        "src/maple/core/parameters/__init__.py",
+        "src/maple/core/parameters/flow_separation.py"
+      ]
+    },
+    "SYRUP": {
+      "files_equal": true,
+      "head_equal": true,
+      "changed_paths": []
+    },
+    "source_context_unchanged": true,
+    "source_context_changed_paths": []
+  },
+  "implementation_manifest": {
+    "CLAUDE_IMPLEMENTATION_REPORT.md": {
+      "sha256": "baf50c9ff1313193014beac26ed4c15fa2032224c30da47a4fb1183c591a2f38",
+      "bytes": 23972
+    },
+    "README.md": {
+      "sha256": "cb3f0c94b6a8a4849807547c8a1c2e6b8d85157a777471e17715929030c2cfe1",
+      "bytes": 4610
+    },
+    "docs/clock_contract.md": {
+      "sha256": "75c8aced69a7810adf8968d3c5d78b40cefb1f86e2c74d82911ff5734d8e7191",
+      "bytes": 6762
+    },
+    "docs/preflight.md": {
+      "sha256": "3f42c7eec7e3560d5c1cb3aa9f22c2517c2392fc0f5d32d7b02e377142f27107",
+      "bytes": 23108
+    },
+    "docs/upstream_interface_audit.md": {
+      "sha256": "a4d50c8449ce58964170cb71d7a6d1e0cd78b7e59a9f47006f175b14883f6536",
+      "bytes": 8335
+    },
+    "examples/preflight.example.toml": {
+      "sha256": "793dc018fe8aa2c320ea9e46e8f6a7377941718883718c5eeb872a9d9b674bc6",
+      "bytes": 1400
+    },
+    "src/masy/README.md": {
+      "sha256": "ae2e0310e2dc7b51b65a655a272011ca0820e43479059d4af1c21e4915109f8e",
+      "bytes": 705
+    },
+    "src/masy/__init__.py": {
+      "sha256": "64e27793d76ca114341291c37ee81e326595c211fbec838d86aaba93b009b447",
+      "bytes": 294
+    },
+    "src/masy/cli.py": {
+      "sha256": "27a434a1f027560a2b4c79dd8e7533c758da502530200c9234a63401c782701e",
+      "bytes": 10312
+    },
+    "src/masy/clock.py": {
+      "sha256": "ddfe0c23d25b54ac5e1995761b93c6821df6d533845f8484b7b17dfdd9129d43",
+      "bytes": 15519
+    },
+    "src/masy/config.py": {
+      "sha256": "adec589fc3ed7ad4cf880888e8678b00a940fcc11d579750fb6cdad7c2b751d9",
+      "bytes": 11354
+    },
+    "src/masy/contracts.py": {
+      "sha256": "4237d2fa40fc983b3525c509f774d0f6db5f72de92af7e580582d96a727e5cf8",
+      "bytes": 17155
+    },
+    "src/masy/importcheck.py": {
+      "sha256": "74619fa0867b8bf4648c5f8ab4abafeb832af0a4ad02416a54c3a9fb866b3172",
+      "bytes": 12624
+    },
+    "src/masy/report.py": {
+      "sha256": "2395c6f33fd9c2336cd5e181eb03bdfb61604f6d9faf71b74b47c0bb4feec032",
+      "bytes": 5680
+    },
+    "src/masy/sourceobs.py": {
+      "sha256": "359930fb5796af90dd780646eec583e1cc40e53694fa47daa338e71e2a42a172",
+      "bytes": 26882
+    },
+    "tests/README.md": {
+      "sha256": "80642433fe2c7eef293cd0d111a127ef272478c95c3bec8c83ff8cc2db83945a",
+      "bytes": 893
+    },
+    "tests/_support.py": {
+      "sha256": "b2195e45c8fcc290426f0745bc9525fd0c0d617fc8a36ac4d3af6b0438fea47b",
+      "bytes": 5804
+    },
+    "tests/test_clock.py": {
+      "sha256": "b7e1a589784db7e84d77829fe6b042d8f58ec8eecd61e2920838ca2789cbb8e5",
+      "bytes": 16703
+    },
+    "tests/test_config.py": {
+      "sha256": "ba4928533ee7c7a127e6a31d4b965dd9529e5cd8e20a300dc2bec23bb0aa83f0",
+      "bytes": 6015
+    },
+    "tests/test_contracts.py": {
+      "sha256": "ecb22adff407b3621bd68e2c8803541708aeff55790f1fe722beb4fda190a04c",
+      "bytes": 22104
+    },
+    "tests/test_importcheck.py": {
+      "sha256": "ea19fa407fead9e5e23e3c2c1d4a139d6e5972c54a048944932fcccf7f73a124",
+      "bytes": 9584
+    },
+    "tests/test_launch.py": {
+      "sha256": "8ee4ae9800270dacf235431da435f42a472a2e5b43461c7cf7c67dd0d09e538c",
+      "bytes": 13753
+    },
+    "tests/test_report.py": {
+      "sha256": "8e6db78cd79350d5cb7bb47a42eed7f90172c3e5da53d5f5d76b1ad1b26a9781",
+      "bytes": 5254
+    },
+    "tests/test_sourceobs.py": {
+      "sha256": "ef8e3a6d14bec43c037a6cc1bfe6053f09e5046764d28b11e6551f8aec3c63c4",
+      "bytes": 12617
+    },
+    "tools/masy_preflight.py": {
+      "sha256": "0bffe99c100b61ee7f4a8628d5f8d3502058a1b2a27ab1cf61fec8e87c5ba0f7",
+      "bytes": 8893
+    }
+  },
+  "syntax_errors": [],
+  "pytest": {
+    "command": [
+      "/home/okin/MAPLE/.venv/bin/python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/correction_03_snapshot/tests"
+    ],
+    "cwd": "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/correction_03_snapshot",
+    "exit_code": 0,
+    "reaped": true,
+    "termination_reason": null,
+    "elapsed_s": 7.236643649986945
+  },
+  "cli_help": {
+    "command": [
+      "/home/okin/MAPLE/.venv/bin/python",
+      "-B",
+      "-I",
+      "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/correction_03_snapshot/tools/masy_preflight.py",
+      "--help"
+    ],
+    "cwd": "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/correction_03_snapshot",
+    "exit_code": 0,
+    "reaped": true,
+    "termination_reason": null,
+    "elapsed_s": 0.06450738600688055
+  },
+  "preservation_after": {
+    "MAPLE": {
+      "files_equal": false,
+      "head_equal": false,
+      "changed_paths": [
+        "src/maple/aeolian/topographic_wind/continuation.py",
+        "src/maple/aeolian/topographic_wind/separation.py",
+        "src/maple/core/parameters/__init__.py",
+        "src/maple/core/parameters/flow_separation.py"
+      ]
+    },
+    "SYRUP": {
+      "files_equal": true,
+      "head_equal": true,
+      "changed_paths": []
+    },
+    "source_context_unchanged": true,
+    "source_context_changed_paths": []
+  }
+}

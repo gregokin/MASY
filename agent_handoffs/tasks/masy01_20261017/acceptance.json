@@ -1,0 +1,28 @@
+{
+  "utc": "2026-10-17T19:28:32.564840+00:00",
+  "task": "MASY-01",
+  "status": "accepted_read_only_milestone",
+  "published_files": 24,
+  "tests_passed": 155,
+  "subtests_passed": 119,
+  "independent_probes_passed": 32,
+  "findings_closed": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    "D1"
+  ],
+  "transport_qualified": false,
+  "upstream_changed_by_task": false,
+  "committed": false
+}

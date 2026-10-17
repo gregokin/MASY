@@ -1,0 +1,28 @@
+{
+  "utc": "2026-10-17T18:46:44.991071+00:00",
+  "path": "/home/okin/MAPLE/src/maple/core/parameters/flow_separation.py",
+  "baseline": {
+    "sha256": "5960aa20046350f580652d7164bd0c4d9c2fee36f97533a1441b96a4f30ab689",
+    "bytes": 40197
+  },
+  "current_sha256": "025e18721070edefdac338f5bb83e649bcd0da485868c47c2b23c2d91fb33e5e",
+  "current_size": 41471,
+  "mtime_ns": 1792261914314077164,
+  "preservation_before": {
+    "MAPLE": {
+      "files_equal": false,
+      "head_equal": true,
+      "changed_paths": [
+        "src/maple/core/parameters/flow_separation.py"
+      ]
+    },
+    "SYRUP": {
+      "files_equal": true,
+      "head_equal": true,
+      "changed_paths": []
+    },
+    "source_context_unchanged": true,
+    "source_context_changed_paths": []
+  },
+  "interpretation": "Observed concurrent upstream runtime edit. MASY/Claude writable scope excludes upstreams; no upstream write command was issued. Do not execute dirty runtime or revert it."
+}

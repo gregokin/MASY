@@ -1,0 +1,21 @@
+{
+  "schema": "masy.upstreams.design.v0",
+  "status": "illustrative; resolver not implemented",
+  "selection": "current-configured-local-sources",
+  "maple_root": "/home/okin/MAPLE",
+  "syrup_root": "/home/okin/SYRUP",
+  "run_sources": "immutable-scoped-snapshots-after-pair-qualification",
+  "shared_maple_runtime": true,
+  "incompatible_pair": "fail-before-mutation; no silent fallback",
+  "restart_sources": "original-run-lock",
+  "auto_pull": false,
+  "python_cpu": "/home/okin/MAPLE/.venv/bin/python",
+  "python_gpu": "/home/okin/MAPLE/.venv-cupy/bin/python",
+  "revision_policy": "current-local-committed-HEAD",
+  "dirty_runtime_policy": "refuse unless explicit labelled development snapshot",
+  "snapshot_consistency": "hash before and after; reject concurrent changes",
+  "import_resolution": "derive source paths and distribution metadata from run lock; verify all three module origins",
+  "bytecode": "disabled in source trees",
+  "caches": "run-owned paths",
+  "resource_limits": "must be explicitly resolved before any model launch"
+}

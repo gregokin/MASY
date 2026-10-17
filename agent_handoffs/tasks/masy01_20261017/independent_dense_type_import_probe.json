@@ -1,0 +1,24 @@
+{
+  "utc": "2026-10-17T18:51:48.113671+00:00",
+  "kind": "explicit_archived_clean_baseline_source_only_diagnostic_NOT_current_runtime_or_transport_qualification",
+  "maple_commit": "f1555e09e7d6e49dadb2413b36a1700d4f3d0ea5",
+  "syrup_commit": "9fabdca60bd9cd7c5b358d5cbf620dbd3209d93a",
+  "module_origins": {
+    "maple": "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/claude_workspace/source_context/MAPLE/src/maple/__init__.py",
+    "maple_syrup": "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/claude_workspace/source_context/SYRUP/src/maple_syrup/__init__.py",
+    "voxel": "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/claude_workspace/source_context/MAPLE/src/maple/core/types/voxel.py"
+  },
+  "windowed_type_present": false,
+  "physical_state_loaded": false,
+  "transport_called": false,
+  "probe": {
+    "status": "failed_before_any_bed_access",
+    "error": "ImportError: cannot import name 'WindowedVoxelColumnState' from 'maple.core.types.voxel' (/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/claude_workspace/source_context/MAPLE/src/maple/core/types/voxel.py)"
+  },
+  "voxel_source": {
+    "sha256": "e1c0e70c92dfd7f69f65215409c1f2431bb662df8c5fb333587a250f1066ce35"
+  },
+  "water_bed_source": {
+    "sha256": "4e0c3a333bd6338e799b0b5ddb4fa515fe136eb948fd635e6ae2e63b23072425"
+  }
+}

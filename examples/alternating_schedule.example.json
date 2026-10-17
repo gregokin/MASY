@@ -1,0 +1,64 @@
+{
+  "schema": "masy.schedule.design.v0",
+  "status": "illustrative; parser and adapters not implemented",
+  "timing_mode": "sequential-actual-elapsed-time",
+  "initial_landscape": "supply one compiled compatible MAPLE landscape; do not reload between events",
+  "backend": "numpy",
+  "events": [
+    {
+      "id": "wind_001",
+      "process": "wind",
+      "forcing": {
+        "blocks": [
+          {
+            "duration_s": 600.0,
+            "shear_velocity_m_s": 0.4,
+            "direction_deg": 270.0
+          }
+        ]
+      },
+      "boundary": "native conservative mobile-load completion required; any extra time recorded",
+      "max_settlement_s": 10000.0
+    },
+    {
+      "id": "rain_001",
+      "process": "water",
+      "forcing": {
+        "segments": [
+          {
+            "duration_s": 600.0,
+            "intensity_mm_h": 25.0
+          }
+        ]
+      },
+      "recession": "continue to genuine SYRUP completion",
+      "max_event_elapsed_s": 10000.0,
+      "boundary": "actual DryHandoff and explicit accounted dry reset required"
+    },
+    {
+      "id": "wind_002",
+      "process": "wind",
+      "forcing": {
+        "blocks": [
+          {
+            "duration_s": 600.0,
+            "shear_velocity_m_s": 0.4,
+            "direction_deg": 90.0
+          }
+        ]
+      },
+      "boundary": "native conservative mobile-load completion required; any extra time recorded",
+      "max_settlement_s": 10000.0
+    }
+  ],
+  "case_refs": {
+    "shared_landscape": null,
+    "maple_wind_configuration": null,
+    "syrup_water_configuration": null,
+    "note": "Required real hashed inputs at execution; null placeholders deliberately not runnable"
+  },
+  "unsupported_fields": [
+    "absolute_start_s",
+    "fixed_calendar"
+  ]
+}

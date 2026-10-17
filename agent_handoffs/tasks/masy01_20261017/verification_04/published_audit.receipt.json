@@ -1,0 +1,62 @@
+{
+  "utc": "2026-10-17T19:27:17.883276+00:00",
+  "command": [
+    "/home/okin/MAPLE/.venv/bin/python",
+    "-B",
+    "-I",
+    "/home/okin/MASY/tools/masy_preflight.py",
+    "--config",
+    "/home/okin/MASY/examples/preflight.example.toml",
+    "--run-dir",
+    "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/verification_04/published_audit"
+  ],
+  "exit_code": 2,
+  "reaped": true,
+  "elapsed_s": 3.1640776619897224,
+  "verdict": "refused",
+  "transport_ready": false,
+  "heads": {
+    "maple": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+    "masy": null,
+    "syrup": "9fabdca60bd9cd7c5b358d5cbf620dbd3209d93a"
+  },
+  "native_resolver": {
+    "call": "resolve_maple_dependency(expected_source_root)",
+    "error": "MapleDependencyError: expected MAPLE source root /home/okin/MAPLE, but the imported maple resolves to source root None (package /home/okin/MAPLE/src/maple)",
+    "expected_source_root": "/home/okin/MAPLE",
+    "status": "refused"
+  },
+  "syrup_api": {
+    "call": "check_required_api()",
+    "requirement_count": 33,
+    "status": "pass"
+  },
+  "masy_api_failures": [
+    {
+      "attribute": "WindowedVoxelColumnState",
+      "fields": [],
+      "kind": "class",
+      "module": "maple.core.types.voxel",
+      "parameters": [],
+      "reason": "attribute missing",
+      "required_by": "maple_syrup.sediment_bed.is_windowed_bed (sediment_bed.py:610-613 at SYRUP 9fabdca) imports it unconditionally on every Dense bed path; not a Windowed-storage requirement",
+      "status": "fail"
+    }
+  ],
+  "source_consistency": {
+    "differences": [],
+    "status": "unchanged"
+  },
+  "refusals": [
+    {
+      "code": "native_resolver_refused",
+      "detail": "MapleDependencyError: expected MAPLE source root /home/okin/MAPLE, but the imported maple resolves to source root None (package /home/okin/MAPLE/src/maple)",
+      "severity": "refusal"
+    },
+    {
+      "code": "masy_required_api_missing",
+      "detail": "maple.core.types.voxel.WindowedVoxelColumnState: attribute missing (required by maple_syrup.sediment_bed.is_windowed_bed (sediment_bed.py:610-613 at SYRUP 9fabdca) imports it unconditionally on every Dense bed path; not a Windowed-storage requirement)",
+      "severity": "incompatible"
+    }
+  ]
+}

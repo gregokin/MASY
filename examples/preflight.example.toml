@@ -1,0 +1,45 @@
+# MASY-01 preflight configuration (closed schema; unknown keys refuse).
+# Illustrative values. Case inputs below are declarations only: MASY-01 never
+# reads them and reports them as declared_unverified.
+schema = "masy.preflight.v1"
+
+[sources.maple]
+root = "/home/okin/MAPLE"
+# Optional: refuse unless current HEAD is exactly this commit.
+# expected_revision = "<full 40/64-hex commit id>"
+
+[sources.syrup]
+root = "/home/okin/SYRUP"
+
+[limits]
+git_timeout_s = 30.0
+git_max_output_bytes = 8388608   # hard cap on combined git stdout+stderr
+max_files = 5000
+max_bytes = 67108864
+max_report_bytes = 16777216
+
+# Finite settlement/resource budgets for later milestones (declared, not
+# enforced: MASY-01 runs no transport). Durations are decimal strings.
+[budgets]
+wind_settlement_max_s = "3600"
+wind_settlement_max_steps = 100000
+water_max_end_s = "86400"
+run_disk_bytes = 10737418240
+
+[case]
+id = "dense-cpu-2026-10-17"
+
+[[case.inputs]]
+name = "initial_bed"
+path = "/home/okin/MASY/cases/2026-10-17/initial_bed.npz"
+
+[clock]
+# Native epoch T0 (binary64 seconds); may be nonzero, never negative or -0.0.
+native_epoch_s = 0.0
+
+[forcing]
+id = "storm-2026-10-17"
+# Event-local edge offsets in seconds, exact decimal strings.
+edges_s = ["0", "600", "1800.5", "3600"]
+# Calendar fields (start_datetime, start_date, calendar, timezone, epoch_utc,
+# absolute_start_s, fixed_calendar) are refused by this schema.

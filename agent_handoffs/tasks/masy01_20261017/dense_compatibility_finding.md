@@ -1,0 +1,11 @@
+# Confirmed Dense interface mismatch in the captured committed pair
+
+Source observation: MAPLE f1555e09e7d6e49dadb2413b36a1700d4f3d0ea5 / SYRUP 9fabdca60bd9cd7c5b358d5cbf620dbd3209d93a. This was clean at initial capture. Current live MAPLE later became dirty and cannot be executed by the default policy. No archived-source diagnostic is a new-run fallback.
+
+SYRUP `src/maple_syrup/sediment_bed.py:610` imports `maple.core.types.voxel.WindowedVoxelColumnState` unconditionally inside `is_windowed_bed`, before checking the column. The captured committed MAPLE lacks that class. Dense callers including `bed_inventory`, `apply_bed_demand`, `bed_by_cell_class`, `bed_voxel_count` and `bed_already_committed` therefore fail before classification. This differs from the optional absence of the paired WINDOWED transaction module, whose absence alone does not prove Dense incompatibility.
+
+Codex reproduced the actual ImportError through the archived, explicitly identified source-only copies with a plain object; no physical state, arrays, forcing or transport was loaded/executed. Exact origins, source hashes and result: `independent_dense_type_import_probe.json`. Both relevant source files still match their initially captured clean sources; the concurrent live dirty change is a different MAPLE file.
+
+The upstream native required-API list does not cover this dependency, so its earlier signature check passed. MASY's required interface audit must report the concrete Dense dependency mismatch for this observed SYRUP implementation, while retaining the distinction between optional windowed transaction absence and a type imported on all bed paths. No fake class, hidden patch or source guard removal is acceptable.
+
+Owning-project remedy under independent design review: SYRUP can recognize the genuine Dense MAPLE class without importing an unavailable optional Windowed class; unknown/foreign representations must refuse, present invalid symbols must not masquerade as absence, and existing specialized deep-storage/source/transaction guards remain unchanged. This is a proposal only. No upstream file edits or commit are in MASY-01's scope; physical qualification needs a declared qualified committed source pair (or an explicitly selected labelled development snapshot), immutable runtime, real bed/clock/cache/routing adapters and actual conservative tests.

@@ -1,0 +1,22 @@
+# Local runs and orchestration captures
+agent_handoffs/tasks/
+outputs/
+runs/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+# Use existing MAPLE environments; ignore accidental local environments
+.venv/
+.venv-cupy/
+# Local agent/tool configuration
+.agents/
+.codex/
+.claude/
+
+# Requested Linux-local aliases; portable project tracks uppercase entry points only
+/agents.md
+/claude.md

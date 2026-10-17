@@ -1,0 +1,214 @@
+{
+  "first_positive_forcing_edge_collapse": {
+    "pass": true,
+    "exception": "ClockError",
+    "message": "collapsed_forcing_edges: edge 0 '1' collapses onto the origin 0x1.0000000000000p+53 natively"
+  },
+  "ordinary_decimal_unchanged": {
+    "pass": true
+  },
+  "negative_epoch": {
+    "pass": true,
+    "exception": "ClockError",
+    "message": "negative_time_value: native_epoch_s=-2.0 is negative; native clocks are non-negative"
+  },
+  "negative_config_epoch": {
+    "pass": true,
+    "exception": "ConfigError",
+    "message": "invalid_config_value: clock.native_epoch_s must be non-negative and not -0.0 (native clocks are non-negative)"
+  },
+  "changed_serialized_definition": {
+    "pass": true,
+    "exception": "ClockError",
+    "message": "unsupported_global_elapsed_definition: 'native_t * 1000' is not 'Fraction(native_t) - Fraction(native_epoch)'"
+  },
+  "git_combined_output_cap": {
+    "pass": true,
+    "exception": "SourceRefusal",
+    "message": "git_output_exceeded: git printed more than 64 bytes (stdout+stderr)"
+  },
+  "report_hard_byte_cap": {
+    "pass": true,
+    "exception": "ReportTooLarge",
+    "message": "report_unpublishable: full report 244 bytes and minimal refusal report 265 bytes both exceed max_report_bytes=64",
+    "no_files_written": true
+  },
+  "changed_binary_identity": {
+    "pass": true,
+    "record": {
+      "path": "/home/okin/MASY/agent_handoffs/tasks/masy01_20261017/masy-independent-026jwhbc/identity.bin",
+      "sha256": null,
+      "reason": "file changed between stat and open"
+    }
+  },
+  "source_output_overlap": {
+    "pass": true,
+    "exit_code": 2,
+    "unchanged": true
+  },
+  "informational_help": {
+    "pass": true,
+    "exit_code": 0
+  },
+  "none_handoff_refused": {
+    "pass": true,
+    "result": [
+      {
+        "module": "maple_syrup.complete_event",
+        "attribute": "DryHandoff",
+        "kind": "dataclass",
+        "parameters": [],
+        "fields": [
+          "progress",
+          "dry_state",
+          "pre_reset_surface_m",
+          "pre_reset_soil_m",
+          "terminal_deposition_kg",
+          "accounting",
+          "status"
+        ],
+        "required_by": "",
+        "status": "fail",
+        "reason": "not a dataclass type (got NoneType)"
+      }
+    ]
+  },
+  "declared_handoff_fields_pass": {
+    "pass": true
+  },
+  "missing_handoff_field_refused": {
+    "pass": true
+  },
+  "required_advance_wind_block": {
+    "pass": true
+  },
+  "required_reroute_threshold_m": {
+    "pass": true
+  },
+  "required_validate_event_boundary": {
+    "pass": true
+  },
+  "required_mobile_state_mass_is_finite": {
+    "pass": true
+  },
+  "required_mobile_state_is_genuinely_empty": {
+    "pass": true
+  },
+  "dense_dependency_declared": {
+    "pass": true,
+    "windowed_type_requirement_present": true,
+    "note": "New source finding after review_01; required by current SYRUP Dense classifier. See dense_compatibility_finding.md."
+  },
+  "conversion_negative_native": {
+    "pass": true,
+    "exception": "ClockError",
+    "message": "negative_time_value: native_t=-1.0 is negative; native clocks are non-negative"
+  },
+  "conversion_signed_zero_native": {
+    "pass": true,
+    "exception": "ClockError",
+    "message": "negative_zero_time: native_t is -0.0; refused rather than rewritten to +0.0"
+  },
+  "conversion_negative_native_inverse": {
+    "pass": true,
+    "exception": "ClockError",
+    "message": "negative_time_value: native_from_global result=-1.0 is negative; native clocks are non-negative"
+  },
+  "conversion_roundtrip_0x0.0p+0": {
+    "pass": true,
+    "global_offset": "-100",
+    "native_hex": "0x0.0p+0"
+  },
+  "conversion_roundtrip_0x1.9000000000000p+4": {
+    "pass": true,
+    "global_offset": "-75",
+    "native_hex": "0x1.9000000000000p+4"
+  },
+  "conversion_roundtrip_0x1.9000000000000p+6": {
+    "pass": true,
+    "global_offset": "0",
+    "native_hex": "0x1.9000000000000p+6"
+  },
+  "conversion_roundtrip_0x1.9500000000000p+6": {
+    "pass": true,
+    "global_offset": "5/4",
+    "native_hex": "0x1.9500000000000p+6"
+  },
+  "raw_codec_signed_zero_preserved": {
+    "pass": true
+  },
+  "legitimate_class_reexport": {
+    "pass": true,
+    "result": [
+      {
+        "module": "masy_reexport_fixture",
+        "attribute": "PublicColumn",
+        "kind": "class",
+        "parameters": [],
+        "fields": [],
+        "required_by": "",
+        "status": "pass"
+      }
+    ]
+  },
+  "nonclass_none": {
+    "pass": true,
+    "result": [
+      {
+        "module": "masy_reexport_fixture",
+        "attribute": "PublicColumn",
+        "kind": "class",
+        "parameters": [],
+        "fields": [],
+        "required_by": "",
+        "status": "fail",
+        "reason": "not a class (got NoneType)"
+      }
+    ]
+  },
+  "nonclass_function": {
+    "pass": true,
+    "result": [
+      {
+        "module": "masy_reexport_fixture",
+        "attribute": "PublicColumn",
+        "kind": "class",
+        "parameters": [],
+        "fields": [],
+        "required_by": "",
+        "status": "fail",
+        "reason": "not a class (got function)"
+      }
+    ]
+  },
+  "nonclass_instance": {
+    "pass": true,
+    "result": [
+      {
+        "module": "masy_reexport_fixture",
+        "attribute": "PublicColumn",
+        "kind": "class",
+        "parameters": [],
+        "fields": [],
+        "required_by": "",
+        "status": "fail",
+        "reason": "not a class (got object)"
+      }
+    ]
+  },
+  "missing_class_binding": {
+    "pass": true,
+    "result": [
+      {
+        "module": "masy_reexport_fixture",
+        "attribute": "PublicColumn",
+        "kind": "class",
+        "parameters": [],
+        "fields": [],
+        "required_by": "",
+        "status": "fail",
+        "reason": "attribute missing"
+      }
+    ]
+  }
+}

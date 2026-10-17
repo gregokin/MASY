@@ -1,0 +1,68 @@
+# MAPLE-SYRUP project instructions
+
+## Project and priority
+
+Work root: `/home/okin/MASY`; display name MAPLE-SYRUP, wrapper namespace `masy`. MAPLE: `/home/okin/MAPLE`. Water extension SYRUP: `/home/okin/SYRUP` (existing distribution/import `maple-syrup` / `maple_syrup`). MAHLERAN scientific reference: `/home/okin/MAHLERAN`.
+
+User direction, October 16, 2026: prioritize connecting alternating wind and water events for collaborator use ahead of hydraulic refinements. This supersedes the recommendation to finish depression treatment first. Build a thin wrapper: actual MAPLE runs wind; actual SYRUP runs water; the same evolving landscape passes between them. Their physics and development remain independent upstream.
+
+Read `docs/scientific_brief.md`, `docs/architecture.md`, `docs/implementation_plan.md`, `docs/upstream_interface_audit.md`, and `agent_handoffs/orchestration_state.md` before work. Historical SYRUP phase numbering and acceptance do not establish combined-model acceptance.
+
+## Ownership and scientific contracts
+
+- MAPLE owns shared voxel/active-layer storage, sediment inventory, composition, physical topography and its wind physics. SYRUP owns rainfall/infiltration/hydraulics/wet detachment/transport/deposition and water-event completion. MASY owns schedule, source resolution, narrow adapters, event transitions, aggregate accounting and combined restart.
+- No copied/forked wind or water physics. Reuse actual upstream APIs. If necessary, propose narrow, independently reviewed upstream extensions; do not silently modify upstream trees or files used by active jobs.
+- One bed authority. Pass complete MAPLE bed state and referenced immutable deep storage, including active layer and availability. Never reconstruct a fresh bed from a DEM, surface fractions or original case at transitions. Any storage conversion must be explicit, lossless and validated before mutation.
+- Only one process transports at a time. Rainfall ends before water-event recession ends. Wind begins only after genuine accepted water completion and documented dry accounting. A limit/error is not completion. Wind mobile sediment must likewise be resolved through actual MAPLE behavior or an explicit conserved, scientifically justified transition; never discard it.
+- Validate geometry, masks, boundaries, units, class ordering, density/porosity, dtype/backend, availability policies, storage formats and physical inventories before state exchange. Water and wind availability semantics may differ; the adapter must preserve holdings and use upstream rules instead of resetting availability to 100%.
+- Keep prescribed vegetation/surface inputs when supported. Growth, nutrients, full ecohydrology/ET and direct dry-cell water splash remain deferred. Do not alter upstream physics to make a demo complete.
+- Use conservative evolving-bed SYRUP APIs for coupling. Its default legacy replay is a fixed-composition, unlimited-supply benchmark and is unsuitable as the shared-landscape engine.
+- Preserve exact sediment changes and actual upstream conservation tolerances. Audit class budgets across each event and transition, distinguishing bed, process-mobile load, boundary export/import and documented water reset. Conservation does not alone validate erosion magnitude or timing.
+- Water rerouting uses maximum absolute per-cell net displacement from the last actual hydraulic routing source, with MAPLE's configured threshold (currently 0.00075 m, `>=`). Gains/losses in one cell may cancel, different cells may not. Event-boundary accounting alone does not reroute. Across wind events compare the resulting physical surface with the retained water routing source; rebuild only on the declared geometry/compatibility requirement or net crossing. First-time graph construction is distinct from rerouting.
+- Invalidate wind-derived topography/composition/availability caches through MAPLE's actual mechanisms after water changes. Do not reuse equilibrium, trajectories or wind modifiers on an incompatible bed. Preserve process-specific restart state where it remains valid.
+
+## Schedules, clocks and restart
+
+First target is an ordered sequential event list: wind duration/forcing, then rain forcing plus physical recession, then wind. Keep explicit global elapsed time and reversible mapping to each upstream event's local clock. Count all recession and wind-settlement time. Never shift fixed-calendar forcing silently. Later fixed-calendar inputs must reject any next event that collides with unfinished transport; no implicit truncation or dropped rainfall.
+
+Persist the resolved schedule/hash, event cursor, clocks, exact source pair, shared state identity, bed-store references and active-process checkpoint. Transition checkpoints publish atomically only after successful validation/accounting; errors retain a recoverable last accepted boundary and truthful active-event evidence. Document upstream mutation behavior and use staging/rollback rather than assuming a failed call preserved inputs. Restart cannot replay export, rainfall, deposition or water reset twice. Retain every referenced old bed-store version.
+
+## Independent upstream development
+
+New-run policy is current local committed HEAD of each configured upstream, with compatibility qualification. Reject dirty runtime/config inputs by default; an explicitly selected development snapshot may include them, visibly recorded. Untracked unrelated cases are not dirty runtime inputs. Hash before/after any snapshot and refuse concurrent changes. Never silently omit dirty runtime edits or describe an older commit as current. Do not auto-pull, overwrite, reset, update a running environment or silently fall back to historical dependencies. Record Git revisions plus actual runtime/package manifests and dirty deltas; a HEAD hash alone is insufficient. Prefer immutable scoped snapshots/bundles for actual runs, reusing upstream provenance tools.
+
+Both processes normally need one compatible MAPLE runtime per run. SYRUP currently uses specialized MAPLE interfaces and source-bound storage options. Never remove those source guards merely to accept latest MAPLE. Qualify a new pairing and any narrow upstream compatibility patch explicitly. Arbitrary future API versions are not guaranteed compatible. Mid-run or restart upgrades require a separate validated migration, never automatic rebinding.
+
+Do not rename upstream packages to resolve the combined model's branding. Avoid distribution/CLI collisions: wrapper `masy`; water upstream `maple_syrup`. Keep upstream update fixes in their owning project, with MASY adapter changes bounded and reviewable.
+
+## Performance and environments
+
+Speed, bounded host/device memory and GPU acceleration are requirements. Prefer same-backend state ownership/reference transfer; do not add full-volume materialization, repeated whole-column scans, full-surface history or per-step host/device transfers. A small dense CPU case can establish the first integration milestone; it is not evidence of large/windowed/GPU readiness. Qualify those paths separately.
+
+Use `/home/okin/MAPLE/.venv` and `.venv-cupy` only. Do not create MASY/SYRUP environments or install into existing environments as routine setup. Check current device availability/allocation before GPU work and preserve unrelated jobs. User has previously allowed free devices for SYRUP experiments; record the actual selected physical UUID and scoped authorization before a new combined-model launch. No automatic GPU/model run is created by these instructions.
+
+## Automatic Codex-Claude workflow
+
+Continue the user's automatic orchestration preference until changed, within bounded requested tasks. Codex scopes tasks, checks actual files/processes, owns independent verification and acceptance. Claude implements bounded tasks or independently reviews substantive Codex implementation, leaving changes uncommitted. One writer per implementation tree; read-only parallel review is permitted.
+
+For each task establish exact baseline (Git revision if present, otherwise immutable scoped manifest), writable files, requirements, exclusions and acceptance criteria. Archive under `agent_handoffs/tasks/<id>/`; maintain `current_prompt.md`, `claude_report.md`, `codex_review.md`, `verification.md` and `orchestration_state.md`.
+
+Verify local `claude --help` before a new launch; record command, exact session, PID/start identity, raw separate stdout/stderr and exit/reaping. Use ordinary permissions, explicit tool/directory scope, bounded execution and short interruptible waits; never bypass execution controls. Sharing relevant source excerpts/findings with Claude is authorized. Actual saved simulation payloads are not covered by that authorization: keep them local and use source-only review unless separately authorized. Do not broaden scope because a reviewer proposes new work.
+
+Inspect actual diffs/callers and reproduce confirmed defects; Claude's report is context, not proof. Run proportional checks and distinguish science, restart, backend and performance limits. Correct ordinary defects automatically. Preserve failed attempts, prompts and partial work. For explicit usage limits record the actual reset/timezone; do not invent limits/reset times or retry indefinitely. No scheduler/background-resumption promise without a verified live process. Report meaningful progress at least every 60 seconds while active.
+
+No Git repository/baseline, commit or push is implied by directory setup. Do not initialize Git to fabricate provenance. Commit/push only when separately requested for MASY, after independent acceptance. Prior SYRUP commit authorization does not silently apply here. Preserve unrelated upstream work and jobs.
+
+## Additional bootstrap review contracts
+
+Use actual upstream reroute APIs and read/record their configured trigger; do not duplicate hydraulic decision logic or freeze the historical threshold in wrapper code. Retain SYRUP's graph, its source surface and their identities in the combined envelope across dry reset and wind events. Validate them before reuse at the next rain event.
+
+Use bounded transactional staging: immutable/content-addressed deep versions and journals or touched-window snapshots. Never copy the whole deep store for rollback. A bounded small dense copy can support the initial CPU milestone. Retain every restart-referenced version; preflight disk quotas and host/device budgets and stop before mutation when storage cannot fit. Do not implement automatic garbage collection as bootstrap work.
+
+Wind event settlement has an explicit finite time/resource guard. Unresolved airborne inventory at its guard makes the event incomplete; no freezing airborne cohorts across a water event. Case configurations and static/shared surface-property mappings are explicit hashed inputs, not just forcing. Shared prescribed vegetation belongs to the landscape; process-specific parameters remain with their owning model, with unit/mask/time mappings recorded.
+
+Use existing interpreters as runtimes, but construct import paths and distribution metadata from the locked immutable source pair using upstream bundle mechanisms. Verify module origins for `maple`, `maple_syrup` and `masy` against the lock before transport. Record environment versions/compiled extensions that affect execution. Disable source-tree bytecode writes and route caches/output to run-owned paths. A live editable installation alone does not satisfy immutable run provenance.
+
+Keep native solver clocks unchanged. Specify exact event-boundary/global-time representation during the preflight task, retaining original native elapsed values and offsets; avoid cumulative float-rounding drift or rounded/dropped physical timesteps. Persist realized elapsed intervals separately from input schedule. The first schema rejects fixed-calendar/absolute-start fields explicitly until supported.
+
+Record each independent review finding and its disposition; confirmed unresolved high-severity correctness defects block acceptance. Do not invent mandatory new human approval for routine authorized development. Source-only reviews may receive relevant complete source/design files and illustrative templates. Actual terrain/forcing datasets, NPZ/Zarr/deep stores, simulation arrays and raw logs containing those payloads stay local unless separately authorized. Each review receipt records exact submitted files/content hashes and allowed tools; source-sharing authority is not blanket dataset-sharing authority.

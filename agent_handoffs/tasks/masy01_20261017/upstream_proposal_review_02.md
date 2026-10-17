@@ -1,0 +1,7 @@
+# Codex second proposal review
+
+Dense-first direction and explicit absent/present-invalid/foreign-type behavior are accepted. One remaining interoperability error must be removed before accepting the concrete design:
+
+Do not require `value.__module__ == maple.core.types.voxel.__name__` or `value.__qualname__ == name`. The verified upstream module may legitimately RE-EXPORT its authoritative class from a different MAPLE module. Those name strings are neither a necessary API property nor a proof of authenticity; they could reject a genuine qualified Windowed type. No source evidence establishes that constraint. Identity against the class object exposed by the verified module is the authority. Check it is a real class, then use exact column-type identity; retain absent-sentinel and present-invalid refusal. A re-export fixture must be supported. Do not claim protection against monkeypatching from name strings.
+
+Keep the proposal minimal (one existing function with local class validation, or a small private helper if avoiding meaningful duplication); do not say no helper while adding one. Explicit subclass/unknown refusal remains an intentional supported-representation boundary, subject to caller regressions. All windowed/digest/transaction guards remain untouched. No upstream edits, adoption or transport is authorized by design acceptance. Return a final concise function and tests; do not re-audit or propose new work.
