@@ -112,7 +112,9 @@ Unless marked otherwise, lines cite the archived clean `source_context` (MAPLE `
 | `maple_syrup.sediment_bed.BedContext` | dataclass `geometry, grain_classes, mass_resolution_kg, topographic_commit_spec, initial_available_fraction` | SYRUP `sediment_bed.py:38-45` |
 | `maple.core.types.voxel.VoxelColumnState` | class (the genuine Dense voxel column; required binding of `is_windowed_bed`) | MAPLE `core/types/voxel.py:13-14`; read at SYRUP `2c60c73` `sediment_bed.py:638` |
 | `maple.core.types.voxel.WindowedVoxelColumnState` | optional class: literally absent, or bound to a class; a present non-class binding fails (SYRUP refuses every bed on it) | read at SYRUP `2c60c73` `sediment_bed.py:613-637` (`_maple_voxel_class`, `required=False`); **not defined** in the observed MAPLE `core/types/voxel.py`. Historically a required class (SYRUP `9fabdca` `sediment_bed.py:610-613`, see below) |
-| `maple.core.types.sediment_ledger.CompactSedimentLedgerState` | class, required by both SYRUP checkpoint codecs even with Dense (see below) | imported unconditionally at SYRUP `2c60c73` `checkpoint.py:179-190` (`_registry`) and `pond_checkpoint.py:694-698` (`_native_registry`); absent from current MAPLE `5b1a052` |
+| `maple.core.types.sediment_ledger.SedimentLedgerState` | class (required Dense ledger binding of both SYRUP checkpoint codecs) | read by the owning-SYRUP checkpoint candidate `checkpoint.py:183` (`_native_ledger_types`) |
+| `maple.core.types.sediment_ledger.CompactSedimentLedgerState` | optional class: literally absent, or bound to a class; a present non-class binding fails (see below) | candidate `checkpoint.py:183` (`_native_ledger_types`) binds it only where the module namespace has it; absent from current MAPLE `5b1a052`. Historically a required class (imported unconditionally at SYRUP `2c60c73` `checkpoint.py:179-190` and `pond_checkpoint.py:694-698`) |
+| `maple_syrup.checkpoint._native_ledger_types` | function, no parameters (names only, never called by the preflight) | owning-SYRUP checkpoint candidate `checkpoint.py:183`, shared by `_registry` and `pond_checkpoint._native_registry`; absent in unpatched SYRUP `2c60c73` |
 | `maple_syrup.sediment_bed.is_windowed_bed`, `bed_inventory`, `bed_by_cell_class`, `bed_voxel_count` | functions `state` | SYRUP `2c60c73` `sediment_bed.py:629` (`is_windowed_bed`), `647` (`bed_by_cell_class`); others at `9fabdca` `sediment_bed.py:264,624` (historical lines) |
 | `maple_syrup.sediment_bed.apply_bed_demand` | function `state, context, demand` | SYRUP `sediment_bed.py:186` |
 | `maple_syrup.sediment_bed.bed_already_committed` | function `state, context, time_s` | SYRUP `sediment_bed.py:628` |
@@ -152,6 +154,14 @@ SYRUP `2c60c73` `checkpoint.py:179-190` (`_registry`) and `pond_checkpoint.py:69
 
 MASY lists it as a required class naming both callers. Its absence is `masy_required_api_missing` (`incompatible`). That finding coexists with the native resolver's `source_root=None` refusal, and the overall verdict stays `refused`. MASY does not make the codec optional, synthesize the class or bypass the registry. The registries also import other native classes (`SedimentLedgerState`, `CommittedTopographyState`, and `WaterState` in `_registry`); only the confirmed missing class was added. A pass would still not qualify restart: `native_restart_unqualified` stands.
 
+*The two paragraphs above are historical (MASY-02B).* What changed in MASY-03:
+
+- **Upstream fix.** The owning-SYRUP checkpoint change adds `checkpoint._native_ledger_types`, which both registries share. It requires `SedimentLedgerState`, binds `CompactSedimentLedgerState` only where the literal module namespace has it, and raises for a present non-class binding, using the bed classifier's rule.
+- **MASY table.** It now requires `SedimentLedgerState`, lists the compact class as `optional_class`, and requires the helper as a callable.
+- **Unpatched SYRUP.** An unpatched SYRUP `2c60c73` remains detectably incompatible by name only (`_native_ledger_types: attribute missing`). The checkout preflight calls no registry or helper. The report schema, statuses and keys are unchanged.
+- **Registry probes.** The two registries are actually called, as class-dictionary probes only, by the separate runtime worker ([runtime.md](runtime.md)), never by this preflight.
+- **Not yet re-run.** The live receipts above were not re-run with the new table.
+
 ## Standing blocking findings (always present)
 
 Each of these findings is present in every report:
@@ -174,6 +184,8 @@ Each file is written to an `O_EXCL` staging file and then hard-linked into place
 Compiled identities in the environment record (interpreter, NumPy core) are hashed in bounded chunks. The path stat, the open descriptor and a final stat must agree on device, inode, size and mtime, and the bytes read must equal the size. Otherwise `sha256` is `null` with a reason; no digest is reported for content that changed during the read.
 
 ## Next bounded milestone (MASY-02 proposal, not implemented)
+
+*Note (MASY-03):* items 1 and 3 now have a separate, untested and unaccepted implementation in [runtime.md](runtime.md). It uses an unmodified upstream bundle, with run-owned labelled SYRUP/MASY overlays and no upstream delivery extension. The preflight itself still reads live checkouts only, and its standing findings are unchanged. The proposal below is kept as written.
 
 1. Build an immutable runtime with the upstream `maple_syrup.dependency_bundle` mechanisms. This means a scoped export of the MAPLE project (no `.git`, no datasets) and a matching SYRUP bundle. The bundle's distribution overlay must truthfully identify the source root, so the unmodified resolver can pass.
 2. If an unmodified bundle cannot express the required metadata, a narrow upstream delivery extension is required. That extension must be shown necessary, then reviewed.

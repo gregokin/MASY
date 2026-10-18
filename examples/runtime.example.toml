@@ -1,0 +1,40 @@
+# MASY-03 locked CPU runtime configuration (closed schema; unknown keys refuse).
+# Illustrative values. prepare seals the current local committed HEAD of each source; nothing is installed.
+schema = "masy.runtime.v1"
+
+[sources.maple]
+root = "/home/okin/MAPLE"
+# The installed MAPLE metadata that SYRUP's dependency_bundle exports into the frozen overlay (read-only input).
+distribution_metadata = "/home/okin/MAPLE/.venv/lib/python3.12/site-packages/maple-0.0.1.dist-info"
+# Optional: refuse unless current HEAD is exactly this commit.
+# expected_revision = "<full 40/64-hex commit id>"
+
+[sources.syrup]
+root = "/home/okin/SYRUP"
+# expected_revision = "<full 40/64-hex commit id>"
+
+[sources.masy]
+# MASY's root is the repository holding tools/masy_runtime.py; only a revision pin is configurable.
+# expected_revision = "<full 40/64-hex commit id>"
+
+[runtime]
+# Kept verbatim when launching children (venv symlink spelling); CPU .venv only, no GPU/.venv-cupy claim.
+python = "/home/okin/MAPLE/.venv/bin/python"
+# Default; must be absolute/normalized, outside the source roots, interpreter and venv, and strictly under runs/
+# when inside the MASY tree.
+store = "/home/okin/MASY/runs/runtime-store"
+
+[limits]
+# Every limit is a positive finite number (bool, NaN, infinity, zero and negatives refuse). Defaults shown.
+git_timeout_s = 30.0
+git_max_output_bytes = 8388608
+max_files = 5000
+max_bytes = 67108864
+max_lock_bytes = 4194304
+max_evidence_bytes = 33554432
+worker_timeout_s = 900.0
+worker_max_output_bytes = 8388608      # combined child stdout+stderr
+max_compiled_files = 4000
+max_compiled_bytes = 4294967296
+store_max_new_bytes = 4294967296       # disk preflight: estimated new bytes must fit
+disk_reserve_bytes = 1073741824        # free space must cover estimate + reserve

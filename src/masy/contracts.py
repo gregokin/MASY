@@ -27,9 +27,11 @@ classifier reads on every bed path (`WindowedVoxelColumnState`) is an
 `optional_class` requirement: the module must import, and the literal module
 namespace must either lack the name or bind it to a class; a present non-class
 binding fails, because the caller refuses every bed (Dense too) on it. This
-does not make Windowed storage required or supported. A class that both SYRUP
-checkpoint registries import unconditionally (`CompactSedimentLedgerState`) is
-a required class, Dense or not.
+does not make Windowed storage required or supported. The checkpoint
+registries' shared `_native_ledger_types` helper applies the same rule to the
+ledger: `SedimentLedgerState` is a required class, `CompactSedimentLedgerState`
+an `optional_class`, and the helper itself a required callable (an unpatched
+SYRUP lacks it).
 
 `crosscheck_provenance` compares the stdlib observation with SYRUP's
 `source_tree_digest` / `scoped_git_status`; any disagreement refuses.
@@ -133,13 +135,23 @@ MASY_REQUIRED_API: tuple[Requirement, ...] = (
     Requirement("maple.core.types.voxel", "WindowedVoxelColumnState", kind="optional_class",
                 required_by="maple_syrup.sediment_bed.is_windowed_bed: optional binding; literal absence permits "
                             "Dense; a present non-class binding refuses every bed; not a Windowed-storage requirement"),
-    # Restart codecs: SYRUP checkpoint.py:179-190 `_registry` and pond_checkpoint.py:694-698 `_native_registry`
-    # (2c60c73) both run `from maple.core.types.sediment_ledger import CompactSedimentLedgerState, ...` with no
-    # condition, for Dense beds too. Ordinary import-from lookup, so the plain `class` check matches them.
-    # Passing does not qualify restart (native_restart_unqualified stays).
-    Requirement("maple.core.types.sediment_ledger", "CompactSedimentLedgerState", kind="class",
+    # Restart codecs. History: at SYRUP 2c60c73, checkpoint.py:179-190 `_registry` and pond_checkpoint.py:694-698
+    # `_native_registry` both ran `from maple.core.types.sediment_ledger import CompactSedimentLedgerState, ...`
+    # unconditionally, so MASY required the compact class. The owning-SYRUP checkpoint change (checkpoint.py:183,
+    # `_native_ledger_types`, shared by both registries) requires SedimentLedgerState and binds the compact class
+    # only where the literal module namespace has it (a present non-class binding raises), like the bed classifier.
+    # Hence: required dense class, optional_class compact, and the new helper required as a callable, so an
+    # unpatched SYRUP (no helper) stays detectably incompatible by name only; nothing is called here. Passing does
+    # not qualify restart (native_restart_unqualified stays); the registries are probed only in runtime_worker.
+    Requirement("maple.core.types.sediment_ledger", "SedimentLedgerState", kind="class",
+                required_by="maple_syrup.checkpoint._native_ledger_types (required Dense ledger binding of "
+                            "checkpoint._registry and pond_checkpoint._native_registry)"),
+    Requirement("maple.core.types.sediment_ledger", "CompactSedimentLedgerState", kind="optional_class",
+                required_by="maple_syrup.checkpoint._native_ledger_types: optional binding; literal absence permits "
+                            "Dense restart codecs; a present non-class binding refuses both registries"),
+    Requirement("maple_syrup.checkpoint", "_native_ledger_types", (),
                 required_by="maple_syrup.checkpoint._registry and maple_syrup.pond_checkpoint._native_registry "
-                            "(unconditional import; restart needs these native codecs even with Dense)"),
+                            "(shared native ledger binding helper; absent in unpatched SYRUP 2c60c73)"),
     Requirement("maple_syrup.sediment_bed", "is_windowed_bed", ("state",)),
     Requirement("maple_syrup.sediment_bed", "bed_inventory", ("state",)),
     Requirement("maple_syrup.sediment_bed", "apply_bed_demand", ("state", "context", "demand")),

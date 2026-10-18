@@ -85,3 +85,15 @@ Appended by MASY-02B. The sections above are history and are not restated as cur
 Codex's full stdlib candidate suite also passed (170 tests, exit 0). Those are synthetic unit tests, not physical, transport or GPU tests. No transport or restart was qualified.
 
 No pair is reported ready. Under AGENTS.md, a new run selects the current local committed HEAD of each configured upstream, subject to compatibility and immutable-runtime qualification; a development snapshot requires an explicit selection with recorded dirty deltas. No run has been selected or launched. MASY now has a Git baseline (`d0c2b71`), but its source observer still uses file manifests and an explicit lock, not Git binding.
+
+---
+
+## MASY-03 checkpoint helper and runtime prerequisite — October 2026 (candidate, untested)
+
+Appended by MASY-03. The sections above are history and are not restated. This section records a source change and a MASY table update. Nothing here is runtime, restart, physical, backend, performance or transport qualification. No result below has been executed by its author.
+
+**Owning-SYRUP checkpoint helper.** The owning-SYRUP checkpoint prerequisite adds `maple_syrup.checkpoint._native_ledger_types` (`checkpoint.py:183`), shared by `checkpoint._registry` and `pond_checkpoint._native_registry` (`pond_checkpoint.py:96,699`). It requires `SedimentLedgerState`. It binds `CompactSedimentLedgerState` only where the literal `maple.core.types.sediment_ledger` namespace has it, and raises for a present non-class binding. So current MAPLE `5b1a052` (no compact class) can build Dense restart registries. This prerequisite is reported as independently accepted and adopted on local SYRUP main (`b4ee14e`; remote unchanged). MASY did not edit SYRUP.
+
+**MASY table.** `SedimentLedgerState` is now a required class, `CompactSedimentLedgerState` an `optional_class`, and `checkpoint._native_ledger_types` a required callable. An unpatched SYRUP `2c60c73` lacks the helper and stays `masy_required_api_missing` by name, with nothing called. The checkout audit (`contracts.run_native_audit`), its report schema, statuses and filter are unchanged. The historical receipts above (the compact class as the only failed item) were not re-run with this table.
+
+**Runtime prerequisite.** A separate locked CPU runtime tool ([runtime.md](runtime.md)) seals committed sources and runs the unmodified upstream `dependency_bundle` and `check_runtime` on a frozen MAPLE cache. Its worker calls both registries as class-dictionary probes. This is implemented but untested: no prepare or verify has run, and its synthetic tests are not written.

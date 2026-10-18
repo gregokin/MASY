@@ -1,0 +1,23 @@
+# Static, declarative metadata only. MASY is never installed, built or uploaded: no wheel/sdist is produced and the
+# build backend below is NOT present in the MAPLE CPU .venv. `masy.runtime` reads [project] (closed static keys,
+# canonical PEP 440 version equal to src/masy/__init__.py __version__) to generate a run-owned, labelled metadata
+# overlay that is not an installation. No dependencies are declared on purpose: MAPLE and SYRUP are sealed from
+# their own committed sources, and a `maple` requirement would name an unrelated PyPI project. No console scripts:
+# the only entry points are tools/masy_preflight.py and tools/masy_runtime.py run with `python -I -B`.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "masy"
+version = "0.0.3.dev0"
+description = "MAPLE-SYRUP (MASY) wrapper: read-only source preflight and locked CPU runtime identity delivery"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["masy*"]

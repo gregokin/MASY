@@ -442,12 +442,18 @@ class RequiredSurfaceTests(unittest.TestCase):
 
     def test_table_names_the_checkpoint_ledger_with_both_callers(self) -> None:
         table = {(r.module, r.attribute): r for r in MASY_REQUIRED_API}
-        ledger = table["maple.core.types.sediment_ledger", "CompactSedimentLedgerState"]
-        self.assertEqual((ledger.kind, ledger.parameters, ledger.fields), ("class", (), ()))
-        self.assertIn("maple_syrup.checkpoint._registry", ledger.required_by)
-        self.assertIn("maple_syrup.pond_checkpoint._native_registry", ledger.required_by)
+        dense = table["maple.core.types.sediment_ledger", "SedimentLedgerState"]
+        self.assertEqual((dense.kind, dense.parameters, dense.fields), ("class", (), ()))
+        self.assertIn("maple_syrup.checkpoint._native_ledger_types", dense.required_by)
+        compact = table["maple.core.types.sediment_ledger", "CompactSedimentLedgerState"]
+        self.assertEqual((compact.kind, compact.parameters, compact.fields), ("optional_class", (), ()))
+        self.assertIn("maple_syrup.checkpoint._native_ledger_types", compact.required_by)
+        helper = table["maple_syrup.checkpoint", "_native_ledger_types"]
+        self.assertEqual((helper.kind, helper.parameters, helper.fields), ("callable", (), ()))
+        self.assertIn("maple_syrup.checkpoint._registry", helper.required_by)
+        self.assertIn("maple_syrup.pond_checkpoint._native_registry", helper.required_by)
         self.assertEqual([r.attribute for r in MASY_REQUIRED_API if r.kind == "optional_class"],
-                         ["WindowedVoxelColumnState"])
+                         ["WindowedVoxelColumnState", "CompactSedimentLedgerState"])
 
     def test_complete_synthetic_surface_passes(self) -> None:
         self.assertEqual(self.failures(), [])
@@ -486,16 +492,46 @@ class RequiredSurfaceTests(unittest.TestCase):
         del module.WindowedVoxelColumnState
         self.assertEqual(self.failures(), [("VoxelColumnState", "attribute missing")])
 
-    def test_missing_compact_ledger_fails(self) -> None:
+    def test_literally_absent_compact_ledger_passes(self) -> None:
         del self.module("maple.core.types.sediment_ledger").CompactSedimentLedgerState
-        self.assertEqual(self.failures(), [("CompactSedimentLedgerState", "attribute missing")])
+        self.assertEqual(self.failures(), [])
+
+    def test_compact_ledger_cannot_be_manufactured_by_module_getattr(self) -> None:
+        module = self.module("maple.core.types.sediment_ledger")
+        del module.CompactSedimentLedgerState
+
+        def __getattr__(name):  # noqa: N807 - PEP 562 module hook synthesizing a non-class
+            if name == "CompactSedimentLedgerState":
+                return None
+            raise AttributeError(name)
+        module.__getattr__ = __getattr__
+        self.assertEqual(self.failures(), [])
+
+    def test_missing_dense_ledger_fails_even_with_compact_absent(self) -> None:
+        module = self.module("maple.core.types.sediment_ledger")
+        del module.SedimentLedgerState
+        self.assertEqual(self.failures(), [("SedimentLedgerState", "attribute missing")])
+        del module.CompactSedimentLedgerState
+        self.assertEqual(self.failures(), [("SedimentLedgerState", "attribute missing")])
+
+    def test_missing_native_ledger_helper_fails(self) -> None:
+        del self.module("maple_syrup.checkpoint")._native_ledger_types
+        self.assertEqual(self.failures(), [("_native_ledger_types", "attribute missing")])
+
+    def test_native_ledger_helper_bound_to_class_or_value_fails(self) -> None:
+        module = self.module("maple_syrup.checkpoint")
+        for value, reason in ((genuine_class("_native_ledger_types"), "not a callable function (got type)"),
+                              (None, "not a callable function (got NoneType)")):
+            module._native_ledger_types = value
+            with self.subTest(reason=reason):
+                self.assertEqual(self.failures(), [("_native_ledger_types", reason)])
 
     def test_compact_ledger_bound_to_non_class_fails(self) -> None:
         def CompactSedimentLedgerState(namespace):  # noqa: N802 - a factory is not a codec class
             return None
         module = self.module("maple.core.types.sediment_ledger")
-        for value, reason in ((CompactSedimentLedgerState, "not a class (got function)"),
-                              (None, "not a class (got NoneType)")):
+        for value, reason in ((CompactSedimentLedgerState, "present but not a class (got function)"),
+                              (None, "present but not a class (got NoneType)")):
             module.CompactSedimentLedgerState = value
             with self.subTest(reason=reason):
                 self.assertEqual(self.failures(), [("CompactSedimentLedgerState", reason)])
@@ -509,10 +545,12 @@ class RequiredSurfaceTests(unittest.TestCase):
                 self.assertEqual(self.failures(), [])
 
     def test_current_pair_shaped_audit(self) -> None:
-        """Shaped like current MAPLE 5b1a052 + SYRUP 2c60c73: neither Windowed nor the compact ledger is bound,
-        the native resolver refuses on metadata identity, SYRUP's own (dynamic-length) list passes."""
+        """Shaped like MAPLE 5b1a052 + unpatched SYRUP 2c60c73: neither Windowed nor the compact ledger is bound
+        and SYRUP lacks the shared `_native_ledger_types` helper, the native resolver refuses on metadata identity,
+        SYRUP's own (dynamic-length) list passes. The missing helper keeps the old pair incompatible by name only."""
         del self.module("maple.core.types.voxel").WindowedVoxelColumnState
         del self.module("maple.core.types.sediment_ledger").CompactSedimentLedgerState
+        del self.module("maple_syrup.checkpoint")._native_ledger_types
         record, findings = run_native_audit(fake_dependency("identity", requirement_count=36), "/r/MAPLE",
                                             masy_requirements=self.requirements, optional_modules=OPTIONAL_ABSENT)
         self.assertEqual(record["native_resolver"]["status"], "refused")
@@ -520,22 +558,31 @@ class RequiredSurfaceTests(unittest.TestCase):
         self.assertEqual(record["syrup_required_api"], {"call": "check_required_api()", "status": "pass",
                                                         "requirement_count": 36})
         items = {item["attribute"]: item for item in record["masy_required_api"]}
-        self.assertEqual(items["WindowedVoxelColumnState"]["status"], "pass")
-        self.assertEqual(set(items["WindowedVoxelColumnState"]), RESULT_KEYS)
+        for name in ("WindowedVoxelColumnState", "CompactSedimentLedgerState"):
+            self.assertEqual(items[name]["status"], "pass")
+            self.assertEqual(set(items[name]), RESULT_KEYS)
         self.assertEqual([name for name, item in items.items() if item["status"] != "pass"],
-                         ["CompactSedimentLedgerState"])
+                         ["_native_ledger_types"])
         by_severity = {severity: [f["code"] for f in findings if f["severity"] == severity]
                        for severity in ("refusal", "incompatible", "info")}
         self.assertEqual(by_severity, {"refusal": ["native_resolver_refused"],
                                        "incompatible": ["masy_required_api_missing"],
                                        "info": ["optional_module_absent"]})
         detail = next(f["detail"] for f in findings if f["code"] == "masy_required_api_missing")
-        self.assertIn("CompactSedimentLedgerState: attribute missing", detail)
+        self.assertIn("_native_ledger_types: attribute missing", detail)
         self.assertIn("maple_syrup.checkpoint._registry", detail)
         self.assertIn("maple_syrup.pond_checkpoint._native_registry", detail)
         self.assertNotIn("WindowedVoxelColumnState", detail)
+        self.assertNotIn("CompactSedimentLedgerState", detail)
         self.assertEqual(compute_verdict(findings), "refused")
         self.assertEqual(compute_verdict([f for f in findings if f["severity"] != "refusal"]), "incompatible")
+
+    def test_checkpoint_candidate_shaped_surface_passes_without_compact(self) -> None:
+        """Shaped like MAPLE 5b1a052 + the owning-SYRUP checkpoint candidate: the helper is present, the compact
+        ledger literally absent; the MASY table passes by name (nothing is called)."""
+        del self.module("maple.core.types.voxel").WindowedVoxelColumnState
+        del self.module("maple.core.types.sediment_ledger").CompactSedimentLedgerState
+        self.assertEqual(self.failures(), [])
 
     def test_dense_voxel_type_bound_to_function_fails(self) -> None:
         def VoxelColumnState(mass_kg):  # noqa: N802 - a callable factory is not an isinstance target

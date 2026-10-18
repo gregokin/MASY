@@ -2,7 +2,16 @@
 
 MAPLE-SYRUP is designed to alternate actual MAPLE wind events and actual SYRUP water events over one evolving MAPLE sediment landscape. Wind physics stays in `~/MAPLE` and water physics stays in `~/SYRUP`. SYRUP's existing `maple_syrup` package name remains unchanged, and the combined wrapper uses `masy`. The wrapper contains no copied transport physics, no re-created sediment bed between events and no simultaneous wind/water transport.
 
-**Current status (MASY-01):** the only executable piece is a read-only current-source compatibility preflight. No transport entry point, adapter, immutable runtime or alternating-event validation exists yet. MASY is not an installed package and has no `pyproject.toml`. The preflight never reports a pair as ready to run.
+**Current status:** there are two executable pieces.
+
+- The MASY-01 read-only current-source compatibility preflight.
+- The MASY-03 locked CPU runtime `prepare`/`verify` ([docs/runtime.md](docs/runtime.md)). It seals the committed MAPLE/SYRUP/MASY sources and checks native interfaces. **It is implemented but not yet tested or accepted.**
+
+No transport entry point, adapter or alternating-event validation exists. Neither tool reports a pair as ready to run, and `transport_ready` is always `false`.
+
+MASY now has a static, declarative [pyproject.toml](pyproject.toml) (`masy` `0.0.3.dev0`, equal to `masy.__version__`). It is never installed or built. The runtime uses it only to generate a labelled, run-owned metadata overlay that is not an installation.
+
+*Historical (MASY-01/02B): MASY then had no `pyproject.toml` and only the preflight existed.*
 
 ## Preflight
 
@@ -33,6 +42,25 @@ A later run reports whatever the upstream state is at that moment. Under [AGENTS
 
 See [docs/preflight.md](docs/preflight.md) for stages, guards and report fields, and [docs/clock_contract.md](docs/clock_contract.md) for the exact clock and forcing representation.
 
+The MASY requirement table has changed since the receipt above. For the owning-SYRUP checkpoint candidate it now requires `SedimentLedgerState` and SYRUP's shared `checkpoint._native_ledger_types` helper, and treats `CompactSedimentLedgerState` as an optional class. An unpatched SYRUP `2c60c73` therefore still fails, now on the missing helper. That observation above is historical and has not been re-run with the new table.
+
+## Locked CPU runtime (MASY-03, untested)
+
+```
+mkdir -p /home/okin/MASY/runs   # once: the store's parent must exist
+/home/okin/MAPLE/.venv/bin/python -I -B /home/okin/MASY/tools/masy_runtime.py \
+    prepare --config /home/okin/MASY/examples/runtime.example.toml
+/home/okin/MAPLE/.venv/bin/python -I -B /home/okin/MASY/tools/masy_runtime.py \
+    verify --store /home/okin/MASY/runs/runtime-store --lock <lock_id>
+```
+
+- `prepare` selects the current local committed HEADs: no development snapshot and no uncommitted runtime code, the wrapper included. It seals them into a content-addressed store and freezes MAPLE with SYRUP's own `dependency_bundle`. It probes the native resolver, API and both checkpoint registries in a fresh `-I -B` CPU child, then publishes a lock.
+- `verify` re-checks one explicit old lock without reading current upstream repositories.
+- Nothing is installed, built, downloaded or garbage-collected. Old locks and objects are retained.
+- Exit `0` means runtime identity only, never transport readiness.
+
+Layout, provenance, refusal evidence and limitations are in [docs/runtime.md](docs/runtime.md).
+
 ## Tests
 
 Tests use only stdlib `unittest`, with synthetic temporary Git repositories and fake upstream modules. They do not import real MAPLE/SYRUP code, construct beds or solvers, run transport or read datasets.
@@ -41,6 +69,8 @@ Tests use only stdlib `unittest`, with synthetic temporary Git repositories and 
 cd /home/okin/MASY && /home/okin/MAPLE/.venv/bin/python -B -m unittest discover -s tests -v
 ```
 
+The synthetic runtime tests (`tests/test_runtime.py`) are not written yet. See [tests/README.md](tests/README.md).
+
 ## Project rules
 
-Read [AGENTS.md](AGENTS.md) and the [scientific brief](docs/scientific_brief.md) before agent work. Then read the [implementation phases](docs/implementation_plan.md) and the [observed upstream interfaces](docs/upstream_interface_audit.md). The current task and its status live in `agent_handoffs/`. No model, GPU job, package installation, Git initialization, commit or push is performed by the preflight. MASY now has a Git baseline, but the preflight's own MASY observation still uses file manifests and an explicit `--expect-lock`, not MASY's Git state.
+Read [AGENTS.md](AGENTS.md) and the [scientific brief](docs/scientific_brief.md) before agent work. Then read the [implementation phases](docs/implementation_plan.md) and the [observed upstream interfaces](docs/upstream_interface_audit.md). The current task and its status live in `agent_handoffs/`. No model, GPU job, package installation, Git initialization, commit or push is performed by the preflight or the runtime tool. MASY now has a Git baseline, but the preflight's own MASY observation still uses file manifests and an explicit `--expect-lock`, not MASY's Git state.
