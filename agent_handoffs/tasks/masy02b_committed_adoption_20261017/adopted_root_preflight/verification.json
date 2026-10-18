@@ -1,0 +1,26 @@
+{
+  "utc": "2026-10-17T22:23:08.569699+00:00",
+  "exit_code": 2,
+  "reaped": true,
+  "termination_reason": null,
+  "elapsed_s": 4.005468216026202,
+  "pid": 3,
+  "start_ticks": "28747558",
+  "native_api_count": 36,
+  "failures": [
+    {
+      "attribute": "CompactSedimentLedgerState",
+      "fields": [],
+      "kind": "class",
+      "module": "maple.core.types.sediment_ledger",
+      "parameters": [],
+      "reason": "attribute missing",
+      "required_by": "maple_syrup.checkpoint._registry and maple_syrup.pond_checkpoint._native_registry (unconditional import; restart needs these native codecs even with Dense)",
+      "status": "fail"
+    }
+  ],
+  "source_heads": {
+    "maple": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+    "syrup": "2c60c73b01fe1c0cef576987d52010e84058c568"
+  }
+}

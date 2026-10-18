@@ -1,0 +1,20 @@
+{
+  "utc": "2026-10-17T22:23:04.460799+00:00",
+  "files": {
+    "README.md": "1aaf2110435b2558fe07857d49e1a97b3c194dc623987fcac4dde8f917e8d748",
+    "docs/preflight.md": "719c7b0c05dcb2b612ea74c17294d5f9a5db711ec964c00b584ea8a3931016ee",
+    "docs/upstream_interface_audit.md": "37a3a0aade4638b291ce9d798fa05af536946b9debea1530849357a71855a280",
+    "tests/README.md": "9b7d26b0f140adeab09569161d554ecccb1b5c18aef14527c7c66e813f5560bc",
+    "src/masy/contracts.py": "14e7cbeb7f28ba9501ba683d949e7a216b2f0a482e56cd63144371c16336471e",
+    "tests/test_contracts.py": "ab04512a52c1426e5dc8337681103ff9cce703518d046ca847b486a6e67d33e8"
+  },
+  "source_heads": {
+    "maple": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+    "syrup": "2c60c73b01fe1c0cef576987d52010e84058c568"
+  },
+  "tested_code_and_tests_unchanged": true,
+  "no_upstream_changes": true,
+  "committed": false,
+  "pushed": false,
+  "transport_accepted": false
+}

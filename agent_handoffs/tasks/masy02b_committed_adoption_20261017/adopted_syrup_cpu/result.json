@@ -1,0 +1,28 @@
+{
+  "purpose": "CPU development/API regression, not production source adoption",
+  "syrup": "/home/okin/SYRUP",
+  "maple": "/home/okin/MAPLE",
+  "pytest_exit": 0,
+  "runtime_sources_unchanged": true,
+  "wrong_module_origins": [],
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "executable": "/home/okin/MAPLE/.venv/bin/python",
+  "versions": {
+    "numpy": "2.5.3",
+    "pytest": "9.1.1",
+    "numba": "0.67.0",
+    "llvmlite": "0.49.0",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2"
+  },
+  "gpu_queried": false,
+  "argv": [
+    "/home/okin/MASY/agent_handoffs/tasks/masy02b_committed_adoption_20261017/pytest_child.py",
+    "/home/okin/SYRUP",
+    "/home/okin/MAPLE",
+    "/home/okin/MASY/agent_handoffs/tasks/masy02b_committed_adoption_20261017/adopted_syrup_cpu",
+    "tests/masy_compat",
+    "tests/phase5/test_sediment_bed.py",
+    "tests/phase1/test_dependency.py::test_every_missing_api_element_is_reported_together"
+  ]
+}

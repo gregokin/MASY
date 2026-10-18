@@ -1,0 +1,174 @@
+{
+  "utc": "2026-10-17T22:09:21.537872+00:00",
+  "masy_head": "d0c2b710c2367f1cde0bedfebc5d2a4699b0274c",
+  "masy_status": " M agent_handoffs/claude_report.md\n M agent_handoffs/codex_review.md\n M agent_handoffs/current_prompt.md\n M agent_handoffs/orchestration_state.md\n M agent_handoffs/verification.md\n",
+  "masy_manifest": {
+    "src/masy/cli.py": "27a434a1f027560a2b4c79dd8e7533c758da502530200c9234a63401c782701e",
+    "src/masy/__init__.py": "64e27793d76ca114341291c37ee81e326595c211fbec838d86aaba93b009b447",
+    "src/masy/importcheck.py": "74619fa0867b8bf4648c5f8ab4abafeb832af0a4ad02416a54c3a9fb866b3172",
+    "src/masy/config.py": "adec589fc3ed7ad4cf880888e8678b00a940fcc11d579750fb6cdad7c2b751d9",
+    "src/masy/sourceobs.py": "359930fb5796af90dd780646eec583e1cc40e53694fa47daa338e71e2a42a172",
+    "src/masy/README.md": "ae2e0310e2dc7b51b65a655a272011ca0820e43479059d4af1c21e4915109f8e",
+    "src/masy/report.py": "2395c6f33fd9c2336cd5e181eb03bdfb61604f6d9faf71b74b47c0bb4feec032",
+    "src/masy/contracts.py": "d5fdff635156d3c2422722f4d55219e06dd2e87bbca1513c8f91d7834a950f95",
+    "src/masy/clock.py": "ddfe0c23d25b54ac5e1995761b93c6821df6d533845f8484b7b17dfdd9129d43",
+    "tests/_support.py": "b2195e45c8fcc290426f0745bc9525fd0c0d617fc8a36ac4d3af6b0438fea47b",
+    "tests/test_report.py": "8e6db78cd79350d5cb7bb47a42eed7f90172c3e5da53d5f5d76b1ad1b26a9781",
+    "tests/test_importcheck.py": "ea19fa407fead9e5e23e3c2c1d4a139d6e5972c54a048944932fcccf7f73a124",
+    "tests/test_clock.py": "b7e1a589784db7e84d77829fe6b042d8f58ec8eecd61e2920838ca2789cbb8e5",
+    "tests/test_sourceobs.py": "ef8e3a6d14bec43c037a6cc1bfe6053f09e5046764d28b11e6551f8aec3c63c4",
+    "tests/test_launch.py": "8ee4ae9800270dacf235431da435f42a472a2e5b43461c7cf7c67dd0d09e538c",
+    "tests/README.md": "80642433fe2c7eef293cd0d111a127ef272478c95c3bec8c83ff8cc2db83945a",
+    "tests/test_config.py": "ba4928533ee7c7a127e6a31d4b965dd9529e5cd8e20a300dc2bec23bb0aa83f0",
+    "tests/test_contracts.py": "ecb22adff407b3621bd68e2c8803541708aeff55790f1fe722beb4fda190a04c",
+    "tools/masy_preflight.py": "0bffe99c100b61ee7f4a8628d5f8d3502058a1b2a27ab1cf61fec8e87c5ba0f7",
+    "docs/scientific_brief.md": "6389545c8164f9dd1b6fbed890c253b1f806f78cf36690ac4a8348eb0f5022dd",
+    "docs/upstream_interface_audit.md": "a4d50c8449ce58964170cb71d7a6d1e0cd78b7e59a9f47006f175b14883f6536",
+    "docs/architecture.md": "18e4efa7d0cee172311e5131fb8ae81c5e234b3d4472b0a6f9c32dd10605067d",
+    "docs/preflight.md": "3f42c7eec7e3560d5c1cb3aa9f22c2517c2392fc0f5d32d7b02e377142f27107",
+    "docs/clock_contract.md": "75c8aced69a7810adf8968d3c5d78b40cefb1f86e2c74d82911ff5734d8e7191",
+    "docs/implementation_plan.md": "2774abd984b62659e319816898475ed21136b0073f7ae2cbfa0054067d38b79e",
+    "agent_handoffs/verification.md": "e97bf5b521c55c7510799a64558c673477a3d99d56922b7eb2d0cd0685b525f0",
+    "agent_handoffs/orchestration_state.md": "eb7ef5b13a553b60a203022714e1a14a03f1caf203f35d32149d59ed8ac03119",
+    "agent_handoffs/current_prompt.md": "600092af3969f71e692d902ffd33e69324c41aa6dfd868f9534ef9e1ac07a87a",
+    "agent_handoffs/publication.md": "ee6d416484806470157e91e84a540f092ee732fe4789298c2660071a90ce1acb",
+    "agent_handoffs/codex_review.md": "df34529de1e7ccad229415ace899b5f3846fabf1e72275d459233478863f192a",
+    "agent_handoffs/claude_report.md": "5fa2fbda20e65cb70e294d134f987698ba4e18ffda075a653583a9ccfe20de44",
+    "agent_handoffs/README.md": "f610281f0a0353e0c7236b38ed0387c12145a1402e13635427bb9ebd5f1f9fce",
+    "agent_handoffs/templates/task_report.md": "831e62d6fa9d3987f4e933745c59271d28e94aa71a0a8e1c47bf2b375e62fd16",
+    "agent_handoffs/templates/task_prompt.md": "cb0ecfa9086dd9352ed98c4bf461d7fe1e821e0acedbcd54616b101a56546c53",
+    "README.md": "cb3f0c94b6a8a4849807547c8a1c2e6b8d85157a777471e17715929030c2cfe1",
+    "AGENTS.md": "4060b0908d2a68cec4319fba72a3ffb1d5164be827b3c9481bb5b564a96814d2"
+  },
+  "upstreams": {
+    "maple": {
+      "name": "maple",
+      "root": "/home/okin/MAPLE",
+      "selection": "current_local_committed_head",
+      "head": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+      "object_format": "sha1",
+      "expected_revision": null,
+      "scope_pathspecs": [
+        "src",
+        "pyproject.toml"
+      ],
+      "git_status": "clean",
+      "cache_exclusions": {
+        "directory_names": [
+          "__pycache__"
+        ]
+      },
+      "pyproject": {
+        "path": "pyproject.toml",
+        "sha256": "e6c7da22ee9f4bdd7876747fdfcbf694314cafd9032e3700301522b52b3fe3ae",
+        "size": 6596,
+        "project_name": "maple",
+        "project_version": "0.0.1",
+        "git_blob": "9181e288e257e1896ef3b48a14c48fa4e2e66810"
+      },
+      "package": {
+        "name": "maple",
+        "dir": "/home/okin/MAPLE/src/maple",
+        "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+        "digest_sha256": "97b3df72336e6313e8d89d0b7b20784b9a0f001e30a4fc3035360e6de6068612",
+        "file_count": 334,
+        "total_bytes": 8211382
+      },
+      "tracked_scope": {
+        "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+        "digest_sha256": "3672fe023c953643bd9a828539f248467d55d8bfbd5794040240cfb4d3ad0533",
+        "file_count": 335,
+        "total_bytes": 8217978
+      },
+      "generated_metadata": {
+        "policy": "recorded_not_repaired",
+        "entries": [
+          {
+            "path": "src/maple.egg-info/PKG-INFO",
+            "sha256": "7a40743d1ac71ab26c85c1499489be2615885680962e90490cdb7b4b284856aa",
+            "size": 617
+          },
+          {
+            "path": "src/maple.egg-info/SOURCES.txt",
+            "sha256": "909a58277e6ab671604681a601976d7ce61e10d49bbc1ec9dfc3f827b499e0a7",
+            "size": 13916
+          },
+          {
+            "path": "src/maple.egg-info/dependency_links.txt",
+            "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1
+          },
+          {
+            "path": "src/maple.egg-info/entry_points.txt",
+            "sha256": "9430d41e28e96a53fa455b84c6a4b6122484d21e6ce8151c6c40854db190c870",
+            "size": 82
+          },
+          {
+            "path": "src/maple.egg-info/requires.txt",
+            "sha256": "3425d4c2835af5a483d6976e7c72ff03f95a41a911e1039af41dd87c2dffb7aa",
+            "size": 156
+          },
+          {
+            "path": "src/maple.egg-info/top_level.txt",
+            "sha256": "08ab2a56c8503c742c762013475ad2955377d2001a9fc03e4e8bc22e09af0844",
+            "size": 6
+          }
+        ],
+        "digest_sha256": "c32f0cd256f348105eed5e799aac1b370277702ab7cbb162c11a53039a9dcd8d"
+      }
+    },
+    "syrup": {
+      "name": "syrup",
+      "root": "/home/okin/SYRUP",
+      "selection": "current_local_committed_head",
+      "head": "2c60c73b01fe1c0cef576987d52010e84058c568",
+      "object_format": "sha1",
+      "expected_revision": null,
+      "scope_pathspecs": [
+        "src",
+        "pyproject.toml"
+      ],
+      "git_status": "clean",
+      "cache_exclusions": {
+        "directory_names": [
+          "__pycache__"
+        ]
+      },
+      "pyproject": {
+        "path": "pyproject.toml",
+        "sha256": "669ab913fd6247617d9a64d7c23fc71cbbecd2c409df01700149cab1bc3f94fc",
+        "size": 3832,
+        "project_name": "maple-syrup",
+        "project_version": "0.0.1.dev0",
+        "git_blob": "ce8947354a756cec0059b0363fe1a6fd3734f0fc"
+      },
+      "package": {
+        "name": "maple_syrup",
+        "dir": "/home/okin/SYRUP/src/maple_syrup",
+        "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+        "digest_sha256": "fc789e240f7b0061e9ac80bc9078b7fe42d302fc8309ee5746073455f7f9f6bb",
+        "file_count": 63,
+        "total_bytes": 2629305
+      },
+      "tracked_scope": {
+        "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+        "digest_sha256": "1af2b8d64b73bd42dc20d50cd13b2deceea9d70a3a5591773d17f5dff3224e2c",
+        "file_count": 64,
+        "total_bytes": 2633137
+      },
+      "generated_metadata": {
+        "policy": "recorded_not_repaired",
+        "entries": [],
+        "digest_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  },
+  "writable_product_files": [
+    "README.md",
+    "docs/preflight.md",
+    "docs/upstream_interface_audit.md",
+    "tests/README.md",
+    "src/masy/contracts.py",
+    "tests/test_contracts.py"
+  ]
+}

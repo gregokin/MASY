@@ -1,0 +1,14 @@
+{
+  "utc": "2026-10-17T22:23:34.738191+00:00",
+  "author": "Codex independent verification bookkeeping",
+  "exact_replacement": {
+    "old": "This verifies the candidate, not yet the adopted MASY root; receipts are in",
+    "new": "The final adopted-root preflight confirmed the same result; receipts are in"
+  },
+  "file_hashes": {
+    "README.md": "929592a16157353a0d260770d82448422a1a2bff9aa12d166c8a3a32c604057a",
+    "docs/preflight.md": "ef105f2fd79c7c71e471c84ce8e1087c02d72c90b87fc078b2a1d21c33d1f092",
+    "docs/upstream_interface_audit.md": "4c2b0991f2c07cb38f2b3b575313dceb976a4961dd16db36ec5cd9b4084ecc7d"
+  },
+  "code_and_tests_unchanged": true
+}

@@ -1,0 +1,8 @@
+{
+  "README.md": "929592a16157353a0d260770d82448422a1a2bff9aa12d166c8a3a32c604057a",
+  "docs/preflight.md": "ef105f2fd79c7c71e471c84ce8e1087c02d72c90b87fc078b2a1d21c33d1f092",
+  "docs/upstream_interface_audit.md": "4c2b0991f2c07cb38f2b3b575313dceb976a4961dd16db36ec5cd9b4084ecc7d",
+  "tests/README.md": "9b7d26b0f140adeab09569161d554ecccb1b5c18aef14527c7c66e813f5560bc",
+  "src/masy/contracts.py": "14e7cbeb7f28ba9501ba683d949e7a216b2f0a482e56cd63144371c16336471e",
+  "tests/test_contracts.py": "ab04512a52c1426e5dc8337681103ff9cce703518d046ca847b486a6e67d33e8"
+}

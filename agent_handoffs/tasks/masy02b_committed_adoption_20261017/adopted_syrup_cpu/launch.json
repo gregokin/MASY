@@ -1,0 +1,18 @@
+{
+  "utc": "2026-10-17T22:10:25.569323+00:00",
+  "command": [
+    "/home/okin/MAPLE/.venv/bin/python",
+    "-B",
+    "-I",
+    "/home/okin/MASY/agent_handoffs/tasks/masy02b_committed_adoption_20261017/pytest_child.py",
+    "/home/okin/SYRUP",
+    "/home/okin/MAPLE",
+    "/home/okin/MASY/agent_handoffs/tasks/masy02b_committed_adoption_20261017/adopted_syrup_cpu",
+    "tests/masy_compat",
+    "tests/phase5/test_sediment_bed.py",
+    "tests/phase1/test_dependency.py::test_every_missing_api_element_is_reported_together"
+  ],
+  "pid": 3,
+  "start_ticks": "28671658",
+  "timeout_s": 180
+}

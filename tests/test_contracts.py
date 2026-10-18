@@ -47,15 +47,22 @@ REQUIREMENTS_PASS = (
     Requirement(API_MODULE, "DryHandoff", kind="dataclass", fields=DRY_FIELDS),
 )
 OPTIONAL_ABSENT = (("masy_test_absent_windowed_module", "windowed transaction"),)
-DENSE_PATH_TYPE = Requirement(API_MODULE, "WindowedVoxelColumnState", kind="class",
-                              required_by="is_windowed_bed on every Dense bed path")
+CHECKPOINT_CALLERS = "maple_syrup.checkpoint._registry and maple_syrup.pond_checkpoint._native_registry"
+CLASS_REQ = Requirement(API_MODULE, "CompactSedimentLedgerState", kind="class", required_by=CHECKPOINT_CALLERS)
+OPTIONAL_WINDOWED = Requirement(API_MODULE, "WindowedVoxelColumnState", kind="optional_class",
+                                required_by="is_windowed_bed optional binding")
+# HISTORICAL (SYRUP 9fabdca), not the current table: Windowed was imported unconditionally on every Dense path.
+HISTORICAL_WINDOWED = Requirement(API_MODULE, "WindowedVoxelColumnState", kind="class",
+                                  required_by="is_windowed_bed on every Dense bed path (historical, SYRUP 9fabdca)")
+RESULT_KEYS = {"module", "attribute", "kind", "parameters", "fields", "required_by", "status"}
 
 
 def genuine_class(name: str, module: str = API_MODULE) -> type:
     return type(name, (), {"__module__": module})
 
 
-def fake_dependency(resolver_exc: str | None = None, api_ok: bool = True, source_root: str = "/r/MAPLE"):
+def fake_dependency(resolver_exc: str | None = None, api_ok: bool = True, source_root: str = "/r/MAPLE",
+                    requirement_count: int = 3):
     dep = types.ModuleType("fake_dependency")
 
     class MapleDependencyError(RuntimeError):
@@ -84,7 +91,7 @@ def fake_dependency(resolver_exc: str | None = None, api_ok: bool = True, source
 
     dep.MapleDependencyError = MapleDependencyError
     dep.MapleApiIncompatibleError = MapleApiIncompatibleError
-    dep.REQUIRED_MAPLE_API = (1, 2, 3)
+    dep.REQUIRED_MAPLE_API = tuple(range(requirement_count))
     dep.resolve_maple_dependency = resolve_maple_dependency
     dep.check_required_api = check_required_api
     return dep
@@ -195,6 +202,11 @@ class NativeAuditTests(unittest.TestCase):
             Requirement(API_MODULE, "x", ("a",), kind="class")
         with self.assertRaises(ValueError):
             Requirement(API_MODULE, "x", kind="class", fields=("a",))
+        with self.assertRaises(ValueError):
+            Requirement(API_MODULE, "x", ("a",), kind="optional_class")
+        with self.assertRaises(ValueError):
+            Requirement(API_MODULE, "x", kind="optional_class", fields=("a",))
+        self.assertEqual(Requirement(API_MODULE, "x", kind="optional_class").kind, "optional_class")
 
     def test_class_requirement_refuses_non_classes(self) -> None:
         def function():
@@ -202,53 +214,146 @@ class NativeAuditTests(unittest.TestCase):
         cases = {
             "none": (None, "not a class (got NoneType)"),
             "function": (function, "not a class (got function)"),
-            "instance": (genuine_class("WindowedVoxelColumnState")(), "not a class (got WindowedVoxelColumnState)"),
+            "instance": (genuine_class("CompactSedimentLedgerState")(),
+                         "not a class (got CompactSedimentLedgerState)"),
             "int": (3, "not a class (got int)"),
         }
         for label, (value, reason) in cases.items():
-            sys.modules[API_MODULE].WindowedVoxelColumnState = value
+            sys.modules[API_MODULE].CompactSedimentLedgerState = value
             with self.subTest(case=label):
-                result = check_masy_api((DENSE_PATH_TYPE,))[0]
+                result = check_masy_api((CLASS_REQ,))[0]
                 self.assertEqual(result["status"], "fail")
                 self.assertIn(reason, result["reason"])
 
     def test_class_requirement_accepts_re_exported_and_aliased_classes(self) -> None:
         cases = {
-            "defined_here": genuine_class("WindowedVoxelColumnState"),
-            "re_exported": genuine_class("WindowedVoxelColumnState", "native_implementation"),
-            "aliased": genuine_class("InternalColumn", "native_implementation"),
+            "defined_here": genuine_class("CompactSedimentLedgerState"),
+            "re_exported": genuine_class("CompactSedimentLedgerState", "native_implementation"),
+            "aliased": genuine_class("InternalLedger", "native_implementation"),
             "renamed_here": genuine_class("Other"),
             "nested": type("Outer", (), {"Inner": genuine_class("Inner")}).Inner,
         }
         for label, value in cases.items():
-            sys.modules[API_MODULE].WindowedVoxelColumnState = value
+            sys.modules[API_MODULE].CompactSedimentLedgerState = value
             with self.subTest(case=label):
-                result = check_masy_api((DENSE_PATH_TYPE,))[0]
+                result = check_masy_api((CLASS_REQ,))[0]
                 self.assertEqual(result["status"], "pass", result.get("reason"))
 
-    def test_missing_dense_path_type_is_incompatible_and_resolver_refusal_retained(self) -> None:
-        record, findings = self.audit(fake_dependency("identity"), REQUIREMENTS_PASS + (DENSE_PATH_TYPE,))
+    def test_missing_required_class_is_incompatible_and_resolver_refusal_retained(self) -> None:
+        record, findings = self.audit(fake_dependency("identity"), REQUIREMENTS_PASS + (CLASS_REQ,))
         self.assertEqual(record["syrup_required_api"]["status"], "pass")
         self.assertEqual(record["masy_required_api"][-1]["reason"], "attribute missing")
         self.assertEqual(self.codes(findings, "refusal"), ["native_resolver_refused"])
         self.assertEqual(self.codes(findings, "incompatible"), ["masy_required_api_missing"])
         detail = next(f["detail"] for f in findings if f["code"] == "masy_required_api_missing")
-        self.assertIn("WindowedVoxelColumnState: attribute missing (required by is_windowed_bed on every Dense bed "
-                      "path)", detail)
+        self.assertIn(f"CompactSedimentLedgerState: attribute missing (required by {CHECKPOINT_CALLERS})", detail)
         self.assertEqual(compute_verdict(findings), "refused")
         self.assertEqual(compute_verdict([f for f in findings if f["severity"] != "refusal"]), "incompatible")
 
-    def test_dense_path_type_is_distinct_from_the_optional_transaction_module(self) -> None:
-        sys.modules[API_MODULE].WindowedVoxelColumnState = genuine_class("WindowedVoxelColumnState")
-        record, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (DENSE_PATH_TYPE,))
+    def test_required_class_is_distinct_from_the_optional_transaction_module(self) -> None:
+        sys.modules[API_MODULE].CompactSedimentLedgerState = genuine_class("CompactSedimentLedgerState")
+        record, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (CLASS_REQ,))
         self.assertTrue(all(item["status"] == "pass" for item in record["masy_required_api"]))
         self.assertEqual(record["optional_modules"][0]["status"], "absent")
         self.assertEqual(self.codes(findings, "incompatible"), [])
         self.assertEqual(compute_verdict(findings), "not_transport_ready")
-        del sys.modules[API_MODULE].WindowedVoxelColumnState
-        _, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (DENSE_PATH_TYPE,))
+        del sys.modules[API_MODULE].CompactSedimentLedgerState
+        _, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (CLASS_REQ,))
         self.assertEqual(self.codes(findings, "incompatible"), ["masy_required_api_missing"])
         self.assertEqual([f["severity"] for f in findings if f["code"].startswith("optional_module_")], ["info"])
+
+    def test_optional_class_literally_absent_passes_with_unchanged_result_schema(self) -> None:
+        self.assertNotIn("WindowedVoxelColumnState", vars(sys.modules[API_MODULE]))
+        result = check_masy_api((OPTIONAL_WINDOWED,))[0]
+        self.assertEqual(set(result), RESULT_KEYS)
+        self.assertEqual((result["status"], result["kind"]), ("pass", "optional_class"))
+        record, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (OPTIONAL_WINDOWED,))
+        self.assertTrue(all(item["status"] == "pass" for item in record["masy_required_api"]))
+        self.assertEqual(self.codes(findings, "incompatible") + self.codes(findings, "refusal"), [])
+        self.assertEqual(compute_verdict(findings), "not_transport_ready")
+
+    def test_optional_class_accepts_genuine_re_exported_and_aliased_classes(self) -> None:
+        cases = {
+            "defined_here": genuine_class("WindowedVoxelColumnState"),
+            "re_exported": genuine_class("WindowedVoxelColumnState", "native_implementation"),
+            "aliased": genuine_class("InternalWindowedColumn", "native_implementation"),
+            "nested": type("Outer", (), {"Inner": genuine_class("Inner")}).Inner,
+        }
+        for label, value in cases.items():
+            sys.modules[API_MODULE].WindowedVoxelColumnState = value
+            with self.subTest(case=label):
+                result = check_masy_api((OPTIONAL_WINDOWED,))[0]
+                self.assertEqual(result["status"], "pass", result.get("reason"))
+
+    def test_optional_class_present_non_class_binding_is_incompatible(self) -> None:
+        def function():
+            return None
+        cases = {
+            "none": (None, "present but not a class (got NoneType)"),
+            "int": (3, "present but not a class (got int)"),
+            "function": (function, "present but not a class (got function)"),
+            "instance": (genuine_class("WindowedVoxelColumnState")(),
+                         "present but not a class (got WindowedVoxelColumnState)"),
+            "arbitrary_object": (object(), "present but not a class (got object)"),
+        }
+        for label, (value, reason) in cases.items():
+            sys.modules[API_MODULE].WindowedVoxelColumnState = value
+            with self.subTest(case=label):
+                result = check_masy_api((OPTIONAL_WINDOWED,))[0]
+                self.assertEqual((result["status"], result["reason"]), ("fail", reason))
+                _, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (OPTIONAL_WINDOWED,))
+                self.assertEqual(self.codes(findings, "incompatible"), ["masy_required_api_missing"])
+                detail = next(f["detail"] for f in findings if f["code"] == "masy_required_api_missing")
+                self.assertIn(f"WindowedVoxelColumnState: {reason} (required by is_windowed_bed", detail)
+
+    def test_module_getattr_cannot_manufacture_or_mask_the_optional_binding(self) -> None:
+        module = sys.modules[API_MODULE]
+        calls: list[str] = []
+
+        def __getattr__(name):  # noqa: N807 - PEP 562 module hook
+            calls.append(name)
+            if name == "WindowedVoxelColumnState":
+                return None  # a getattr-based lookup would see a present non-class here and fail
+            raise AttributeError(name)
+        module.__getattr__ = __getattr__
+        self.assertIsNone(module.WindowedVoxelColumnState)  # the hook is live for ordinary lookup
+        calls.clear()
+        result = check_masy_api((OPTIONAL_WINDOWED,))[0]
+        self.assertEqual(result["status"], "pass", result.get("reason"))
+        self.assertEqual(calls, [])
+        # A literal non-class binding still fails even if a hook would hand out a class.
+        module.__getattr__ = lambda name: genuine_class(name)
+        module.WindowedVoxelColumnState = None
+        result = check_masy_api((OPTIONAL_WINDOWED,))[0]
+        self.assertEqual((result["status"], result["reason"]), ("fail", "present but not a class (got NoneType)"))
+
+    def test_optional_class_module_import_failure_is_incompatible(self) -> None:
+        missing = Requirement("masy_test_no_such_module", "WindowedVoxelColumnState", kind="optional_class")
+        broken_name = "masy_test_broken_voxel_module"
+        broken = Requirement(broken_name, "WindowedVoxelColumnState", kind="optional_class")
+        sys.modules[broken_name] = None  # import_module raises ImportError, like a module whose import fails
+        try:
+            results = check_masy_api((missing, broken))
+            _, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (missing, broken))
+        finally:
+            sys.modules.pop(broken_name, None)
+        for result in results:
+            with self.subTest(module=result["module"]):
+                self.assertEqual(result["status"], "fail")
+                self.assertTrue(result["reason"].startswith("module import failed ("), result["reason"])
+        self.assertEqual(self.codes(findings, "incompatible"), ["masy_required_api_missing"])
+
+    def test_historical_9fabdca_unconditional_windowed_requirement(self) -> None:
+        """HISTORICAL contract, NOT the current table: at SYRUP 9fabdca `is_windowed_bed` imported
+        WindowedVoxelColumnState unconditionally, so MASY required it as a `class` and its absence was
+        incompatible. Kept to show the generic class kind still detects absence; the adopted SYRUP 2c60c73
+        caller makes the binding optional, and the current table entry is `optional_class`."""
+        _, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (HISTORICAL_WINDOWED,))
+        self.assertEqual(self.codes(findings, "incompatible"), ["masy_required_api_missing"])
+        _, findings = self.audit(fake_dependency(), REQUIREMENTS_PASS + (OPTIONAL_WINDOWED,))
+        self.assertEqual(self.codes(findings, "incompatible"), [])
+        table = {(r.module, r.attribute): r for r in MASY_REQUIRED_API}
+        self.assertEqual(table["maple.core.types.voxel", "WindowedVoxelColumnState"].kind, "optional_class")
 
 
 SURFACE_PREFIX = "masy_test_surface"
@@ -258,12 +363,13 @@ def _surface(requirements=MASY_REQUIRED_API) -> tuple[tuple[Requirement, ...], d
     """Synthetic modules (renamed under SURFACE_PREFIX) exposing exactly the
     names the real MASY table requires: keyword-only signatures for functions,
     dataclasses for types, plain classes defined in the renamed module for
-    classes. The negative tests remove one item at a time."""
+    classes and (present) optional classes. The negative tests remove one item
+    at a time."""
     renamed, modules = [], {}
     for req in requirements:
         name = f"{SURFACE_PREFIX}.{req.module}"
         module = modules.setdefault(name, types.ModuleType(name))
-        if req.kind == "class":
+        if req.kind in ("class", "optional_class"):
             setattr(module, req.attribute, genuine_class(req.attribute, name))
         elif req.kind == "dataclass":
             setattr(module, req.attribute, dataclasses.make_dataclass(req.attribute, [(f, Any) for f in req.fields]))
@@ -315,9 +421,10 @@ class RequiredSurfaceTests(unittest.TestCase):
 
     def test_table_names_the_dense_bed_path(self) -> None:
         table = {(r.module, r.attribute): r for r in MASY_REQUIRED_API}
+        self.assertEqual(table["maple.core.types.voxel", "VoxelColumnState"].kind, "class")
+        self.assertEqual(table["maple.core.types.voxel", "WindowedVoxelColumnState"].kind, "optional_class")
         for name in ("VoxelColumnState", "WindowedVoxelColumnState"):
-            self.assertEqual(table["maple.core.types.voxel", name].kind, "class")
-        self.assertIn("is_windowed_bed", table["maple.core.types.voxel", "WindowedVoxelColumnState"].required_by)
+            self.assertIn("is_windowed_bed", table["maple.core.types.voxel", name].required_by)
         expected = {
             "is_windowed_bed": ("state",), "bed_inventory": ("state",),
             "apply_bed_demand": ("state", "context", "demand"), "bed_by_cell_class": ("state",),
@@ -333,12 +440,102 @@ class RequiredSurfaceTests(unittest.TestCase):
         self.assertIn("mass_resolution_kg", table["maple_syrup.sediment_bed", "BedContext"].fields)
         self.assertNotIn("maple.water.windowed_transaction", {r.module for r in MASY_REQUIRED_API})
 
+    def test_table_names_the_checkpoint_ledger_with_both_callers(self) -> None:
+        table = {(r.module, r.attribute): r for r in MASY_REQUIRED_API}
+        ledger = table["maple.core.types.sediment_ledger", "CompactSedimentLedgerState"]
+        self.assertEqual((ledger.kind, ledger.parameters, ledger.fields), ("class", (), ()))
+        self.assertIn("maple_syrup.checkpoint._registry", ledger.required_by)
+        self.assertIn("maple_syrup.pond_checkpoint._native_registry", ledger.required_by)
+        self.assertEqual([r.attribute for r in MASY_REQUIRED_API if r.kind == "optional_class"],
+                         ["WindowedVoxelColumnState"])
+
     def test_complete_synthetic_surface_passes(self) -> None:
         self.assertEqual(self.failures(), [])
 
-    def test_missing_windowed_type_fails_the_dense_surface(self) -> None:
+    def test_literally_absent_windowed_binding_passes_the_dense_surface(self) -> None:
         del self.module("maple.core.types.voxel").WindowedVoxelColumnState
-        self.assertEqual(self.failures(), [("WindowedVoxelColumnState", "attribute missing")])
+        self.assertEqual(self.failures(), [])
+
+    def test_windowed_binding_present_but_not_a_class_fails(self) -> None:
+        self.module("maple.core.types.voxel").WindowedVoxelColumnState = None
+        self.assertEqual(self.failures(), [("WindowedVoxelColumnState", "present but not a class (got NoneType)")])
+
+    def test_windowed_binding_cannot_be_manufactured_by_module_getattr(self) -> None:
+        module = self.module("maple.core.types.voxel")
+        del module.WindowedVoxelColumnState
+
+        def __getattr__(name):  # noqa: N807 - PEP 562 module hook synthesizing a non-class
+            if name == "WindowedVoxelColumnState":
+                return None
+            raise AttributeError(name)
+        module.__getattr__ = __getattr__
+        self.assertIsNone(module.WindowedVoxelColumnState)
+        self.assertEqual(self.failures(), [])
+
+    def test_voxel_module_import_failure_fails_both_bindings(self) -> None:
+        sys.modules[f"{SURFACE_PREFIX}.maple.core.types.voxel"] = None  # import raises; tearDown pops it
+        failures = self.failures()
+        self.assertEqual([name for name, _ in failures], ["VoxelColumnState", "WindowedVoxelColumnState"])
+        for _, reason in failures:
+            self.assertTrue(reason.startswith("module import failed ("), reason)
+
+    def test_missing_dense_voxel_type_fails_even_with_windowed_absent(self) -> None:
+        module = self.module("maple.core.types.voxel")
+        del module.VoxelColumnState
+        self.assertEqual(self.failures(), [("VoxelColumnState", "attribute missing")])
+        del module.WindowedVoxelColumnState
+        self.assertEqual(self.failures(), [("VoxelColumnState", "attribute missing")])
+
+    def test_missing_compact_ledger_fails(self) -> None:
+        del self.module("maple.core.types.sediment_ledger").CompactSedimentLedgerState
+        self.assertEqual(self.failures(), [("CompactSedimentLedgerState", "attribute missing")])
+
+    def test_compact_ledger_bound_to_non_class_fails(self) -> None:
+        def CompactSedimentLedgerState(namespace):  # noqa: N802 - a factory is not a codec class
+            return None
+        module = self.module("maple.core.types.sediment_ledger")
+        for value, reason in ((CompactSedimentLedgerState, "not a class (got function)"),
+                              (None, "not a class (got NoneType)")):
+            module.CompactSedimentLedgerState = value
+            with self.subTest(reason=reason):
+                self.assertEqual(self.failures(), [("CompactSedimentLedgerState", reason)])
+
+    def test_compact_ledger_re_exported_or_aliased_passes(self) -> None:
+        module = self.module("maple.core.types.sediment_ledger")
+        for value in (genuine_class("CompactSedimentLedgerState", "native_implementation"),
+                      genuine_class("InternalCompactLedger", "native_implementation")):
+            module.CompactSedimentLedgerState = value
+            with self.subTest(value=value.__qualname__):
+                self.assertEqual(self.failures(), [])
+
+    def test_current_pair_shaped_audit(self) -> None:
+        """Shaped like current MAPLE 5b1a052 + SYRUP 2c60c73: neither Windowed nor the compact ledger is bound,
+        the native resolver refuses on metadata identity, SYRUP's own (dynamic-length) list passes."""
+        del self.module("maple.core.types.voxel").WindowedVoxelColumnState
+        del self.module("maple.core.types.sediment_ledger").CompactSedimentLedgerState
+        record, findings = run_native_audit(fake_dependency("identity", requirement_count=36), "/r/MAPLE",
+                                            masy_requirements=self.requirements, optional_modules=OPTIONAL_ABSENT)
+        self.assertEqual(record["native_resolver"]["status"], "refused")
+        self.assertIn("source root None", record["native_resolver"]["error"])
+        self.assertEqual(record["syrup_required_api"], {"call": "check_required_api()", "status": "pass",
+                                                        "requirement_count": 36})
+        items = {item["attribute"]: item for item in record["masy_required_api"]}
+        self.assertEqual(items["WindowedVoxelColumnState"]["status"], "pass")
+        self.assertEqual(set(items["WindowedVoxelColumnState"]), RESULT_KEYS)
+        self.assertEqual([name for name, item in items.items() if item["status"] != "pass"],
+                         ["CompactSedimentLedgerState"])
+        by_severity = {severity: [f["code"] for f in findings if f["severity"] == severity]
+                       for severity in ("refusal", "incompatible", "info")}
+        self.assertEqual(by_severity, {"refusal": ["native_resolver_refused"],
+                                       "incompatible": ["masy_required_api_missing"],
+                                       "info": ["optional_module_absent"]})
+        detail = next(f["detail"] for f in findings if f["code"] == "masy_required_api_missing")
+        self.assertIn("CompactSedimentLedgerState: attribute missing", detail)
+        self.assertIn("maple_syrup.checkpoint._registry", detail)
+        self.assertIn("maple_syrup.pond_checkpoint._native_registry", detail)
+        self.assertNotIn("WindowedVoxelColumnState", detail)
+        self.assertEqual(compute_verdict(findings), "refused")
+        self.assertEqual(compute_verdict([f for f in findings if f["severity"] != "refusal"]), "incompatible")
 
     def test_dense_voxel_type_bound_to_function_fails(self) -> None:
         def VoxelColumnState(mass_kg):  # noqa: N802 - a callable factory is not an isinstance target

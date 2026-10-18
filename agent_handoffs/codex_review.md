@@ -1,5 +1,13 @@
-# MASY-01 accepted
+# MASY-02B — accepted for read-only preflight only
 
-See [the complete task codex review](tasks/masy01_20261017/codex_review.md).
+Verified committed source adoption: SYRUP2c60c73b01fe1c0cef576987d52010e84058c568, following1f70a87c6c75b75189bd753bca69980e5dbda051; MAPLE5b1a052e1b9a9edfed0760152aac2a743813e79a. GitHub main matches. Owning-SYRUP package digest and all12 acceptance file hashes match committed contents; sources unchanged throughout this task.
 
-Read-only preflight and data-only clock contract published; 155 tests + 119 subtests and 32 independent probes pass. Current upstream pair remains unqualified: native metadata-origin refusal plus missing type imported by SYRUP Dense paths. No physical run or upstream modification.
+Actual caller review supports optional Windowed binding validation: literal absence or genuine class binding passes, but present-invalid binding and failed module import remain incompatible. No physical classifier, class synthesis, definition-name filter or private absence marker. Required Dense/helper behavior stays. Both actual checkpoint registries unconditionally import CompactSedimentLedgerState; current MAPLE lacks it. This existing upstream capability gap is now a separate explicit MASY required-class incompatibility, without bypassing either codec or the metadata refusal.
+
+Scoped diff/AST proof: only six authorized product files; all other functions, generic class/dataclass/callable behavior, requirement validation, report/filter/schema, native resolver/provenance/source/dirty/origin/distribution guards and exact clocks unchanged. Only the optional_class branch is added to the checker. Canonical native-object/state validation remains future adapter work, not guaranteed by name/signature checks.
+
+Independent verification:170 full synthetic stdlib tests pass; actual current-pair SYRUP CPU regression123pass/3skip. Final actual-root preflight exit2/refused: native36 API items pass, optional Windowed passes despite genuine absence, sole failed MASY item CompactSedimentLedgerState (attribute missing, both native checkpoint callers), absent transaction info, separate source_root=None refusal. All before/after source observations agree, no wrong module origin. No false transport-ready verdict.
+
+Design findings D1(status/filter scope),D2(binding-only/generic behavior),D3(historical/current wording) and implementation findings I1(source policy),I2(actual observation receipts),I3(editorial placeholder/list formatting) closed. Exact findings and dispositions: task/design_review.md, implementation_review.md, correction_01/, acceptance.json. Final docs-only correction and Codex receipt update leave tested production code/tests exact; no repeated code tests required.
+
+Known upstream checkpoint/provenance blockers remain unresolved and block coupled/restart acceptance. Other native registry imports are not newly exhaustively qualified; no transport/backend/performance claim. No upstream modification, install, simulation/GPU run, MASY commit or push. Task's owning-SYRUP follow-up proposal is syrup_checkpoint_handoff.md. Acceptance applies only to truthful read-only preflight behavior.

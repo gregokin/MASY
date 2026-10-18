@@ -1,0 +1,16 @@
+{
+  "changes": [
+    "implementation/IMPLEMENTATION_REPORT.md",
+    "implementation/README.md",
+    "implementation/docs/preflight.md",
+    "implementation/docs/upstream_interface_audit.md",
+    "implementation/src/masy/contracts.py",
+    "implementation/tests/README.md",
+    "implementation/tests/test_contracts.py"
+  ],
+  "allowed_files_only": true,
+  "all_other_functions_ast_identical": true,
+  "existing_requirement_validation_ast_identical": true,
+  "only_added_requirement_failure_optional_branch": true,
+  "root_product_baseline_unchanged": true
+}

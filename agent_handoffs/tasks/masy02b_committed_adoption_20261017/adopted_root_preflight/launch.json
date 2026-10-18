@@ -1,0 +1,26 @@
+{
+  "utc": "2026-10-17T22:23:04.565016+00:00",
+  "command": [
+    "/home/okin/MAPLE/.venv/bin/python",
+    "-B",
+    "-I",
+    "/home/okin/MASY/tools/masy_preflight.py",
+    "--config",
+    "/home/okin/MASY/examples/preflight.example.toml",
+    "--run-dir",
+    "/home/okin/MASY/agent_handoffs/tasks/masy02b_committed_adoption_20261017/adopted_root_preflight/audit"
+  ],
+  "cwd": "/home/okin/MASY",
+  "pid": 3,
+  "start_ticks": "28747558",
+  "timeout_s": 180,
+  "environment_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "CUDA_VISIBLE_DEVICES": "",
+    "JAX_PLATFORMS": "cpu",
+    "NUMBA_DISABLE_CUDA": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "TMPDIR": "/home/okin/MASY/agent_handoffs/tasks/masy02b_committed_adoption_20261017/adopted_root_preflight/tmp"
+  }
+}

@@ -30,7 +30,9 @@ Known carry-over limitations: conservative SYRUP is separate from its default le
 
 ---
 
-## MASY-01 current-source finding — October 17, 2026
+## MASY-01 current-source finding — October 17, 2026 (historical: observed at SYRUP `9fabdca`)
+
+*Historical.* Everything in this section, including its "current pair", "33 items" and present-tense wording, describes MAPLE `5b1a052` + SYRUP `9fabdca`. The Windowed import mismatch was resolved by owning SYRUP at `2c60c73`; see the MASY-02B section below.
 
 Appended by MASY-01; the October 16 observations above are kept unchanged as history and are not restated as current acceptance. Read-only source and interface observation only; nothing here is runtime, physical or transport qualification.
 
@@ -54,3 +56,32 @@ The import runs before the column is inspected. `bed_inventory`, `apply_bed_dema
 - The requirement is tied to the observed SYRUP caller. An accepted owning-SYRUP design proposal (design-only, under independent review; no upstream file is changed by MASY-01) would recognize the genuine Dense MAPLE class without importing an unavailable optional Windowed class, refuse unknown/foreign representations, and keep the deep-storage/source/transaction guards unchanged. If such a change is committed, a newly qualified MASY requirement update reflects that actual source. This is not permission to fake the class or to bypass private, deep-storage or source guards.
 
 **Still open.** Which sources a later actual run uses (committed sources, or explicitly labelled development snapshots) is pending with the user under AGENTS.md. Physical qualification needs a declared qualified source pair, an immutable runtime, real bed/clock/cache/routing adapters and actual conservative tests. No code is physically qualified.
+
+---
+
+## MASY-02B committed adoption — October 17, 2026
+
+Appended by MASY-02B. The sections above are history and are not restated as current acceptance. This is source and interface observation plus a MASY requirement-table update. It is not runtime, physical, restart, backend, performance or transport qualification.
+
+**Committed pair.** MAPLE `5b1a052e1b9a9edfed0760152aac2a743813e79a` (package `maple`, 334 files, digest `97b3df72336e6313e8d89d0b7b20784b9a0f001e30a4fc3035360e6de6068612`) and SYRUP `2c60c73b01fe1c0cef576987d52010e84058c568` (package `maple_syrup`, 63 files, digest `fc789e240f7b0061e9ac80bc9078b7fe42d302fc8309ee5746073455f7f9f6bb`). Both are clean upstream commits; SYRUP's is committed and pushed, following `1f70a87`. The SYRUP package digest equals the final MASY-02A integration digest, and Codex verified that the committed tree matches the MASY-02A acceptance file hashes. MASY changed no upstream file.
+
+**Adopted Windowed classifier.** SYRUP `sediment_bed.py` (SHA256 `0015f7fe…`, lines 613–644) now imports `maple.core.types.voxel` normally and reads the literal module namespace. A truly absent `WindowedVoxelColumnState` permits genuine Dense. `VoxelColumnState` is required. A present non-class binding of either name raises `BedIntegrationError` on every bed path, and an import failure of the module propagates. Exact class identity is required, so subclasses and foreign objects are refused. MASY now lists Windowed as an `optional_class` requirement (absent, or bound to a class) instead of a required class. The MASY-01 missing-Windowed incompatibility therefore no longer applies to this pair. MASY applies no classifier and constructs no column.
+
+**Compact-ledger checkpoint blocker.** SYRUP `checkpoint.py:179-190` (`_registry`) and `pond_checkpoint.py:694-698` (`_native_registry`) both import `maple.core.types.sediment_ledger.CompactSedimentLedgerState` unconditionally, so both native restart codecs need it, Dense beds included. Current MAPLE `5b1a052` lacks it, and Codex independently reproduced the failure in both registries without transport or arrays. SYRUP's own `REQUIRED_MAPLE_API` does not list it. The class is now a required class in the MASY table, naming both callers. Its absence is `masy_required_api_missing` (`incompatible`). The native codec is not made optional or bypassed.
+
+**Native metadata refusal still unresolved.** SYRUP's unmodified `resolve_maple_dependency` still refuses the live current MAPLE (`source_root=None`); MASY reports this and does not repair it. No combined runtime or adapter exists. MASY reads the actual length of SYRUP's required list and hardcodes no count; 36 is the value observed in Codex's receipt.
+
+**Verified candidate preflight.** Codex ran this MASY candidate against the actual clean current committed sources. The final adopted-root preflight confirmed the same result; receipts are in [agent_handoffs/verification.md](../agent_handoffs/verification.md). Observed:
+
+- verdict `refused` (exit 2);
+- MAPLE `5b1a052e` and SYRUP `2c60c73` observations unchanged, no wrong module origins;
+- SYRUP's own API list (36 items) passes;
+- the optional Windowed requirement passes, with the class genuinely absent;
+- the only failed MASY item is `CompactSedimentLedgerState` (attribute missing, both checkpoint callers named);
+- optional transaction `info`;
+- native resolver refusal (`source_root=None`), independent of the above;
+- `transport_ready=false`, with all standing blocking findings.
+
+Codex's full stdlib candidate suite also passed (170 tests, exit 0). Those are synthetic unit tests, not physical, transport or GPU tests. No transport or restart was qualified.
+
+No pair is reported ready. Under AGENTS.md, a new run selects the current local committed HEAD of each configured upstream, subject to compatibility and immutable-runtime qualification; a development snapshot requires an explicit selection with recorded dirty deltas. No run has been selected or launched. MASY now has a Git baseline (`d0c2b71`), but its source observer still uses file manifests and an explicit lock, not Git binding.

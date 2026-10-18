@@ -12,8 +12,9 @@ Three independent records, all retained in the report:
    (must be non-class callables with the named parameters), the shared
    state/handoff dataclasses (must be dataclass types declaring the named
    fields) and genuine classes (the public module attribute must bind a real
-   class, including re-exports/aliases, e.g. an `isinstance` target of the
-   observed SYRUP Dense path; module origins are checked separately),
+   class, including re-exports/aliases, e.g. the class bindings the SYRUP
+   bed classifier and checkpoint registries use; module origins are checked
+   separately),
    inspected by name only. Nothing is called or constructed and no
    configured value (e.g. the reroute trigger) is read. Passing is interface
    evidence, never physical or transport qualification. The SYRUP native list
@@ -21,10 +22,14 @@ Three independent records, all retained in the report:
 
 Optional modules (the windowed paired transaction) are located with
 `importlib.util.find_spec`, not imported; absence is informational and does
-not fail the dense audit. A TYPE that the observed SYRUP imports on every bed
-path (`WindowedVoxelColumnState`, finding 11) is a required class instead,
-whatever its name: requiring it does not make Windowed storage required or
-supported.
+not fail the dense audit. An optional class BINDING that the SYRUP bed
+classifier reads on every bed path (`WindowedVoxelColumnState`) is an
+`optional_class` requirement: the module must import, and the literal module
+namespace must either lack the name or bind it to a class; a present non-class
+binding fails, because the caller refuses every bed (Dense too) on it. This
+does not make Windowed storage required or supported. A class that both SYRUP
+checkpoint registries import unconditionally (`CompactSedimentLedgerState`) is
+a required class, Dense or not.
 
 `crosscheck_provenance` compares the stdlib observation with SYRUP's
 `source_tree_digest` / `scoped_git_status`; any disagreement refuses.
@@ -54,7 +59,7 @@ __all__ = [
 MAX_MESSAGE = 4000
 
 
-REQUIREMENT_KINDS = ("callable", "dataclass", "class")
+REQUIREMENT_KINDS = ("callable", "dataclass", "class", "optional_class")
 
 
 @dataclass(frozen=True)
@@ -63,7 +68,11 @@ class Requirement:
     in `parameters`. `kind="dataclass"`: a dataclass type declaring every
     name in `fields`. `kind="class"`: the public binding `module.attribute`
     is a class, whatever name it was defined under (re-exports and aliases
-    pass; no parameters or fields). `required_by` names the observed caller, for the report. Names
+    pass; no parameters or fields). `kind="optional_class"`: the module
+    imports, and `attribute` is EITHER literally absent from `vars(module)`
+    (module `__getattr__` cannot supply it) OR bound there to a class (re-exports
+    and aliases pass); a present non-class binding fails; no parameters or
+    fields. `required_by` names the observed caller, for the report. Names
     only; no call, construction, instance check or value read."""
 
     module: str
@@ -111,16 +120,26 @@ MASY_REQUIRED_API: tuple[Requirement, ...] = (
     Requirement("maple_syrup.sediment_bed", "BedContext", kind="dataclass", fields=(
         "geometry", "grain_classes", "mass_resolution_kg", "topographic_commit_spec", "initial_available_fraction",
     )),
-    # Dense bed path (finding 11). SYRUP 9fabdca sediment_bed.py:610-613: `is_windowed_bed` runs
-    # `from maple.core.types.voxel import WindowedVoxelColumnState` before looking at the column, and
-    # bed_inventory / apply_bed_demand / bed_by_cell_class / bed_voxel_count / bed_already_committed all
-    # call it first. So the type is required by the CURRENT SYRUP caller even for Dense beds; this does not
-    # make Windowed storage required or supported. Re-derive if an owning-SYRUP change removes the import.
+    # Dense bed path. History (finding 11): at SYRUP 9fabdca, sediment_bed.py:610-613 `is_windowed_bed` ran
+    # `from maple.core.types.voxel import WindowedVoxelColumnState` unconditionally, so MASY required it as a
+    # class. The owning-SYRUP change committed at 2c60c73 (sediment_bed.py:613-644, `_maple_voxel_class`)
+    # imports the module (import failure propagates), treats Windowed as optional by literal `vars(module)`
+    # membership, requires VoxelColumnState, and raises BedIntegrationError for a present non-class binding
+    # of either name on every bed path, Dense included. bed_inventory / apply_bed_demand / bed_by_cell_class /
+    # bed_voxel_count / bed_already_committed still call it first. Hence optional_class, not deletion.
     Requirement("maple.core.types.voxel", "VoxelColumnState", kind="class",
-                required_by="the genuine Dense voxel column type carried in BedState.voxel_column"),
-    Requirement("maple.core.types.voxel", "WindowedVoxelColumnState", kind="class",
-                required_by="maple_syrup.sediment_bed.is_windowed_bed (sediment_bed.py:610-613 at SYRUP 9fabdca) "
-                            "imports it unconditionally on every Dense bed path; not a Windowed-storage requirement"),
+                required_by="the genuine Dense voxel column type carried in BedState.voxel_column; "
+                            "maple_syrup.sediment_bed.is_windowed_bed (required binding)"),
+    Requirement("maple.core.types.voxel", "WindowedVoxelColumnState", kind="optional_class",
+                required_by="maple_syrup.sediment_bed.is_windowed_bed: optional binding; literal absence permits "
+                            "Dense; a present non-class binding refuses every bed; not a Windowed-storage requirement"),
+    # Restart codecs: SYRUP checkpoint.py:179-190 `_registry` and pond_checkpoint.py:694-698 `_native_registry`
+    # (2c60c73) both run `from maple.core.types.sediment_ledger import CompactSedimentLedgerState, ...` with no
+    # condition, for Dense beds too. Ordinary import-from lookup, so the plain `class` check matches them.
+    # Passing does not qualify restart (native_restart_unqualified stays).
+    Requirement("maple.core.types.sediment_ledger", "CompactSedimentLedgerState", kind="class",
+                required_by="maple_syrup.checkpoint._registry and maple_syrup.pond_checkpoint._native_registry "
+                            "(unconditional import; restart needs these native codecs even with Dense)"),
     Requirement("maple_syrup.sediment_bed", "is_windowed_bed", ("state",)),
     Requirement("maple_syrup.sediment_bed", "bed_inventory", ("state",)),
     Requirement("maple_syrup.sediment_bed", "apply_bed_demand", ("state", "context", "demand")),
@@ -185,6 +204,14 @@ def _requirement_failure(req: Requirement) -> str | None:
         module = importlib.import_module(req.module)
     except Exception as exc:  # noqa: BLE001 - recorded verbatim
         return f"module import failed ({_message(exc)})"
+    if req.kind == "optional_class":
+        # Literal namespace membership, as the SYRUP caller decides absence; never hasattr/getattr, so a
+        # module __getattr__ is not consulted. Absent or class-bound passes.
+        namespace = vars(module)
+        if req.attribute not in namespace:
+            return None
+        value = namespace[req.attribute]
+        return None if isinstance(value, type) else f"present but not a class (got {type(value).__name__})"
     if not hasattr(module, req.attribute):
         return "attribute missing"
     obj = getattr(module, req.attribute)
