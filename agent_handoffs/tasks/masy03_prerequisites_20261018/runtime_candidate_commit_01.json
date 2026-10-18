@@ -1,0 +1,24 @@
+{
+  "utc": "2026-10-18T02:50:36.311317+00:00",
+  "head": "446b2aff943747bc5de67cdb452874d7b7d73b51",
+  "branch": "masy/prerequisites-20261018",
+  "root": "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/masy",
+  "files": [
+    "README.md",
+    "docs/preflight.md",
+    "docs/runtime.md",
+    "docs/upstream_interface_audit.md",
+    "examples/runtime.example.toml",
+    "pyproject.toml",
+    "src/masy/__init__.py",
+    "src/masy/contracts.py",
+    "src/masy/runtime.py",
+    "src/masy/runtime_worker.py",
+    "tests/README.md",
+    "tests/test_contracts.py",
+    "tools/masy_runtime.py"
+  ],
+  "qualification_candidate": true,
+  "main_updated": false,
+  "pushed": false
+}

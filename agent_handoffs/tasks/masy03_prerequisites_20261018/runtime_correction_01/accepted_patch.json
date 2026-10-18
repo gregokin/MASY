@@ -1,0 +1,7 @@
+{
+  "schema": "masy.source_patch_receipt.v1",
+  "original_file": "accepted.diff",
+  "original_sha256": "ebe8cec1e9cd68620f425ae71a7ef154d783051acf941af615d0ed0ef7c9bf65",
+  "encoding": "utf-8",
+  "unified_diff": "--- component candidate\n+++ Claude metadata correction\n@@ -885,7 +885,7 @@\n         canonical = str(Version(version)) if isinstance(version, str) else None\n     except InvalidVersion:\n         canonical = None\n-    if canonical != version or not _SAFE_COMPONENT.match(version):\n+    if not isinstance(version, str) or canonical != version or not _SAFE_COMPONENT.match(version):\n         raise RuntimeRefusal(\"pyproject_version_invalid\", f\"{where}: version {version!r} is not a canonical PEP 440 \"\n                              \"version\")\n \n"
+}

@@ -1,0 +1,10 @@
+{
+  "finding": "B3 missing static version raised unstructured TypeError",
+  "changed_functions": [
+    "validate_static_project"
+  ],
+  "before_sha256": "79d7922497a9a1366b2f11d2b9609b31bbc4ce73dd3a7dcaf097276c8b36ba36",
+  "after_sha256": "3eecfd189d096a0fe8f14247096ff4445a0d82620caa61d65184477ae24ed570",
+  "tests_unchanged": true,
+  "accepted_for_retest": true
+}

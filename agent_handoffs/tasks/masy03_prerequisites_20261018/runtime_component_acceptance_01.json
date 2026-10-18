@@ -1,0 +1,79 @@
+{
+  "utc": "2026-10-18T02:50:34.234744+00:00",
+  "status": "components accepted for isolated committed-source qualification; not final runtime acceptance",
+  "files": {
+    "src/masy/runtime.py": {
+      "sha256": "79d7922497a9a1366b2f11d2b9609b31bbc4ce73dd3a7dcaf097276c8b36ba36",
+      "size": 131507
+    },
+    "src/masy/runtime_worker.py": {
+      "sha256": "5d6bf66576f3e52a7f59dd2515209b3ebde5f8f09fcf1784671d278e5569436e",
+      "size": 33735
+    },
+    "tools/masy_runtime.py": {
+      "sha256": "57ed19bb80094a1818ee0bcd2bfbab52f6f22dc00b6a58a69abf1b89cc619cf9",
+      "size": 10005
+    },
+    "docs/runtime.md": {
+      "sha256": "e672fd737598867b54d62c8bbfdb8a74b8bb2d74d3c6912a583923a075a1fcf8",
+      "size": 12308
+    },
+    "examples/runtime.example.toml": {
+      "sha256": "8376962bfb452b1fd9bc840d2236f5839398307c5b1d9c006b5fbfc05262b773",
+      "size": 1780
+    },
+    "pyproject.toml": {
+      "sha256": "22b55514bfc1386ad9a6e369ceeb0126b82d7646cd37d791e4bb094f3153981d",
+      "size": 1063
+    },
+    "src/masy/__init__.py": {
+      "sha256": "2cfdf467e9ecf6dbb04d205a56af2c2289ed82d136abc5b14690c903370f2522",
+      "size": 540
+    },
+    "src/masy/contracts.py": {
+      "sha256": "e68c9368a1402ce856297fe34b81530e5cbee35dd4373b9ced2928660b454f1f",
+      "size": 20616
+    },
+    "tests/test_contracts.py": {
+      "sha256": "09100c4647c8f7f5bba076aa8faecc8d551aaa556b1336a565f3120504f98f66",
+      "size": 38234
+    },
+    "README.md": {
+      "sha256": "0ff078d0aca7c1b8798408f2fbd255ed3b81557dfcb24864193fac42db8f8055",
+      "size": 8660
+    },
+    "docs/preflight.md": {
+      "sha256": "7f3733b4399e09fd0a0f802b73b7b3612b75c4e3efc33e24ed36577648ab6760",
+      "size": 31024
+    },
+    "docs/upstream_interface_audit.md": {
+      "sha256": "06b9b6f4a1cac044f97601ce05ec13da3baaabe1baffe3fc1ae41e53268c338e",
+      "size": 14678
+    },
+    "tests/README.md": {
+      "sha256": "9816ad06b0b20359b422b3ac23992b6cea78e1d3cbd941c9020298bdee37e3ef",
+      "size": 1731
+    }
+  },
+  "stdlib_tests": {
+    "passed": 175,
+    "skipped": 0,
+    "receipt": "runtime_units_01/verification.json"
+  },
+  "component_checks": [
+    "codex_runtime_source_probe_02.json",
+    "hash_integrity_probe_02.json",
+    "runtime_bootstrap_preload_probe.json"
+  ],
+  "B1": "closed by six independent mutation/refusal checks",
+  "B2": "closed by clean fixture capture/seal/verify/reuse; bool True explicitly bounded to MAX_SMALL_FILE_BYTES",
+  "legacy_function_class_AST_unchanged": true,
+  "scope_disposition": "contracts module docstring updated with TABLE to avoid describing superseded rule; editorial only, accepted",
+  "pending": [
+    "full new runtime tests",
+    "actual prepare and repeated verify",
+    "offline source verification",
+    "frozen-origin Dense checkpoints",
+    "final adoption/publication"
+  ]
+}

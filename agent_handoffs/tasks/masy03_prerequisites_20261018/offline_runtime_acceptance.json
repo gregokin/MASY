@@ -1,0 +1,72 @@
+{
+  "utc": "2026-10-18T02:54:41.147311+00:00",
+  "lock_id": "e13050d98fda6617336c0222e070c2615464ac1f4c8fd2c0524137d95cf830b6",
+  "lock_sha256": "5f0133fad78a55000dc93c90353d64c7677a2df48164dabf90748adb81b5cd1e",
+  "both_original_configured_upstream_roots_absent_before_and_after": true,
+  "qualified_scope": "CPU source/runtime identity and native interface delivery only",
+  "transport_ready": false,
+  "verifications": [
+    {
+      "label": "runtime_verify_offline_both_01",
+      "verdict": "runtime_verified",
+      "run_dir": "/home/okin/MASY/runs/runtime-store/runs/verify-20261018T025241Z-3-e96c1d32",
+      "launch": {
+        "utc": "2026-10-18T02:52:41.691916+00:00",
+        "command": [
+          "/home/okin/MAPLE/.venv/bin/python",
+          "-B",
+          "-I",
+          "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/masy/tools/masy_runtime.py",
+          "verify",
+          "--store",
+          "/home/okin/MASY/runs/runtime-store",
+          "--lock",
+          "e13050d98fda6617336c0222e070c2615464ac1f4c8fd2c0524137d95cf830b6"
+        ],
+        "pid": 3,
+        "start_ticks": "30365270",
+        "timeout_s": 240
+      },
+      "exit": {
+        "utc": "2026-10-18T02:52:47.696956+00:00",
+        "exit_code": 0,
+        "reaped": true,
+        "termination_reason": null,
+        "elapsed_s": 6.0058549490058795,
+        "pid": 3,
+        "start_ticks": "30365270"
+      }
+    },
+    {
+      "label": "runtime_verify_offline_both_02",
+      "verdict": "runtime_verified",
+      "run_dir": "/home/okin/MASY/runs/runtime-store/runs/verify-20261018T025319Z-3-bae6e7ac",
+      "launch": {
+        "utc": "2026-10-18T02:53:19.248413+00:00",
+        "command": [
+          "/home/okin/MAPLE/.venv/bin/python",
+          "-B",
+          "-I",
+          "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/masy/tools/masy_runtime.py",
+          "verify",
+          "--store",
+          "/home/okin/MASY/runs/runtime-store",
+          "--lock",
+          "e13050d98fda6617336c0222e070c2615464ac1f4c8fd2c0524137d95cf830b6"
+        ],
+        "pid": 3,
+        "start_ticks": "30369026",
+        "timeout_s": 240
+      },
+      "exit": {
+        "utc": "2026-10-18T02:53:24.251850+00:00",
+        "exit_code": 0,
+        "reaped": true,
+        "termination_reason": null,
+        "elapsed_s": 5.004208653990645,
+        "pid": 3,
+        "start_ticks": "30369026"
+      }
+    }
+  ]
+}

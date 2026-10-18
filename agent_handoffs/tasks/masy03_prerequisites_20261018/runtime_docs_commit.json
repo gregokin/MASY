@@ -1,0 +1,12 @@
+{
+  "utc": "2026-10-18T03:02:50.853982+00:00",
+  "head": "328b59721a02d86d2954be2a459ef85e4add8be1",
+  "files": [
+    "README.md",
+    "docs/runtime.md",
+    "docs/preflight.md",
+    "docs/upstream_interface_audit.md",
+    "tests/README.md"
+  ],
+  "all_tested_python_and_project_bytes_unchanged": true
+}

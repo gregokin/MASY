@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "implementation/CHECKPOINT_CORRECTION_REPORT.md",
+    "implementation/tests/checkpoint_compat/test_current_dense_restart.py",
+    "implementation/tests/checkpoint_compat/test_registries.py"
+  ],
+  "only_two_test_files_and_report": true
+}

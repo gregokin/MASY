@@ -1,0 +1,55 @@
+{
+  "utc": "2026-10-18T02:18:40.322943+00:00",
+  "status": "accepted_native_checkpoint_compatibility",
+  "base_syrup": "2c60c73b01fe1c0cef576987d52010e84058c568",
+  "current_maple": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+  "reference_maple_package_digest": "24c6e1478ed732df22f448eddf8cb16c3b72f2406dc9b37a9414cee9a2d1a9ce",
+  "results": {
+    "checkpoint_current_02": {
+      "passed": 291,
+      "skipped": 8,
+      "total": 299
+    },
+    "checkpoint_reference_02": {
+      "passed": 404,
+      "skipped": 6,
+      "total": 410
+    }
+  },
+  "production_ast_proof": {
+    "src/maple_syrup/checkpoint.py": {
+      "modified": [
+        "_registry"
+      ],
+      "new": [
+        "_native_ledger_types"
+      ],
+      "sha256": "df877085ca5a150ff1aeb512abe7e9f8ff351297efa401d7e68a7b5f69f0d3df"
+    },
+    "src/maple_syrup/pond_checkpoint.py": {
+      "modified": [
+        "_native_registry"
+      ],
+      "new": [],
+      "sha256": "94cd2339566646ba44f2015dad13a67194c26a8dd3cc85b56916f62d2b4a704f"
+    }
+  },
+  "accepted_files": {
+    "docs/current_maple_checkpoint_compatibility.md": "b0fdb989edf4d52469091ff92df074df5515a93d09c8540c81c856c4d993318f",
+    "src/maple_syrup/checkpoint.py": "df877085ca5a150ff1aeb512abe7e9f8ff351297efa401d7e68a7b5f69f0d3df",
+    "src/maple_syrup/pond_checkpoint.py": "94cd2339566646ba44f2015dad13a67194c26a8dd3cc85b56916f62d2b4a704f",
+    "tests/checkpoint_compat/checkpoint_compat_support.py": "229d4becf4fbdc77e46f99ad1ba434dd40600c26455398cea6f9443633d09a6a",
+    "tests/checkpoint_compat/conftest.py": "540f2062f053ffd7b22e223119ad13fad936025d3fba9cd563c69c87fff98ff5",
+    "tests/checkpoint_compat/test_current_dense_restart.py": "152cab098cf59366201d37bbcf3c55dd479b82bc584e487ad1f4cebe618e392d",
+    "tests/checkpoint_compat/test_reference_compact.py": "0c8226d1d1d210a6979e28b583fac75efa645530cbad195421f2c8afdc789333",
+    "tests/checkpoint_compat/test_registries.py": "ee7be7a1513e235833058d0a7bed3cf31b50ef06c4bc2d4bfcefdbe9f82922b5",
+    "tests/masy_compat/test_pond_windowed_compat.py": "8eb0c922bf9f416a22dfb410ec39b9bffd823bdeedb6a67ddb126f3a4384f46e"
+  },
+  "findings": {
+    "C1": "closed: corrected synthetic module self-comparison",
+    "C2": "closed: only documented derived surface cache excluded; all physical comparisons exact"
+  },
+  "active_upstream_adopted": false,
+  "gpu_or_combined_restart_qualified": false,
+  "verification_documentation_update_utc": "2026-10-18T02:19:15.228560+00:00"
+}

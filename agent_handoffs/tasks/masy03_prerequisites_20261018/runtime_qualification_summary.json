@@ -1,0 +1,189 @@
+{
+  "utc": "2026-10-18T03:06:43.145182+00:00",
+  "status": "accepted at adopted main328b597; final bookkeeping HEAD qualification pending",
+  "main_prepare": {
+    "evidence_path": "/home/okin/MASY/runs/runtime-store/runs/prepare-20261018T030307Z-3-cb4ebfa2/evidence.json",
+    "exit_code": 0,
+    "heads": {
+      "maple": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+      "masy": "328b59721a02d86d2954be2a459ef85e4add8be1",
+      "syrup": "b4ee14e5bf37814efb0d754de17b7ea604b1cd74"
+    },
+    "lock_id": "f577f90885872ae8cec1216cb01191a6ba11439f9f95201b59387fd1d58af7a9",
+    "lock_path": "/home/okin/MASY/runs/runtime-store/locks/f577f90885872ae8cec1216cb01191a6ba11439f9f95201b59387fd1d58af7a9.json",
+    "lock_reused": false,
+    "log_failures": [],
+    "roots": {
+      "maple": "/home/okin/MAPLE",
+      "masy": "/home/okin/MASY",
+      "syrup": "/home/okin/SYRUP"
+    },
+    "run_dir": "/home/okin/MASY/runs/runtime-store/runs/prepare-20261018T030307Z-3-cb4ebfa2",
+    "schema": "masy.runtime_output.v1",
+    "selection": "current_local_committed_head",
+    "transport_entry_point": null,
+    "transport_ready": false,
+    "unimplemented": [
+      "wind_adapter",
+      "water_adapter",
+      "event_schedule_runner",
+      "transition_accounting",
+      "combined_restart",
+      "routing_reentry_adapter",
+      "cache_invalidation_adapter",
+      "wind_mobile_completion",
+      "case_input_hashing",
+      "windowed_storage_qualification",
+      "gpu_and_venv_cupy_qualification",
+      "performance_qualification",
+      "physical_science_qualification"
+    ],
+    "verdict": "runtime_locked"
+  },
+  "source_packages": {
+    "maple": {
+      "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+      "digest_sha256": "97b3df72336e6313e8d89d0b7b20784b9a0f001e30a4fc3035360e6de6068612",
+      "dir": "/home/okin/MASY/runs/runtime-store/objects/maple-materialized/acc587477ed92303158627473018f36d7762add0fa59bfa95b041671557cd91d/source/src/maple",
+      "file_count": 334,
+      "total_bytes": 8211382
+    },
+    "maple_syrup": {
+      "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+      "digest_sha256": "6973938042b878449a7dce5744bef7aecc72cc73adda2dc73672b8ef149dc517",
+      "dir": "/home/okin/MASY/runs/runtime-store/objects/sources/8fb0866e5c5a289cd23e47724cd1941975d2b95e5708266bfbe98d465c272bac/source/src/maple_syrup",
+      "file_count": 63,
+      "total_bytes": 2630668
+    },
+    "masy": {
+      "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+      "digest_sha256": "cd7ae485b3d88c527c92b0fadca7996185cd6d83e63139d47e636af0aeb11dff",
+      "dir": "/home/okin/MASY/runs/runtime-store/objects/sources/97a22e13e6ef51369c7dd7256fd8467793d264a756121b9d0daed9519d0b10f3/source/src/masy",
+      "file_count": 11,
+      "total_bytes": 269506
+    }
+  },
+  "selected_distributions": {
+    "maple": {
+      "files": {
+        "__editable__.maple-0.0.1.pth": "b83c1372be67fa2da2d7f6ead5c6e5fe491a93f7a7ba18e23da941701fd0239e",
+        "maple-0.0.1.dist-info/INSTALLER": "e66ba84afac98c773baa43eccb1a2daf63becd64d7af2c0f2c5c18f5d833fec5",
+        "maple-0.0.1.dist-info/METADATA": "7a40743d1ac71ab26c85c1499489be2615885680962e90490cdb7b4b284856aa",
+        "maple-0.0.1.dist-info/RECORD": "8205abb0cb243583d081840c2843072d67148eb2ef1fc782b7f4208150bd57aa",
+        "maple-0.0.1.dist-info/WHEEL": "61532836a2b3111b7ec23519c09df7c41180c27165fb872a6d8913b566b88ad1",
+        "maple-0.0.1.dist-info/direct_url.json": "890f5597bb45ecdc103f4f929383201969c1b04bf00f98c0ebcd447c99de7160",
+        "maple-0.0.1.dist-info/entry_points.txt": "9430d41e28e96a53fa455b84c6a4b6122484d21e6ce8151c6c40854db190c870",
+        "maple-0.0.1.dist-info/top_level.txt": "08ab2a56c8503c742c762013475ad2955377d2001a9fc03e4e8bc22e09af0844"
+      },
+      "location": "/home/okin/MASY/runs/runtime-store/objects/maple-materialized/acc587477ed92303158627473018f36d7762add0fa59bfa95b041671557cd91d/editable",
+      "name": "maple",
+      "version": "0.0.1"
+    },
+    "maple-syrup": {
+      "files": {
+        "maple_syrup-0.0.1.dev0.dist-info/INSTALLER": "31d6de437688d25c2044c13b8356111f172be32be6a9377e5e86437744a3cf31",
+        "maple_syrup-0.0.1.dev0.dist-info/MASY_OVERLAY.json": "80c11c11a74ffc9bcd5325d231ef9f1a6110690dac0d4d4c152d66a349d728c6",
+        "maple_syrup-0.0.1.dev0.dist-info/METADATA": "0947cf9ba93d7076726f3f08e9857b02e6f0a6a4ed0d16b5e6921f33973e3afb",
+        "maple_syrup-0.0.1.dev0.dist-info/RECORD": "61517acb2b4e4ec9a71ef3e5155281ff428ce7d26cb3c3e0afb54379591fcedc",
+        "maple_syrup-0.0.1.dev0.dist-info/direct_url.json": "c6b21c8f8230645de2e7075ba47a2836f9516052cde0cd4770981f977097824f",
+        "maple_syrup-0.0.1.dev0.dist-info/entry_points.txt": "2f5b3444ed6c9f547f7ecb31ff0bc07d1ef8a45587037ffe98f70b0947b37ea9",
+        "maple_syrup-0.0.1.dev0.dist-info/top_level.txt": "b1b00bfc9b965f24ea9eab35842d66bcb0612cd874516d8699313ba76f0e1c90"
+      },
+      "location": "/home/okin/MASY/runs/runtime-store/objects/sources/8fb0866e5c5a289cd23e47724cd1941975d2b95e5708266bfbe98d465c272bac/editable",
+      "name": "maple-syrup",
+      "version": "0.0.1.dev0"
+    },
+    "masy": {
+      "files": {
+        "masy-0.0.3.dev0.dist-info/INSTALLER": "31d6de437688d25c2044c13b8356111f172be32be6a9377e5e86437744a3cf31",
+        "masy-0.0.3.dev0.dist-info/MASY_OVERLAY.json": "ece9599d0ca1c9addc7e139a4b297c3495b231487f301a33fde615523313fe43",
+        "masy-0.0.3.dev0.dist-info/METADATA": "6f8f32093a14f70e61277a3d9025c915f7cba64c4daf5291d97742235f301c1d",
+        "masy-0.0.3.dev0.dist-info/RECORD": "bd6438db1638bd29ba316318e9fad9daabe9139f153ec404db0fa9e032df3658",
+        "masy-0.0.3.dev0.dist-info/direct_url.json": "27f9a633afe6cc68fcb55b8a90965d4509318f60145a0a0c73e031034b3febe1",
+        "masy-0.0.3.dev0.dist-info/top_level.txt": "cd53b361e3d121abe8de4ae20dbd4f6a86d9acbe4a0385012e53c5341e66d7d1"
+      },
+      "location": "/home/okin/MASY/runs/runtime-store/objects/sources/97a22e13e6ef51369c7dd7256fd8467793d264a756121b9d0daed9519d0b10f3/editable",
+      "name": "masy",
+      "version": "0.0.3.dev0"
+    }
+  },
+  "distribution_versions": {
+    "cupy-cuda12x": null,
+    "dask": "2026.8.0",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "llvmlite": "0.49.0",
+    "ml_dtypes": "0.6.0",
+    "numba": "0.67.0",
+    "numpy": "2.5.3",
+    "opt_einsum": "3.4.0",
+    "packaging": "26.3",
+    "pyyaml": "6.0.3",
+    "scipy": "1.18.1",
+    "tifffile": "2026.9.20",
+    "xarray": "2026.9.0",
+    "zarr": "3.4.0"
+  },
+  "numpy": {
+    "compiled_core": {
+      "module": "numpy._core._multiarray_umath",
+      "path": "/home/okin/MAPLE/.venv/lib/python3.12/site-packages/numpy/_core/_multiarray_umath.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "ceec5ba13ab88318632307fdd2df74f317fa293ce77be559c4298ddd1f4306b0",
+      "size": 10637297
+    },
+    "file": "/home/okin/MAPLE/.venv/lib/python3.12/site-packages/numpy/__init__.py",
+    "loaded": true,
+    "version": "2.5.3"
+  },
+  "compiled_identity_count": 45,
+  "compiled_identity_total_bytes": 401877381,
+  "compiled_identity_record_sha256": "4c7cc0a935b8a7a180f66be2df49a4ed67aeee755790d85c4e2a4a9e264aaa44",
+  "native_syrup_api": {
+    "call": "check_required_api()",
+    "requirement_count": 36,
+    "status": "pass"
+  },
+  "masy_api_count": 32,
+  "native_findings": [
+    {
+      "code": "optional_module_absent",
+      "detail": "maple.water.windowed_transaction (paired windowed pickup/transport/deposit transaction); not required by the dense audit",
+      "severity": "info"
+    }
+  ],
+  "registry_probe": {
+    "checkpoint._registry": {
+      "keys": [
+        "CommittedTopographyState",
+        "CompletionPolicy",
+        "DryHandoff",
+        "EventProgress",
+        "QuietProgress",
+        "SedimentEventControl",
+        "SedimentEventResult",
+        "SedimentLedgerState",
+        "StormControl",
+        "StormState",
+        "TerrainReference",
+        "WaterState"
+      ],
+      "native": {
+        "CommittedTopographyState": "maple.core.types.topographic_commit.CommittedTopographyState",
+        "SedimentLedgerState": "maple.core.types.sediment_ledger.SedimentLedgerState",
+        "WaterState": "maple.core.types.water.WaterState"
+      }
+    },
+    "compact_ledger_bound": false,
+    "pond_checkpoint._native_registry": {
+      "keys": [
+        "CommittedTopographyState",
+        "SedimentLedgerState"
+      ],
+      "native": {
+        "CommittedTopographyState": "maple.core.types.topographic_commit.CommittedTopographyState",
+        "SedimentLedgerState": "maple.core.types.sediment_ledger.SedimentLedgerState"
+      }
+    }
+  },
+  "transport_ready": false
+}

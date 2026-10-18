@@ -1,0 +1,20 @@
+{
+  "utc": "2026-10-18T02:52:41.568149+00:00",
+  "command": [
+    "git",
+    "-C",
+    "/home/okin/SYRUP",
+    "worktree",
+    "move",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/syrup",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/offline_sources/syrup"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "preserved_untracked_task_report_sha256": "3c21e99eb989e10d682e9be2a481525daf2f93f17a6f39b995d4787ed0da762a",
+  "original_configured_roots_absent": {
+    "maple": true,
+    "syrup": true
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "utc": "2026-10-18T03:01:47.914367+00:00",
+  "status": "CPU prerequisites accepted; final main adoption, active-root qualification and MASY publication pending",
+  "source_pair": {
+    "maple": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+    "syrup": "b4ee14e5bf37814efb0d754de17b7ea604b1cd74"
+  },
+  "implementation_commit": "c8e23aa63903c9f28b16a23bb4ec786b4f5a5f02",
+  "candidate_lock": "98a739d53d40e89c85c1759febc80c16e82cc717605088cf7cae03827e12d5a0",
+  "retained_old_lock": "e13050d98fda6617336c0222e070c2615464ac1f4c8fd2c0524137d95cf830b6",
+  "stdlib_tests_passed": 245,
+  "native_current_tests": {
+    "passed": 291,
+    "skipped": 8
+  },
+  "native_reference_tests": {
+    "passed": 404,
+    "skipped": 6
+  },
+  "locked_native_dense_checks_passed": 3,
+  "offline_evidence": "offline_runtime_acceptance.json",
+  "files": {
+    "src/masy/runtime.py": "3eecfd189d096a0fe8f14247096ff4445a0d82620caa61d65184477ae24ed570",
+    "src/masy/runtime_worker.py": "5d6bf66576f3e52a7f59dd2515209b3ebde5f8f09fcf1784671d278e5569436e",
+    "tools/masy_runtime.py": "57ed19bb80094a1818ee0bcd2bfbab52f6f22dc00b6a58a69abf1b89cc619cf9",
+    "docs/runtime.md": "550297c125e90dba86f4eddaeb7c55a14ea6d03ba0031f405fa1a887a6bccb99",
+    "examples/runtime.example.toml": "8376962bfb452b1fd9bc840d2236f5839398307c5b1d9c006b5fbfc05262b773",
+    "pyproject.toml": "22b55514bfc1386ad9a6e369ceeb0126b82d7646cd37d791e4bb094f3153981d",
+    "src/masy/__init__.py": "2cfdf467e9ecf6dbb04d205a56af2c2289ed82d136abc5b14690c903370f2522",
+    "src/masy/contracts.py": "e68c9368a1402ce856297fe34b81530e5cbee35dd4373b9ced2928660b454f1f",
+    "tests/test_contracts.py": "09100c4647c8f7f5bba076aa8faecc8d551aaa556b1336a565f3120504f98f66",
+    "README.md": "7536a2166669f4c8c01325b9d982305fae36341c34501e9ed490acc6857d525a",
+    "docs/preflight.md": "53b3bcb605ddf01723d15fc5ea0b15102347af01c3d9342611be18370252ffe5",
+    "docs/upstream_interface_audit.md": "90cff46e8b73d955831f5940a9ba8a8401ae12e36c95dd5d07cc38310da9f475",
+    "tests/README.md": "8c6e65ab809354f1af7b8b11b20a9b81b72cce89c195f642515402f94aeb8c78",
+    "tests/test_runtime.py": "c0c6a7690067e1847e0ae31525ae3a0243be527f24ba2b2beaa1c4aa83f51242"
+  },
+  "findings": {
+    "C1": "closed: synthetic module assertion corrected against retained real binding",
+    "C2": "closed: exact persistent-state comparison excludes only independently proved derived native voxel surface cache",
+    "B1": "closed: same-size/replace/delete hashing races refused",
+    "B2": "closed: bool keep explicitly bounded and metadata captured correctly",
+    "B3": "closed: missing static version structured refusal; no weakened tests"
+  },
+  "claude_lifecycle": {
+    "design_01": {
+      "utc": "2026-10-18T02:01:56.993995+00:00",
+      "exit_code": 0,
+      "reaped": true,
+      "termination_reason": null,
+      "elapsed_s": 526.1817616759799,
+      "session_id": "eaba242c-8b9e-43c4-8bf0-dfbdf22decd2",
+      "pid": 218912,
+      "start_ticks": "30008182"
+    },
+    "checkpoint_implementation_01": {
+      "utc": "2026-10-18T02:13:31.159248+00:00",
+      "exit_code": 0,
+      "reaped": true,
+      "termination_reason": null,
+      "elapsed_s": 531.1877876889776,
+      "session_id": "6679eeee-d75a-4382-8584-e64690ae077d",
+      "pid": 219788,
+      "start_ticks": "30077098"
+    },
+    "checkpoint_correction_01": {
+      "utc": "2026-10-18T02:17:29.580765+00:00",
+      "exit_code": 0,
+      "reaped": true,
+      "termination_reason": null,
+      "elapsed_s": 65.024679241993,
+      "session_id": "b86ce2e4-1aba-4171-b018-97015112cfaf",
+      "pid": 220766,
+      "start_ticks": "30147557"
+    },
+    "runtime_implementation_01": {
+      "utc": "2026-10-18T02:38:52.919302+00:00",
+      "exit_code": 143,
+      "reaped": true,
+      "termination_reason": "stage_timeout",
+      "elapsed_s": 1500.8014110740041,
+      "session_id": "78d993b1-3407-4f09-9272-90bf1f390189",
+      "pid": 220472,
+      "start_ticks": "30132313"
+    },
+    "runtime_completion_01": {
+      "utc": "2026-10-18T02:40:20.685400+00:00",
+      "exit_code": 143,
+      "reaped": true,
+      "termination_reason": "requested_stop",
+      "elapsed_s": 59.08620952896308,
+      "session_id": "4e60c5e4-653a-43b0-aa60-cff8df510aca",
+      "pid": 11,
+      "start_ticks": "30285261"
+    },
+    "runtime_completion_02": {
+      "utc": "2026-10-18T02:49:05.959850+00:00",
+      "exit_code": 0,
+      "reaped": true,
+      "termination_reason": null,
+      "elapsed_s": 521.188106000016,
+      "session_id": "3d45a927-caa8-41ef-8b44-6587f282d253",
+      "pid": 222554,
+      "start_ticks": "30291578"
+    },
+    "runtime_tests_01": {
+      "utc": "2026-10-18T02:53:46.471048+00:00",
+      "exit_code": 0,
+      "reaped": true,
+      "termination_reason": null,
+      "elapsed_s": 651.2323124789982,
+      "session_id": "2d05daf8-5442-44af-ad4e-4b15ae583cbd",
+      "pid": 222838,
+      "start_ticks": "30306625"
+    },
+    "runtime_correction_01": {
+      "utc": "2026-10-18T02:55:38.349923+00:00",
+      "exit_code": 0,
+      "reaped": true,
+      "termination_reason": null,
+      "elapsed_s": 19.006935348035768,
+      "session_id": "4fe8adf2-eb45-45e6-93d0-8b56f54021e2",
+      "pid": 225330,
+      "start_ticks": "30381035"
+    }
+  },
+  "transport_ready": false,
+  "coupled_restart_qualified": false,
+  "gpu_qualified": false,
+  "windowed_coupling_qualified": false,
+  "performance_qualified": false,
+  "preserved_payloads": "native checkpoint test arrays and raw model-test logs remain local; no source-review sharing or publication",
+  "syrup_remote_pushed": false,
+  "documentation_commit": "328b59721a02d86d2954be2a459ef85e4add8be1"
+}

@@ -1,0 +1,10 @@
+{
+  "utc": "2026-10-18T02:38:52.919302+00:00",
+  "exit_code": 143,
+  "reaped": true,
+  "termination_reason": "stage_timeout",
+  "elapsed_s": 1500.8014110740041,
+  "session_id": "78d993b1-3407-4f09-9272-90bf1f390189",
+  "pid": 220472,
+  "start_ticks": "30132313"
+}

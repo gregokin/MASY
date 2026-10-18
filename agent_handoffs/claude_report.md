@@ -1,11 +1,24 @@
-# MASY-02B — Claude author report
+# Claude orchestration receipt — MASY-03
 
-Claude designed the change in design_01. Codex independently evaluated the actual caller contracts and rejected a proposed new report status/filter in design_review.md. Claude implemented the bounded optional_class binding requirement, retained all required Dense helpers and added the confirmed required compact-ledger checkpoint dependency. Codex independently reviewed/tested it. Claude then corrected documentation findings I1–I3; code/tests stayed byte-identical to the tested candidate. The only later Codex product edit records the actual final adopted-root preflight in three receipt sentences; exact change is in final_verification_doc_update.json.
+Codex scoped and reviewed the design, Claude implemented bounded source-only stages, and Codex independently inspected actual diffs/callers and executed checks. Author reports are context; the verification receipts establish acceptance. No collaborator terrain/forcing dataset, saved checkpoint array, deep store or raw simulation payload was submitted.
 
-All three actual local Claude stages exited0, no timeout/termination, and were reaped:
+Stages (full command/session/PID/start identity, fresh local --help, submitted content hashes and separate raw streams are retained in each directory):
 
-- design_01: session4e4deb44-aa57-4c57-976e-f85c553969a7, PID214551/start28669411,175.06s.
-- implementation_01: session77cde09d-f6de-4095-a22f-8dcedd1cf357, PID215305/start28692488,340.12s.
-- correction_01: session0e4e85fb-455b-420d-9528-7d9ac040e58a, PID216281/start28734496,79.03s.
+| Stage | Outcome |
+|---|---|
+| design_01 | exit0, reaped; design reviewed with D1–D6 corrections |
+| checkpoint_implementation_01 | exit0, reaped; narrow owning-SYRUP helper/registry implementation |
+| checkpoint_correction_01 | exit0, reaped; two test-only corrections; production unchanged |
+| runtime_implementation_01 | finite1500s guard, exit143/reaped; parent/worker partials preserved |
+| runtime_completion_01 | restricted API connection retries; stopped/reaped143 after59s, no source tools/writes; no quota/reset claim |
+| runtime_completion_02 | reviewed network-enabled source-only relaunch, exit0/reaped; entry point, metadata, table/docs and hashing correction |
+| runtime_tests_01 | separate immutable source-only tree, exit0/reaped; 70 runtime tests only, no competing implementation writer |
+| runtime_correction_01 | exit0/reaped; one-line missing-version type guard, no test weakening |
 
-Each stage records fresh local claude --help, exact command/session/cwd/PID/start, prompt hash, exact submitted source manifest, raw separate stdout/stderr, result and exit/reaping. See tasks/masy02b_committed_adoption_20261017/stage_index.json and stage directories. Only task-owned source context was shared; no simulation payloads/live upstream access/Bash/execution/MCP/agents/network tools. Write stages used ordinary manual permissions and allowed Read/Glob/Grep plus Write/Edit confined to implementation/; prompts narrowed the allowed files. Claude ran no tests/commands. No current task children/scheduler remains.
+Tool scope remained ordinary/manual Read/Glob/Grep plus explicitly scoped Write/Edit; no Bash, execution, MCP, network tool, agent or live upstream access was granted inside Claude. The approved Claude API transport is distinct from those unavailable tools. Source excerpts, complete relevant source and illustrative tests were authorized by AGENTS.md. Exact session receipts are authoritative; no usage limit/reset time was invented.
+
+Owning-SYRUP result: b4ee14e, independently accepted then adopted on local main. One optional-ledger binding helper is shared by both native registries. Required Dense and present optional bindings remain genuine classes; broken imports/invalid bindings fail. No physics, codecs/schema, tolerance or source/storage guard changed. Reference compact/windowed behavior remains intact. SYRUP remote was not pushed.
+
+MASY result: separate prepare/verify CLI, immutable source objects and actual native MAPLE dependency bundles, generated labelled static SYRUP/MASY metadata, strict fresh imports/origins, environment/compiled identities, atomic publication, bounded subprocesses and explicit old-lock verification. Existing checkout audit functions/schema/status/filter stay unchanged. The requirement table mirrors the actual accepted helper. All implementation was authored by Claude and independently reviewed/tested by Codex; final documentation records observed results.
+
+All confirmed findings are closed in codex_review.md. The source-only author reports and initial failed attempts are preserved privately; no author assertion about unexecuted behavior substitutes for Codex results.

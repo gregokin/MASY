@@ -1,0 +1,138 @@
+{
+  "utc": "2026-10-18T01:51:39.618478+00:00",
+  "masy_head": "204622dd6fce87ad2d9be80285684885400fef0b",
+  "masy_status": "",
+  "upstreams": {
+    "maple": {
+      "name": "maple",
+      "root": "/home/okin/MAPLE",
+      "selection": "current_local_committed_head",
+      "head": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+      "object_format": "sha1",
+      "expected_revision": null,
+      "scope_pathspecs": [
+        "src",
+        "pyproject.toml"
+      ],
+      "git_status": "clean",
+      "cache_exclusions": {
+        "directory_names": [
+          "__pycache__"
+        ]
+      },
+      "pyproject": {
+        "path": "pyproject.toml",
+        "sha256": "e6c7da22ee9f4bdd7876747fdfcbf694314cafd9032e3700301522b52b3fe3ae",
+        "size": 6596,
+        "project_name": "maple",
+        "project_version": "0.0.1",
+        "git_blob": "9181e288e257e1896ef3b48a14c48fa4e2e66810"
+      },
+      "package": {
+        "name": "maple",
+        "dir": "/home/okin/MAPLE/src/maple",
+        "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+        "digest_sha256": "97b3df72336e6313e8d89d0b7b20784b9a0f001e30a4fc3035360e6de6068612",
+        "file_count": 334,
+        "total_bytes": 8211382
+      },
+      "tracked_scope": {
+        "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+        "digest_sha256": "3672fe023c953643bd9a828539f248467d55d8bfbd5794040240cfb4d3ad0533",
+        "file_count": 335,
+        "total_bytes": 8217978
+      },
+      "generated_metadata": {
+        "policy": "recorded_not_repaired",
+        "entries": [
+          {
+            "path": "src/maple.egg-info/PKG-INFO",
+            "sha256": "7a40743d1ac71ab26c85c1499489be2615885680962e90490cdb7b4b284856aa",
+            "size": 617
+          },
+          {
+            "path": "src/maple.egg-info/SOURCES.txt",
+            "sha256": "909a58277e6ab671604681a601976d7ce61e10d49bbc1ec9dfc3f827b499e0a7",
+            "size": 13916
+          },
+          {
+            "path": "src/maple.egg-info/dependency_links.txt",
+            "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1
+          },
+          {
+            "path": "src/maple.egg-info/entry_points.txt",
+            "sha256": "9430d41e28e96a53fa455b84c6a4b6122484d21e6ce8151c6c40854db190c870",
+            "size": 82
+          },
+          {
+            "path": "src/maple.egg-info/requires.txt",
+            "sha256": "3425d4c2835af5a483d6976e7c72ff03f95a41a911e1039af41dd87c2dffb7aa",
+            "size": 156
+          },
+          {
+            "path": "src/maple.egg-info/top_level.txt",
+            "sha256": "08ab2a56c8503c742c762013475ad2955377d2001a9fc03e4e8bc22e09af0844",
+            "size": 6
+          }
+        ],
+        "digest_sha256": "c32f0cd256f348105eed5e799aac1b370277702ab7cbb162c11a53039a9dcd8d"
+      }
+    },
+    "syrup": {
+      "name": "syrup",
+      "root": "/home/okin/SYRUP",
+      "selection": "current_local_committed_head",
+      "head": "2c60c73b01fe1c0cef576987d52010e84058c568",
+      "object_format": "sha1",
+      "expected_revision": null,
+      "scope_pathspecs": [
+        "src",
+        "pyproject.toml"
+      ],
+      "git_status": "clean",
+      "cache_exclusions": {
+        "directory_names": [
+          "__pycache__"
+        ]
+      },
+      "pyproject": {
+        "path": "pyproject.toml",
+        "sha256": "669ab913fd6247617d9a64d7c23fc71cbbecd2c409df01700149cab1bc3f94fc",
+        "size": 3832,
+        "project_name": "maple-syrup",
+        "project_version": "0.0.1.dev0",
+        "git_blob": "ce8947354a756cec0059b0363fe1a6fd3734f0fc"
+      },
+      "package": {
+        "name": "maple_syrup",
+        "dir": "/home/okin/SYRUP/src/maple_syrup",
+        "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+        "digest_sha256": "fc789e240f7b0061e9ac80bc9078b7fe42d302fc8309ee5746073455f7f9f6bb",
+        "file_count": 63,
+        "total_bytes": 2629305
+      },
+      "tracked_scope": {
+        "algorithm": "sha256(sorted relpath NUL file_sha256 LF), excl __pycache__/*.pyc/*.pyo; v1",
+        "digest_sha256": "1af2b8d64b73bd42dc20d50cd13b2deceea9d70a3a5591773d17f5dff3224e2c",
+        "file_count": 64,
+        "total_bytes": 2633137
+      },
+      "generated_metadata": {
+        "policy": "recorded_not_repaired",
+        "entries": [],
+        "digest_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  },
+  "workspace_manifest_sha256": "7c9e0e45519a3d77dc9e921b145e889dca8eb1794f033f6b4b628b7526c6afdd",
+  "source_only": true,
+  "disk_usage": {
+    "total": 1081101176832,
+    "used": 817861804032,
+    "free": 208247017472
+  },
+  "existing_runtime": "/home/okin/MAPLE/.venv/bin/python",
+  "gpu_work_authorized": false,
+  "publication_receipt": "../masy02b_publication_20261017/push_receipt.json"
+}

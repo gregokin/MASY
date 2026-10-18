@@ -1,0 +1,15 @@
+{
+  "utc": "2026-10-18T02:59:32.466777+00:00",
+  "command": [
+    "/home/okin/MAPLE/.venv/bin/python",
+    "-B",
+    "-I",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/locked_checkpoint_child.py",
+    "/home/okin/MASY/runs/runtime-store/locks/98a739d53d40e89c85c1759febc80c16e82cc717605088cf7cae03827e12d5a0.json",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/locked_dense_checkpoints_01",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/syrup/tests"
+  ],
+  "pid": 3,
+  "start_ticks": "30406348",
+  "timeout_s": 180
+}

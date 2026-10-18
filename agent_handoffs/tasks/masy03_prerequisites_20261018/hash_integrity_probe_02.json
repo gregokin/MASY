@@ -1,0 +1,34 @@
+{
+  "synthetic_only": true,
+  "snapshot": "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_component_snapshot_02",
+  "checks": {
+    "parent_same_size": {
+      "refused": true,
+      "code": "source_changed_during_read"
+    },
+    "parent_replacement": {
+      "refused": true,
+      "code": "source_changed_during_read"
+    },
+    "parent_deletion": {
+      "refused": true,
+      "code": "source_changed_during_read"
+    },
+    "worker_same_size": {
+      "refused": true,
+      "code": "compiled_identity_unreadable"
+    },
+    "worker_replacement": {
+      "refused": true,
+      "code": "compiled_identity_unreadable"
+    },
+    "worker_deletion": {
+      "refused": true,
+      "code": "compiled_identity_unreadable"
+    }
+  },
+  "sources": {
+    "runtime_worker": "5d6bf66576f3e52a7f59dd2515209b3ebde5f8f09fcf1784671d278e5569436e",
+    "runtime": "79d7922497a9a1366b2f11d2b9609b31bbc4ce73dd3a7dcaf097276c8b36ba36"
+  }
+}

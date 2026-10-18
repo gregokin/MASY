@@ -1,0 +1,9 @@
+{
+  "observed_utc": "2026-10-18T02:52:39.599235+00:00",
+  "first_maple_move_completed": true,
+  "original_maple_root_absent": true,
+  "retained_maple_root": "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/offline_sources/maple",
+  "syrup_move_not_attempted": "whole-tree cleanliness assertion found the task-only untracked CHECKPOINT_IMPLEMENTATION_REPORT.md; runtime input scope clean",
+  "runtime_verify_offline_01": "passed fresh verify with original MAPLE root unavailable but original SYRUP root present; not both-source offline evidence",
+  "receipt_limit": "the first move script wrote its receipt only after the loop, and assertion stopped it; this is a post-attempt observation"
+}

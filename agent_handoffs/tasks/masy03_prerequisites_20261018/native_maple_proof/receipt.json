@@ -1,0 +1,20 @@
+{
+  "utc": "2026-10-18T01:53:55.526477+00:00",
+  "command": [
+    "/home/okin/MAPLE/.venv/bin/python",
+    "-B",
+    "-I",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/native_maple_proof/child.py",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/native_maple_proof/cache/7f8ba5f2017f3f9aa85e6d9a697b32422cb62ce351d173023786cb895d8236c1",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/claude_workspace/implementation/syrup",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/native_maple_proof"
+  ],
+  "exit_code": 0,
+  "bundle_id": "7f8ba5f2017f3f9aa85e6d9a697b32422cb62ce351d173023786cb895d8236c1",
+  "target": "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/native_maple_proof/cache/7f8ba5f2017f3f9aa85e6d9a697b32422cb62ce351d173023786cb895d8236c1",
+  "native_resolver_passed_without_modification": true,
+  "actual_metadata_reused": true,
+  "tool_sha256": "ae013c930697aa07251d008563d56f7795506f4b68a3b7df2ec6221d7f9f731c",
+  "full_locked_runtime_qualified": false,
+  "reason": "SYRUP/MASY frozen lock and checkpoint fix still pending"
+}

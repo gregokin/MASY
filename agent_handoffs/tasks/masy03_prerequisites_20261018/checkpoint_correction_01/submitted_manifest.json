@@ -1,0 +1,10 @@
+{
+  "implementation/ORIGINAL_CHECKPOINT_REPORT.md": "3c21e99eb989e10d682e9be2a481525daf2f93f17a6f39b995d4787ed0da762a",
+  "implementation/tests/checkpoint_compat/checkpoint_compat_support.py": "229d4becf4fbdc77e46f99ad1ba434dd40600c26455398cea6f9443633d09a6a",
+  "implementation/tests/checkpoint_compat/conftest.py": "540f2062f053ffd7b22e223119ad13fad936025d3fba9cd563c69c87fff98ff5",
+  "implementation/tests/checkpoint_compat/test_current_dense_restart.py": "1400a5226020a0f9530ccc9a5571815427b173051cf436a3319d485b82c524c3",
+  "implementation/tests/checkpoint_compat/test_reference_compact.py": "0c8226d1d1d210a6979e28b583fac75efa645530cbad195421f2c8afdc789333",
+  "implementation/tests/checkpoint_compat/test_registries.py": "3175349ea8013b6922147677dce27422d30fa5e22898c961393c893f6eaa07b2",
+  "source_context/snapshot.py": "83788166ca927c4ee2a4965fc3e540269c85b44a9c202929c0f6bdcc8e584651",
+  "source_context/voxel.py": "22c5a7976e2dd04175657b31bb827ade8cec41d5f8af76f24b52f59017d425b7"
+}

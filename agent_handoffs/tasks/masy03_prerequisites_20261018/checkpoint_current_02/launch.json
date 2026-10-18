@@ -1,0 +1,19 @@
+{
+  "utc": "2026-10-18T02:17:50.240126+00:00",
+  "command": [
+    "/home/okin/MAPLE/.venv/bin/python",
+    "-B",
+    "-I",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/pytest_child.py",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/syrup",
+    "/home/okin/MAPLE",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_current_02",
+    "tests/checkpoint_compat",
+    "tests/masy_compat",
+    "tests/phase6/test_checkpoint.py",
+    "tests/pond_checkpoint"
+  ],
+  "pid": 3,
+  "start_ticks": "30156125",
+  "timeout_s": 300
+}

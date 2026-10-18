@@ -1,0 +1,33 @@
+{
+  "utc": "2026-10-18T02:54:42.617581+00:00",
+  "records": [
+    {
+      "command": [
+        "git",
+        "-C",
+        "/home/okin/MAPLE",
+        "worktree",
+        "move",
+        "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/offline_sources/maple",
+        "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/maple"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "-C",
+        "/home/okin/SYRUP",
+        "worktree",
+        "move",
+        "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/offline_sources/syrup",
+        "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/syrup"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

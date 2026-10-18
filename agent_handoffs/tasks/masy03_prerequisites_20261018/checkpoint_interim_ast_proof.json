@@ -1,0 +1,23 @@
+{
+  "interim_only_author_still_active": true,
+  "files": {
+    "src/maple_syrup/checkpoint.py": {
+      "changed_functions": [
+        "_registry"
+      ],
+      "new_functions": [
+        "_native_ledger_types"
+      ],
+      "all_other_function_and_class_asts_identical": true,
+      "sha256": "df877085ca5a150ff1aeb512abe7e9f8ff351297efa401d7e68a7b5f69f0d3df"
+    },
+    "src/maple_syrup/pond_checkpoint.py": {
+      "changed_functions": [
+        "_native_registry"
+      ],
+      "new_functions": [],
+      "all_other_function_and_class_asts_identical": true,
+      "sha256": "94cd2339566646ba44f2015dad13a67194c26a8dd3cc85b56916f62d2b4a704f"
+    }
+  }
+}

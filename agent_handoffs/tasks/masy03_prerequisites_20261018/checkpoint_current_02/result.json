@@ -1,0 +1,29 @@
+{
+  "purpose": "CPU development/API regression, not production source adoption",
+  "syrup": "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/syrup",
+  "maple": "/home/okin/MAPLE",
+  "pytest_exit": 0,
+  "runtime_sources_unchanged": true,
+  "wrong_module_origins": [],
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "executable": "/home/okin/MAPLE/.venv/bin/python",
+  "versions": {
+    "numpy": "2.5.3",
+    "pytest": "9.1.1",
+    "numba": "0.67.0",
+    "llvmlite": "0.49.0",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2"
+  },
+  "gpu_queried": false,
+  "argv": [
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/pytest_child.py",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/syrup",
+    "/home/okin/MAPLE",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_current_02",
+    "tests/checkpoint_compat",
+    "tests/masy_compat",
+    "tests/phase6/test_checkpoint.py",
+    "tests/pond_checkpoint"
+  ]
+}

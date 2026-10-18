@@ -1,0 +1,51 @@
+{
+  "utc": "2026-10-18T02:47:18.696767+00:00",
+  "head": "5b1a052e1b9a9edfed0760152aac2a743813e79a",
+  "source_only": true,
+  "commands": [
+    {
+      "command": [
+        "git",
+        "-C",
+        "/home/okin/MAPLE",
+        "worktree",
+        "add",
+        "--detach",
+        "--no-checkout",
+        "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/maple",
+        "5b1a052e1b9a9edfed0760152aac2a743813e79a"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "Preparing worktree (detached HEAD 5b1a052)\n"
+    },
+    {
+      "command": [
+        "git",
+        "-C",
+        "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/maple",
+        "sparse-checkout",
+        "set",
+        "--no-cone",
+        "src",
+        "pyproject.toml"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "-C",
+        "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/maple",
+        "read-tree",
+        "-mu",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

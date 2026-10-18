@@ -1,0 +1,8 @@
+{
+  "source_sha256": "d6e510f99866cc657fb25fec4cbea9e3c976cb3e3f3b4b2f90e64a6adf35a46d",
+  "synthetic_preload_only": true,
+  "no_physical_state": true,
+  "exit_code": 2,
+  "stdout": "{\"code\": \"worker_preloaded_modules\", \"detail\": \"package modules were loaded before the sealed worker\", \"evidence\": {\"modules\": [\"maple\"]}, \"operation\": \"bootstrap\", \"schema\": \"masy.runtime_result.v1\", \"status\": \"refused\"}\n",
+  "stderr": ""
+}

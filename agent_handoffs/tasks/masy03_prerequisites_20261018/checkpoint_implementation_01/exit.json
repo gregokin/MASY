@@ -1,0 +1,10 @@
+{
+  "utc": "2026-10-18T02:13:31.159248+00:00",
+  "exit_code": 0,
+  "reaped": true,
+  "termination_reason": null,
+  "elapsed_s": 531.1877876889776,
+  "session_id": "6679eeee-d75a-4382-8584-e64690ae077d",
+  "pid": 219788,
+  "start_ticks": "30077098"
+}

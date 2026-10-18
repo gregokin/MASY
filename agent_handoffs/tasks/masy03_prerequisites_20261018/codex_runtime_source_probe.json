@@ -1,0 +1,21 @@
+{
+  "utc": "2026-10-18T02:41:54.506829+00:00",
+  "synthetic_only": true,
+  "source_sha256": "c5b5aa8938ca0336296c00808bfbd8fb4cf8ebbfd78cabe8f2f431969f700e2f",
+  "capture": {
+    "code": "package_not_committed",
+    "missing": [
+      "pyproject.toml",
+      "src/maple_syrup/__init__.py"
+    ],
+    "clean_fixture_inputs_present_and_committed": true
+  },
+  "isolated_seal_after_independent_fixture_reads": {
+    "error": "KeyError",
+    "key": "source/pyproject.toml",
+    "site": "verify_source_object"
+  },
+  "root_cause": "_hash_path keep changed to byte limit; both callers still pass booleans",
+  "remaining_probe_branches": "not reached",
+  "qualification": false
+}

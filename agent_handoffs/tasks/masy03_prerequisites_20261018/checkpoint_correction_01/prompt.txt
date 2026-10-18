@@ -1,0 +1,18 @@
+Correct TWO confirmed test-only defects in prerequisite A. This is a SEPARATE source-only correction workspace, so the other Claude writing MASY runtime files has unchanged inputs. No production source files are writable here. No commands/tests/execution/network/Bash/MCP/agents, live sources or saved model payloads. Source sharing authorized; relevant source excerpts only are provided.
+
+Codex independently ran full native selections, retained all raw attempts and verified production scope: current MAPLE selection299total,290pass,8skip,1failure; reference selection410total,402pass,6skip,2failures. All existing native legacy/pond/windowed regressions and the genuine compact codec checks passed. Failures are only the two new test assertions below. Preliminary three current native wet/dry legacy and pond continuation checks also passed. Both production modules' ASTs show ONLY registry construction plus new _native_ledger_types helper changed; codecs/physics/storage/source checks unchanged. Do not change production logic or numerical tolerances to fix these tests.
+
+Writable files ONLY:
+- implementation/tests/checkpoint_compat/test_registries.py
+- implementation/tests/checkpoint_compat/test_current_dense_restart.py
+- task-only implementation/CHECKPOINT_CORRECTION_REPORT.md
+All other files read-only. Leave uncommitted.
+
+C1: test_reexported_dense_class_is_accepted fails on BOTH real source selections. It installs module=ledger_binding.module(), then asserts module is not _real(). But _real() calls importlib.import_module, which now correctly returns that installed synthetic module. Compare with the fixture's retained original ledger_binding.real instead (and optionally prove the import returns module). Preserve actual native Dense identity and exact restoration checks. This is a wrong test assertion, not a production class-binding defect.
+
+C2: test_legacy_wet_dense_round_trip_restores_exact_native_state_and_continues_exactly fails ONLY on the genuine reference at first.keys()==second.keys(). Codex independently reproduced full array-key sets before/after an actual native checkpoint. The ONLY difference is:
+  only-before: .state.bed.voxel_column.surface_cache.voxel_totals_kg
+  only-after: []
+No physical array is missing. MAPLE's actual native snapshot loader constructs VoxelColumnState(mass_kg=...), and the documented surface_cache field is init=False, compare=False, default=None, deliberately reset (source_context excerpts provided). Existing pond_fixture comparator already excludes this exact nonphysical field. Correct this new legacy comparison to exclude ONLY that documented derived voxel surface_cache subtree, while keeping exact key-set equality for every other array, dtype/shape/value equality, native ledger/topography/water/counters/accounting/clock comparisons, and actual full/resumed continuation checks. Do NOT compare merely the intersection of keys or drop any physical inventory/availability/water/ledger field. Do not change old native tests/helpers/source or add xfail/skips.
+
+Document exactly these two test corrections and that Codex supplied execution evidence; you ran no tests. Do not claim final reruns have passed yet. Keep every other assertion/test unchanged. This correction must not touch production modules or another implementation tree.

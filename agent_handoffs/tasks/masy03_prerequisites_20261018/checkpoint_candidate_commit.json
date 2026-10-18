@@ -1,0 +1,9 @@
+{
+  "utc": "2026-10-18T02:19:25.688140+00:00",
+  "head": "b4ee14e5bf37814efb0d754de17b7ea604b1cd74",
+  "root": "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/syrup",
+  "branch": "masy/checkpoint-prerequisite-20261018",
+  "purpose": "independently accepted isolated candidate for committed-source runtime qualification",
+  "active_main_modified": false,
+  "pushed": false
+}

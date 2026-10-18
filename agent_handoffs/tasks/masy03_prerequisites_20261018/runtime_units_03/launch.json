@@ -1,0 +1,14 @@
+{
+  "utc": "2026-10-18T02:56:46.907219+00:00",
+  "command": [
+    "/home/okin/MAPLE/.venv/bin/python",
+    "-B",
+    "-I",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/unittest_child.py",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/source_candidates/masy",
+    "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_units_03"
+  ],
+  "pid": 3,
+  "start_ticks": "30389792",
+  "timeout_s": 240
+}

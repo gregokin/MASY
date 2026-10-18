@@ -1,0 +1,366 @@
+{
+  "utc": "2026-10-18T03:07:45.996941+00:00",
+  "purpose": "curated source/design/test-status and lifecycle receipts only",
+  "included_files": {
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/current_prompt.md": {
+      "sha256": "8b8fc7c9a9dbf9d9285d984a8e65585cf63e5e280d80fe459b79bde12b9f8a21",
+      "size": 2147
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/claude_report.md": {
+      "sha256": "dd0ab47581cab5e5534683265e8ca04d9f13864043a6761e070a55409edc21a1",
+      "size": 3084
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/codex_review.md": {
+      "sha256": "a6f09b9854abc767a68d55531fdde4b5a6401a86c1909e09e39c29e3bfb564ef",
+      "size": 3905
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/verification.md": {
+      "sha256": "b897a7fcad912119870d96110ef901682bdd0dca885177395a21eb17930eae76",
+      "size": 4966
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/orchestration_state.md": {
+      "sha256": "eeede4c8246e251b7ffd06959b8157bb614f43c275dcc93183808a933f093daa",
+      "size": 2817
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/baseline.json": {
+      "sha256": "2b00b4fe1b6665688c04e36f2eba548cdb253890d35d33745f3f77d058a8bacd",
+      "size": 4922
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/source_refresh_02.json": {
+      "sha256": "a3bace9f500d77491436424227dff268ec69cd290ea6863f8e86668bbf79e99d",
+      "size": 4447
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/design_review.md": {
+      "sha256": "d2f86fb4eb024bfd42def5424e62b544e5b558fbbe3fbd8963a72966b44f82d4",
+      "size": 7930
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_acceptance.json": {
+      "sha256": "a142e32eda7a3119fbfedd53d2e71831f75f51a03fbf399dace5bf41cfe36066",
+      "size": 2461
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_adoption.json": {
+      "sha256": "c6f2fd89494ccb24e6108f1cc14d899895439c9a2b9be01f4f0f375ade7901ab",
+      "size": 353
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_candidate_commit.json": {
+      "sha256": "6b654c26f8071c98cc7700f82704393b3be948ea9ee320874eb38b7b4ef5d51a",
+      "size": 412
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_interim_ast_proof.json": {
+      "sha256": "87aa25f2ca431842ef959f989c4a8723959050188f7bc230dfe43138eea79461",
+      "size": 660
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_correction_scope.json": {
+      "sha256": "ceb64f310baabe042a1482f1b6aa66064abe79184fb062389702a5fb6c5a6f4d",
+      "size": 259
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_component_acceptance_01.json": {
+      "sha256": "a940fdf6546abb25a7eb8f04752bb08d57e4c6a2d3b81e6d1e614b6775bd28b8",
+      "size": 2823
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_candidate_commit_01.json": {
+      "sha256": "d0fd0a4b899893287a07b14cc09c2dd680a1c8a482ced67818cef67b4ce8748c",
+      "size": 709
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_candidate_commit_02.json": {
+      "sha256": "60724d1167ff67c382af97c86e63ade951dfd18532f8c7175873827b374ca96a",
+      "size": 357
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_docs_commit.json": {
+      "sha256": "ac2318f235c83e444f16b7e682654dc805bcfff1ebcccabc55b40c67d60a1cdb",
+      "size": 304
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/masy_adoption.json": {
+      "sha256": "109aac6c18332765db40aa4bf78cb5bd46e6d63d559f67abeff886bcf57068cc",
+      "size": 527
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/prerequisite_acceptance.json": {
+      "sha256": "186d069773e03c7a1c278e6648a5be36b21fd4c0b3fa170a08eebd7002503b8e",
+      "size": 5629
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_qualification_summary.json": {
+      "sha256": "9bd69cb552ae51704060aaa12a7868028c7df2a483cefb640794b0f14d9970db",
+      "size": 8689
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/codex_runtime_source_probe.json": {
+      "sha256": "e89a20b4b020e9d013a5b290ca1c8bb4699f1bb52d8713fcc989151097dfb011",
+      "size": 673
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/codex_runtime_source_probe_02.json": {
+      "sha256": "91890075a7a6d9308ed68d86821ae5d51f0730233ce3d366848a941e47752b5d",
+      "size": 548
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/hash_integrity_probe_02.json": {
+      "sha256": "96aedfed5c3348345d0f599c81149b6dc7d7a42db979a0ec864f3edbbae24379",
+      "size": 955
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_bootstrap_preload_probe.json": {
+      "sha256": "e75b87d3b5e009a87a51b9868bb4f3db77d184bff65926ffa60ba85fb0f4db66",
+      "size": 452
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/offline_runtime_acceptance.json": {
+      "sha256": "b376d79923138b7fa5e79250c467197bed6e379c4be117d32bbe409c0031672e",
+      "size": 2476
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/offline_sources_move_attempt_01.json": {
+      "sha256": "bb341c89dbd14fc031f763b62de7f8e05d82254ba4560e7e908e6946fcab0705",
+      "size": 710
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/offline_sources_move_complete.json": {
+      "sha256": "b63d58bf9b69c0f0a0c48c5a306d7dc0b0dc17a5267e4389020868a2f4ee2605",
+      "size": 578
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/offline_sources_restore.json": {
+      "sha256": "df93e7acb8d2923573f3f36eab4ffdc3a9a16908603efa751ceca79ce1c8ea1e",
+      "size": 859
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/maple_candidate_setup.json": {
+      "sha256": "0b57b1e810d0fe04099560497105f6f855abbe81001026098f48c91e8665cea9",
+      "size": 1201
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_test_scope.json": {
+      "sha256": "d2e8b68c23f188454e056c8ac9e810a418e75850a0177467ed92228893906432",
+      "size": 335
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/design_01/prompt.txt": {
+      "sha256": "01f0d0bd16c6e8d74d15a90bb2ca68fbb330bce713a070c848a9beb9357a168f",
+      "size": 10104
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/design_01/launch.json": {
+      "sha256": "078655d033c4b01b067129369e70d7615695db22d6309ad81a14a0d34a349a24",
+      "size": 1153
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/design_01/exit.json": {
+      "sha256": "e2d8792bbc7a140b6fac51e8e66e3f29f19ddc44a451e0e06e438ef0d322ff00",
+      "size": 250
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/design_01/submitted_manifest.json": {
+      "sha256": "d13a80d7c0062215fe41fb5bfceb08f1bdab7f010a86d15550381bf6f0f737e8",
+      "size": 96961
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_implementation_01/prompt.txt": {
+      "sha256": "3fd297a2945317b859ca2fc939426b6d01aee06a95503221226951a7c0b94624",
+      "size": 4641
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_implementation_01/launch.json": {
+      "sha256": "9363b7dbde1e4a20e818936e7945857cec185ba76d41668cb3cff608cb2c286d",
+      "size": 1234
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_implementation_01/exit.json": {
+      "sha256": "882b77f2ca83a0c10c3f7e2f3e166c33cf9f25709277dda2b06bbdc543a42b52",
+      "size": 250
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_implementation_01/submitted_manifest.json": {
+      "sha256": "7fe1cc233391078284070bf1ec4416615b4692c80454b9b9ae3e3f1aff5c89d3",
+      "size": 97294
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_correction_01/prompt.txt": {
+      "sha256": "c723d5b7a3400bf7d587934ec5be28f91016351e65ef617a215b351be7230443",
+      "size": 3309
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_correction_01/launch.json": {
+      "sha256": "34e9f994657bd9396d7a4843aea6d1cfb9812f54150c4e46bf8335aad4efd434",
+      "size": 1249
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_correction_01/exit.json": {
+      "sha256": "2df545aa6ac102a9ff1c6d55e569e3ba91ab28c96acec750b99f13eabfc911dc",
+      "size": 248
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_correction_01/submitted_manifest.json": {
+      "sha256": "4047124b758c02794e3eb8aa5fffa05a56fc85f7b4001a26f34a894e56c48201",
+      "size": 994
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_implementation_01/prompt.txt": {
+      "sha256": "32536bb195e78063c059227f03ca15a1aba693620173d09a34d809e05fb87322",
+      "size": 10362
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_implementation_01/launch.json": {
+      "sha256": "d98dfd517272084bf3dd0f9dae23010c88c4be6d860c3ffc07c96a9bb2fa9cec",
+      "size": 1235
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_implementation_01/exit.json": {
+      "sha256": "617037d120d89072c55a014bbacbffcedf35dc69036bc24bc498ab8b39692feb",
+      "size": 264
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_implementation_01/submitted_manifest.json": {
+      "sha256": "2857d82536eb34e4c091c392e0e4357c5c306a14d23e234b95283b3e0f2c8f4c",
+      "size": 98271
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_completion_01/prompt.txt": {
+      "sha256": "efffd0dfa35fd34642e628db8ab3afed819e03211b7f526581c8c1503fd9e08a",
+      "size": 3996
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_completion_01/launch.json": {
+      "sha256": "344c26547f4d612fd68751bbac104009c105430b7232529768f2338184c52a57",
+      "size": 1230
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_completion_01/exit.json": {
+      "sha256": "9e052cb01d9ab675a5ec7ba5977558bd57b763bdf6bae54edac1ea62d3696959",
+      "size": 260
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_completion_01/submitted_manifest.json": {
+      "sha256": "1c2fd9867ccfffd88bb370666f03157cad1d06968f1ee7e9eebfb963274961e5",
+      "size": 98732
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_completion_02/prompt.txt": {
+      "sha256": "efffd0dfa35fd34642e628db8ab3afed819e03211b7f526581c8c1503fd9e08a",
+      "size": 3996
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_completion_02/launch.json": {
+      "sha256": "65250712a4149a296823957ba0ecb0de951153247beb9e74e2ff317c3cc11b6a",
+      "size": 1234
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_completion_02/exit.json": {
+      "sha256": "a1a93a052cd566151cba9a6b713564c1502319f1247a7c2baeca4e713884b4cf",
+      "size": 249
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_completion_02/submitted_manifest.json": {
+      "sha256": "1c2fd9867ccfffd88bb370666f03157cad1d06968f1ee7e9eebfb963274961e5",
+      "size": 98732
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_tests_01/prompt.txt": {
+      "sha256": "3ccfa397dff4d1092a40d8e69951b6e1123d801b660e7016064858d1ad6ccf11",
+      "size": 4934
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_tests_01/launch.json": {
+      "sha256": "218200be2278e86e35870fa75d43e2f1e3dcf5617d99295103373aa6ac21bee5",
+      "size": 1241
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_tests_01/exit.json": {
+      "sha256": "e15ef5ba746858eceefdcf882318ca18fdc10fa5dc80e545f4077e191aa114ea",
+      "size": 250
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_tests_01/submitted_manifest.json": {
+      "sha256": "d0db6ca5c6972e00ef70e491eb73763edb56b819597d1acdb99d945cfea019e4",
+      "size": 3751
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_correction_01/prompt.txt": {
+      "sha256": "7978e30310d1041f372c6757f8cc79fe895f8e176b99cde953bfeba2f4840baa",
+      "size": 1599
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_correction_01/launch.json": {
+      "sha256": "ce107d619c1288bbdea9f6c824f23c4dbbaa28bc4ed83dd96fc977b14fcc69fb",
+      "size": 1246
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_correction_01/exit.json": {
+      "sha256": "d8a6b7c1fb8404364f0bc478145d33554979313829179d3a7937eb26946c0ba3",
+      "size": 251
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_correction_01/submitted_manifest.json": {
+      "sha256": "00607fa69079b5ba30263e065ed17ea0a3651a2fcb7638acca5615cccffd14e9",
+      "size": 216
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/design_01/result.md": {
+      "sha256": "b4de2e4bef0cc3d8a8d49abae13bf82e2a0fd9fdd2d11cd85a001599bae99a3d",
+      "size": 25130
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/native_maple_proof/receipt.json": {
+      "sha256": "c10c2230793bbcc2364e9d95063a923ecc0f6cb997d1b12266ad6ba43b46bce9",
+      "size": 1159
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_current_02/launch.json": {
+      "sha256": "3e37c4eebe48ff04053d04b54cf1259e5cd4014150128f5f6238bc7b1dc95960",
+      "size": 621
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_current_02/exit.json": {
+      "sha256": "8c5c5db1c4bf9b0974ba51912cdb2af1a90c8f050d49ff167136eb5667427748",
+      "size": 190
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_current_02/result.json": {
+      "sha256": "bfb0182feeaf42063c3b934b40d9ce0f97935c10c6e5d2ab37dbdc0b817a3a1a",
+      "size": 1054
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_reference_02/launch.json": {
+      "sha256": "4b8aa3961f6d0b593b66d386c496c96d8dc12e75de6f9275c5274b6f5f87d190",
+      "size": 768
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_reference_02/exit.json": {
+      "sha256": "78992cf7c9234a23e2d2c53dc6e48d1f8d5631a52e0e64eb8fd55835180812d6",
+      "size": 189
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/checkpoint_reference_02/result.json": {
+      "sha256": "84f9bca87e437fd9d8122b4ffb0dc214526af4932ff37dc4e0840f84e71eea7b",
+      "size": 1308
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_units_02/verification.json": {
+      "sha256": "cf879dc38d9628cdb609828eb6b9f566cf79ffe04109fd9f6a0290cdc6dec604",
+      "size": 6093
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_units_02/exit.json": {
+      "sha256": "a482bcea0860ca385f1bd880933eb719ce2ec2115a2f5b2671adb5b580f53389",
+      "size": 190
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_units_03/verification.json": {
+      "sha256": "a5440dba54a65d276f02c225b83a6f60b00cbf08463bf771821d81a0c697545f",
+      "size": 6093
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_units_03/launch.json": {
+      "sha256": "1cb20f8f19a4b846bd52e8718099f190eef52dd29b20304129bb9144f2d6b96c",
+      "size": 469
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_units_03/exit.json": {
+      "sha256": "dbb72e89ba2b4263dfd08f05c938eacda7c669b7916fb5aedf336bf62c50e7d6",
+      "size": 190
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_prepare_candidate_02/stdout.json": {
+      "sha256": "7810070178e439f51015827f9b4665c2153c4d84680653661120bb402d510a1e",
+      "size": 1427
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_prepare_candidate_02/exit.json": {
+      "sha256": "7450c623f1c648788e900f14b008a7ea677fde70fcc80d7e3fc29d40b745d6c2",
+      "size": 188
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_verify_candidate_02a/stdout.json": {
+      "sha256": "ccea457e483311df4cce87d3ce4e7f61be1106370e99f82533354f7b002c2182",
+      "size": 943
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_verify_candidate_02b/stdout.json": {
+      "sha256": "d89fe2c840eb80e6a6cf453bf8efe094420d6c79e9aa0c5948757e4bc7044515",
+      "size": 943
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_verify_old_lock_new_parent/stdout.json": {
+      "sha256": "503988278311d302753358d66d9b8559f40d60fb679d7d52a330cbcb82a1cd53",
+      "size": 943
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_verify_offline_both_01/stdout.json": {
+      "sha256": "f5c2c83467f2b9b179e5385d9d6c5b51130d1466a6556d0460a63e5419b18cb7",
+      "size": 943
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_verify_offline_both_02/stdout.json": {
+      "sha256": "6ba0bede6f0fe7c34f54ae35c7d25c139f4018c01815a0133c55bc1e877f206f",
+      "size": 943
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_prepare_main_01/stdout.json": {
+      "sha256": "441763f733634456fb5dc52882e2491b3a4ed9d0c128cf602eccd05d83669f54",
+      "size": 1205
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_prepare_main_01/exit.json": {
+      "sha256": "31376f7efe3f25854c8e5c2352c2ba13cff3dfd1c77692c2486e96f22b52b276",
+      "size": 189
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/locked_dense_checkpoints_01/result.json": {
+      "sha256": "0d8ee2d717ce44a08e9664bb91753721a9aedc6ca66bf3a7e0a1992435300773",
+      "size": 48455
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/locked_dense_checkpoints_01/launch.json": {
+      "sha256": "72ddfa6aa2fbf12ade29ccafae861f60686d02c1516fed066e50012c5499b748",
+      "size": 614
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/locked_dense_checkpoints_01/exit.json": {
+      "sha256": "50d16be22df60082374ea1b28bbac0b25b41f959aaf1ff066e79d17a06860ddd",
+      "size": 189
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_correction_01/disposition.json": {
+      "sha256": "75237d0eaa96e7cd4d548201a1326c5c02262f8ea14bf953a4f0fc0cefd4aedf",
+      "size": 366
+    },
+    "agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_correction_01/accepted_patch.json": {
+      "sha256": "453496f2508f275c7156611cabc8a70ebc6204bb793478806489f08fdcea1ad7",
+      "size": 774
+    }
+  },
+  "excluded": "All saved checkpoint arrays, NPZ/NPY/Zarr/tar/store payloads, raw native-test logs, Claude raw source streams, environments, source copies and caches; retained locally",
+  "all_claude_stages_reaped": true,
+  "total_bytes": 717500,
+  "patch_receipt_policy": "Literal unified diff preserved in accepted_patch.json; original accepted.diff retained locally unchanged. Context whitespace is data."
+}

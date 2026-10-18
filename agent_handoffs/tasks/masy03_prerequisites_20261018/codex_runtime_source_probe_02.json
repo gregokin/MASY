@@ -1,0 +1,22 @@
+{
+  "synthetic_only": true,
+  "production_snapshot": "/home/okin/MASY/agent_handoffs/tasks/masy03_prerequisites_20261018/runtime_component_snapshot_02",
+  "checks": {
+    "capture": true,
+    "seal_and_reuse": true,
+    "overlay_regeneration": "exact",
+    "tamper_refused": "object_tamper",
+    "timeout": {
+      "code": "worker_timeout",
+      "output_bytes": 0,
+      "pid": 13,
+      "returncode": -9
+    },
+    "output": {
+      "code": "worker_output_exceeded",
+      "output_bytes": 128,
+      "pid": 14,
+      "returncode": -9
+    }
+  }
+}
