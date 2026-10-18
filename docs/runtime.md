@@ -1,6 +1,6 @@
 # MASY-03 locked CPU runtime (`prepare` / `verify`)
 
-**Status: implemented but not yet tested or accepted.** The code below has not been executed by its author. Synthetic tests (`tests/test_runtime.py`) are still to be written, and no actual prepare or verify has run. Nothing here is a transport, restart, science, GPU or performance result.
+**Status: CPU source and interface delivery independently qualified.** Codex ran all 245 synthetic tests, prepared the committed MAPLE `5b1a052e` / local SYRUP `b4ee14e` pair, verified fresh locks repeatedly, and exercised three native wet Dense checkpoint continuations on locked imports. Both configured source roots were temporarily unavailable during two old-lock verifications. No coupled transport, combined restart, GPU or performance result is claimed. Exact receipts are in [verification](../agent_handoffs/verification.md).
 
 The runtime tool seals the current committed MAPLE, SYRUP and MASY sources into a content-addressed store. It produces a frozen MAPLE bundle with SYRUP's own `maple_syrup.dependency_bundle` and checks the native interfaces in a fresh isolated child. It then publishes a lock. `verify` re-checks one explicit lock later. The output is CPU runtime identity and native interface delivery only. Every output says `transport_ready: false`, has `transport_entry_point: null` and lists the unimplemented pieces. No transport, adapter or event runner exists.
 
@@ -82,7 +82,7 @@ The parent never imports `maple`, `maple_syrup` or native packages. That is re-c
 
 Per-run operational values (run directory, request path, pycache prefix, pid, `HOME`, `TMPDIR`, `XDG_CACHE_HOME`, `NUMBA_CACHE_DIR`, `MPLCONFIGDIR`) are validated against the new run directory and saved in that run's receipts. They are never compared with an older run. Shadowed, unselected installed metadata is recorded, but a missing live upstream egg-info does not invalidate an old lock. Source, package, selected metadata, interpreter, dependency-version and compiled identities stay strict.
 
-Two fresh `verify` runs of one lock are expected to succeed independently. That has **not** been demonstrated yet.
+Two fresh `verify` runs of one lock passed with both configured upstream source roots absent. The corrected candidate also passed preparation and two fresh verifications, and its verifier accepted the retained older lock after the metadata generator changed. All referenced old source objects and locks remain available; the task-owned source worktrees were restored afterward.
 
 ## Worker child
 

@@ -185,7 +185,7 @@ Compiled identities in the environment record (interpreter, NumPy core) are hash
 
 ## Next bounded milestone (MASY-02 proposal, not implemented)
 
-*Note (MASY-03):* items 1 and 3 now have a separate, untested and unaccepted implementation in [runtime.md](runtime.md). It uses an unmodified upstream bundle, with run-owned labelled SYRUP/MASY overlays and no upstream delivery extension. The preflight itself still reads live checkouts only, and its standing findings are unchanged. The proposal below is kept as written.
+*Note (MASY-03):* items 1 and 3 now have a separate CPU source/interface implementation qualified in [runtime.md](runtime.md). It uses an unmodified upstream bundle, with run-owned labelled SYRUP/MASY overlays and no upstream delivery extension. Committed-pair preparation, repeated fresh verification and verification without the configured upstream source roots passed. The preflight itself still reads live checkouts only, and its standing findings are unchanged. The proposal below is kept as written.
 
 1. Build an immutable runtime with the upstream `maple_syrup.dependency_bundle` mechanisms. This means a scoped export of the MAPLE project (no `.git`, no datasets) and a matching SYRUP bundle. The bundle's distribution overlay must truthfully identify the source root, so the unmodified resolver can pass.
 2. If an unmodified bundle cannot express the required metadata, a narrow upstream delivery extension is required. That extension must be shown necessary, then reviewed.

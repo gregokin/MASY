@@ -13,7 +13,7 @@ cd /home/okin/MASY && /home/okin/MAPLE/.venv/bin/python -B -m unittest discover 
 | `test_importcheck.py` | module origins and environment record |
 | `test_contracts.py` | native audit classification and the `MASY_REQUIRED_API` table against synthetic modules |
 | `test_report.py`, `test_launch.py` | report publication; preflight launcher |
-| `test_runtime.py` | **not written yet**: runtime prepare/verify synthetic tests (planned next stage) |
+| `test_runtime.py` | 70 runtime regressions: source capture, immutable objects, metadata, locks, input/output separation, resource bounds, process cleanup and bootstrap guards |
 
 `test_contracts.py` changes in MASY-03 (table contracts only):
 
@@ -23,4 +23,6 @@ cd /home/okin/MASY && /home/okin/MAPLE/.venv/bin/python -B -m unittest discover 
 
 The generic class/optional-class tests and the Dense/helper requirements are unchanged.
 
-Historical count: 170 tests passed in Codex's MASY-02B receipt. These edits remove one test and add six, so the expected count is 175 before `test_runtime.py` exists. That count has not been run.
+Codex ran 245 tests with no failures, errors or skips: the updated 175-test preflight suite plus 70 runtime tests. Source files stayed unchanged, and all loaded MASY modules came from the candidate. The first expanded run exposed a missing-version TypeError; Claude corrected the type guard and the complete suite then passed. Historical MASY-02B had 170 tests.
+
+Independent native qualification is separate: current-source checkpoint suites passed 291 tests (8 skips), and genuine reference compact/windowed suites passed 404 (6 skips). Three further wet Dense save/load/continuation checks passed using only locked native imports and selected metadata. These tiny CPU fixtures do not qualify combined restart, alternating transport, windowed coupling, GPU or performance. See [verification](../agent_handoffs/verification.md).
