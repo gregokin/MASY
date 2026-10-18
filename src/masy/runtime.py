@@ -885,7 +885,7 @@ def validate_static_project(data: bytes, expected_name: str, where: str = "pypro
         canonical = str(Version(version)) if isinstance(version, str) else None
     except InvalidVersion:
         canonical = None
-    if canonical != version or not _SAFE_COMPONENT.match(version):
+    if not isinstance(version, str) or canonical != version or not _SAFE_COMPONENT.match(version):
         raise RuntimeRefusal("pyproject_version_invalid", f"{where}: version {version!r} is not a canonical PEP 440 "
                              "version")
 
