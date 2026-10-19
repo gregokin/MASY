@@ -1,0 +1,31 @@
+{
+  "utc": "2026-10-19T20:06:14.245116+00:00",
+  "mode": "automatic Codex-Claude until changed",
+  "authorization_file": "agent_handoffs/project_authorization_20261019.md",
+  "current_masy_committed_head": "bf463549b004ffabf5d055543c9b2d423b9679de",
+  "physics_questions": "All five answered; no new physics question pending.",
+  "tasks": {
+    "09": "accepted committed source pair39/d05/22aa; native revisions pushed; original lock retained",
+    "10/14/16/23/24": "accepted and pushed CPU factory/backend/bounded production features through7853ebb; synthetic calibration only",
+    "11/17": "accepted isolated native partition/exchange; native21 release pending",
+    "15": "accepted isolated passive physical codec174checks; native21 release pending",
+    "19": "accepted isolated same-version W1C58checks; cold-overlay deep gathers explicitly refused",
+    "18": "accepted GPU source runtime and real identity-only probe on exact development profile; no kernels/transport",
+    "20": "accepted combined accepted-boundary restart design",
+    "21": "exact full selection15355nodes:2000completed partial+13355remaining in6boundedCPUworkers, original cases/tolerances unchanged;18failures independently reproduced on exact39reference; owningRuffclean; live nativeunchanged",
+    "22": "parentacceptedisolatedprototype after26+15checks and source review; publication/freshnativepairpending",
+    "25": "designacceptedbyroot/Claude; isolatedtwo-fileimplementation27active",
+    "26": "accepted6files publishedbf46354;307stdlib+46nativeconfig checks; actualClaude test-only source fixture correction complete",
+    "27": "non-enabling native publication-equivalence checker+tests isolated implementation withClaude",
+    "29": "source-only next native GPU numerical smoke design; no kernel/context/model launch",
+    "30": "source-only actual persisted accepted-boundary store design; no implementation"
+  },
+  "implementation_writers": {
+    "live_MASY": "root",
+    "task27_candidate": "production_profile_foundation, isolated tree",
+    "task29_design": "gpu_coupling_design, design only",
+    "task30_design": "combined_restart_design, design only"
+  },
+  "no_background_resumption_promise": true,
+  "git_authorization": "User October19: you can push commits as needed; publish independently accepted milestones after required checks, no force or unrelated work changes."
+}

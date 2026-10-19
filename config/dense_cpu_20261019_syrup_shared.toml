@@ -1,0 +1,19 @@
+# Pinned upstream pair for restricted Dense CPU qualification, MASY-09.
+# MASY is selected from the current committed launcher tree and recorded in the new lock.
+schema = "masy.runtime.v1"
+[sources.maple]
+root = "/home/okin/MAPLE"
+distribution_metadata = "/home/okin/MASY/agent_handoffs/tasks/masy08_storage_pair_20261019/metadata_build/distribution/maple-0.0.1.dist-info"
+expected_revision = "39bcf79e1e67b6ed960f78a923ddfedf1d173e68"
+[sources.syrup]
+root = "/home/okin/SYRUP"
+expected_revision = "d05d8c6c66d9fd2969c007681916254e8d1c2c7c"
+[sources.masy]
+[runtime]
+python = "/home/okin/MAPLE/.venv/bin/python"
+store = "/home/okin/MASY/runs/runtime-store"
+[limits]
+worker_timeout_s = 180.0
+worker_max_output_bytes = 8388608
+store_max_new_bytes = 4294967296
+disk_reserve_bytes = 1073741824

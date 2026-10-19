@@ -243,18 +243,20 @@ Every adoption:
 
 ## 3. Deliberate limitations of this chunk
 
-- Dense `VoxelColumnState` only, on the NumPy CPU host with float64 arrays. Windowed (developed on a separate MAPLE
-  branch, not touched), Compact, CuPy/GPU and voxel growth all refuse.
+- Dense `VoxelColumnState` only, on the NumPy CPU host with float64 arrays. MAPLE now includes shared windowed
+  libraries, but this adapter continues to refuse Windowed, Compact, CuPy/GPU and voxel growth.
 - Square grid, full active mask, flat-pool `MobileCohortState` only. A segmented cohort calendar refuses.
 - No standing-water rule at wind entry. No moisture, growth or hydrology law. Prescribed fields are only verified.
 - The memory bound is a documented conservative estimate, not a measured RSS.
 
 ## 4. Pending (not in this chunk)
 
-- **Native wind event-end finalizer.** The adapter is independently reviewed and verified on an explicit development
-  pair using actual native settlement. Its [absolute-origin patch](../agent_handoffs/maple_record_origin_handoff.md)
-  still needs an upstream commit and new current-pair qualification. `adopt_scheduler_physical` continues to refuse
-  a nonempty pool; the runner supplies only native-finalized genuinely empty state.
+- **Native wind event-end finalizer (implemented).** The origin extension is committed upstream and the actual
+  Dense sequence passed on [MAPLE `39bcf79` + SYRUP `b4ee14e`](committed_pair_qualification.md)
+  in historical MASY-08. The current accepted reference is [MASY-09](source_pair_20261019.md),
+  MAPLE `39bcf79` + SYRUP `d05d8c6` + MASY `22aa6ab`.
+  `adopt_scheduler_physical` continues to refuse a nonempty pool; the runner supplies only native-finalized
+  genuinely empty state. The [original patch handoff](../agent_handoffs/maple_record_origin_handoff.md) is historical.
 
 - **Runner:** the restricted `masy.dense_runner` Python API is independently accepted; see
   [runner qualification](dense_runner.md). A documented collaborator launcher and combined restart remain later work.

@@ -1,32 +1,26 @@
-# MASY-06 complete: reviewed MASY adapter adopted; native commit/pair promotion next
+# Whole-project automatic orchestration active
 
-Publication authorized by the user: commit and push the accepted MASY work to origin/main. This commit contains
-that reviewed integration and the MAPLE patch handoff. Before publication, MASY-06 source/docs matched all 53 final
-manifest entries; no functional source or test changed. Actual resulting commit/push verification is recorded locally
-in agent_handoffs/tasks/masy06_publish_20261018/. All simulation/review processes are exited/reaped; no watcher or
-background resumption is active. MAPLE's owning developer will handle the native clock-origin patch.
+Codex leads MASY, MAPLE and SYRUP development with actual Claude implementation or independent source review in every task. The user authorizes parallel isolated tasks and commit/push of independently accepted work as needed. One writer per implementation tree; relevant source may be shared with Claude, while saved model payloads stay local. Ask the user before new physics decisions and continue independent work while awaiting an answer.
 
-MASY calls genuine native wind finalization at deliberate WindEvent completion; true-empty wind handoff, unchanged
-clocks, native returned bed/availability/ledger, one-time export/internal deposition accounting and staged failure
-recovery are verified. Genuine nonempty wind-water/recession-wind-second-water matches direct native execution.
-Explicit uncommitted development ID3eed7f55c5d474531a4dcc38d5f4492a546249845e9a494b1c1348f9d1203320.
-92 native tests,20 runner+23 subtests,15 bed+38 subtests,264 stdlib pass in proportional checks. Final adoption hashes
-match the functional source exactly; post-adoption docs explain current qualification/limits. See verification.md.
+## Accepted reference and published CPU additions
 
-Claude source-only review ACCEPT, no blocking findings. Sessiona5f38e54-b39c-47f2-aca7-b0d4b3f4979b,
-PID278576/start38630474, exit0/reaped,115.0547s. All tools disabled; exact source receipts/no model payload sharing.
-Codex independently checked actual diffs/callers and execution and recorded every nonblocking disposition.
+MASY09 accepts MAPLE39bcf79 + SYRUPd05d8c6 + MASY runtime22aa6ab under immutable lock43976b9a6c3aa5384d0cdfdcf7c61f90d6a2f0ced45a0890e92dad5fb6a5cd33. Independent96component checks and153pair tests plus61subtests passed. Both native committed revisions are available on origin/main (verified October19). All preceding locks remain unchanged. Later committed MASY/native code requires a fresh source lock/qualification; no old run is rebound.
 
-Live MAPLE remains clean7b0e2539; SYRUP cleanb4ee14e; windowed branch/environment/jobs are untouched. The native
-explicit record_origin_s extension is isolated, reviewed, zero-default compatible and passes apply-check. Public
-handoff: agent_handoffs/maple_record_origin_handoff.md and maple_record_origin.patch. Current unextended7b is
-refused before transport. Old locks remain immutable. Native adoption stays with the owning thread; no silent
-upstream edit or fabricated current-committed promotion. The optional ownership question received no answer;
-it did not block preparation/review/testing or MASY adoption, and no new mandatory approval was invented.
+Published CPU checkpoint7853ebba68fb8ea85d9f32e1acd01b1a483a42f2 is pushed and remote verified. Commits27b3cdf,0e482e8,7853ebb publish the native reduced-wind config factory, strict Dense CPU metadata backend inventory and actual opt-in bounded Dense CPU production-feature coupling. Root23 passed282stdlib+46nativeconfig checks. Root24 independently passed41production checks,81legacy/config checks plus61subtests and exact default success/refusal artifact parity. Native topographic separation, creep, wind/water avalanches and final settlement are demonstrated on labelled synthetic fixtures. Production calibration remains pending. Full qualification limits are in docs/dense_production_wind.md.
 
-Next bounded step: owning MAPLE thread adopts/commits the narrow reviewed origin patch; then qualify actual new
-committed HEAD+current SYRUP as a NEW pair. Do not relabel/rebind the uncommitted development bundle or older locks.
-After that, combined restart and the collaborator workflow remain phase4. GPU/windowed/large-case, calibration,
-coupled saltation and production CLI remain unqualified. Never reset/rebase clocks or invent prefix wind forcing.
+## Active work and remaining gates
 
-Task archive: agent_handoffs/tasks/masy06_origin_integration_20261018; all previous handoffs/failed attempts preserved.
+- Native windowed access: W1A/W1B accepted isolated8/23focused CPU checks and602existing storage checks (7named GPU-dependent skips/78CuPy cases deselected). W1C19 now accepted isolated58checks by parent and independent peer; actual Claude correction closure complete. It measures true streaming operands, requires explicit native mass resolution/caps and same-version handles, refuses cold-overlay gathers and fixed-capacity growth. No native wind caller is wired yet.
+- Native release21: exact7additive W1A/W1B/passive-codec files await full MAPLE verification/publication. Full owning Ruff is clean. Sandbox Zarr I/O refusal was independently reproduced, so checks run outside the sandbox. FullCPU04 had a confirmed harness multiprocessing-entry defect, was stopped/reaped and retained. Corrected spawn-safe fullCPU05 and unchanged MAPLE39 referenceCPU01 independently reproduced the same initial18 failures in older tests/examples, with source bytes unchanged. Both were gracefully interrupted/reaped after preserving evidence; no full-reference completion is claimed. Full candidate coverage now combines2000retained completed nodes and13355remaining exact nodes in six bounded CPU workers. The exact disjoint plan/process identities are task21/full_cpu_shards_01/; original cases and tolerances are unchanged. Remaining failures still require baseline classification before release. Live MAPLE source remains unchanged.
+- Native windowed design25: actual Claude design/closure identifies a first non-enabling bounded native publication-equivalence prerequisite, then independent cross-version/per-cell observation, shared native reduced-step/creep seam, native avalanche/commit, scheduler/finalizer and separate GPU/restart/admission qualification. Actual Claude focused closure accepted the corrected design; task27 now implements only the new publication checker/tests in isolation. Root reviews each bounded step; no copied physics or FFT replacement.
+- GPU18 source runtime accepted: parent and independent peer passed133checks; actual sealed no-context preparation/verification passed. Separately scoped idle physical GPU-5c8bd3d4-2885-82c6-a0f0-ad2b7f87b871 identity probe passed on profile25beb28a/probe2a50c559, with exit/reaping and exact binary/native/toolchain provenance. It is an explicit MASY22aa development snapshot, not current committed source qualification. No arrays, numerical kernels, model or transport ran. GPU26 published the exact runtime/CLI and bounded test fixtures as bf463549b004ffabf5d055543c9b2d423b9679de, pushed and remote verified. The first merged check exposed isolated-directory assumptions and was stopped/reaped; actual Claude reviewed the source-only fixture correction. Independent merged307stdlib+46native-config checks pass without skips or accelerator imports; runtime code remained unchanged. Current committed profile preparation remains a separate step. GPU numerical smoke/transport remains ahead.
+- Combined restart: passive exact native15 codec accepted174independent CPU checks; publication waits native21. Actual Claude design20 accepted an accepted-boundary envelope protocol. Bridge22 prototype passes26new checks and15unchanged DenseBed checks; final ownership correction/review narrows restoration to private tickets from immediate actual native loads. Root independent26+15checks and complete source review now accept the isolated prototype; live adoption remains pending native publication and fresh pair qualification. Atomic combined envelope publication/recovery and active-event restart remain unimplemented.
+- Vegetation: docs/vegetation_information_plan.md is accepted design. Current native prescribed layers remain shared/validated. Future between-event joint vegetation/native soil-water updates, exact clocks/version identity and atomic exactly-once receipts are reserved. No response law, retained-soil-water completion profile or executable update hook is implemented.
+
+Further source-only designs29/30 cover native GPU numerical qualification and a complete persisted accepted-boundary store. They launch no kernels/model and change no live sources.
+
+## Scientific decisions
+
+All five questions are answered in task10/physics_questions.json and physics_decisions_20261019.json: clearly labelled synthetic calibration for interface tests; periodic wind with open water drainage; native avalanching at both commits; explicit constant_depth preserving accepted dry surface water during wind; existing native error bounds for changed-order summed accounting while actual sediment transfers must match. No tolerance is relaxed. No physics question is currently pending; new ones require the user.
+
+Exact task prompts, baselines, submission hashes, Claude sessions/PID identities, raw separate streams, exit/reaping, reviews and checks are retained locally under agent_handoffs/tasks/<id>/. Saved model payloads stay local. Active workers are identified by their exact task launch receipts; this state is a dated checkpoint, not an unattended future-resumption promise.

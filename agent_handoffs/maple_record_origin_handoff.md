@@ -1,5 +1,11 @@
 # MAPLE explicit completed-wind origin patch (independently reviewed)
 
+**Historical MASY-06 handoff; fulfilled upstream.** MAPLE committed origin support at `b3e8756` and retained it
+in merged `39bcf79`. Historical MASY-08 checks passed on `39bcf79` + SYRUP `b4ee14e`, lock `ee190c81…`;
+see [that qualification](../docs/committed_pair_qualification.md). The current accepted reference is
+[MASY-09](../docs/source_pair_20261019.md): `39bcf79` + `d05d8c6` + `22aa6ab`, lock `43976b9a…`. The original
+patch/request below is provenance, not an instruction to reapply it to current MAPLE.
+
 Baseline is local committed MAPLE main
 `7b0e2539f6e57b5b0182280efeadc06488fde37a`. The live tree is unchanged.
 The patch is [maple_record_origin.patch](maple_record_origin.patch) next to this handoff and passes

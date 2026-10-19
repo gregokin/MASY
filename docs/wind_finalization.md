@@ -1,10 +1,11 @@
 # Dense wind-event finalization
 
-MASY-06 implements native instantaneous event-end settling for the restricted
-Dense CPU runner. The implementation has passed independent review and actual isolated CPU checks on an explicit
-uncommitted development pair. This is not production committed source-pair acceptance. MAPLE `7b0e2539` provides the
-finalizer; the isolated native extension adds keyword-only `record_origin_s=0.0`.
-SYRUP remains the exact frozen `b4ee14e` source. No native physics is copied.
+MASY implements native instantaneous event-end settling for the restricted Dense CPU runner.
+The original MASY-06 adapter passed independent review; MAPLE committed its absolute-origin extension at
+`b3e8756`, now included in merged `39bcf79`. Historical MASY-08 qualified `39bcf79` + SYRUP `b4ee14e`
+under its [retained immutable lock](committed_pair_qualification.md). The current accepted reference is
+[MASY-09](source_pair_20261019.md): MAPLE `39bcf79` + SYRUP `d05d8c6` + MASY `22aa6ab`, lock `43976b9a…`.
+Those reports record exact sources, commands, review status and limits. No native physics is copied.
 
 A scheduled wind event currently contains one forcing block. MASY advances the
 actual absolute block on its staged evolving bed, verifies native transport
@@ -42,16 +43,13 @@ transfer/reservoir gap and bound. The retained water routing graph/source and
 native reroute decision remain unchanged in ownership; subsequent water entry
 compares the evolved physical bed against that retained source.
 
-The candidate uses actual SYRUP dependency-bundle export/materialization,
-recording the native original revision and isolated patch chain. Its explicit
-development manifest distinguishes uncommitted patched MAPLE and MASY from the
-parent committed-pair lock. Every execution verifies source hashes, real
-metadata, native source guards and imported module origins before and after.
-No existing lock, environment, live upstream tree or running job is changed.
-GPU, windowed storage, large-case performance, scientific calibration and
-combined checkpoint/restart remain unqualified.
+The committed pair uses actual SYRUP dependency-bundle export/materialization and matching metadata built from
+the committed MAPLE source. Every execution verifies source hashes, real metadata, native source guards and imported
+module origins before and after. The earlier uncommitted development pair remains historical evidence; old locks,
+installed environments, upstream trees and unrelated jobs are unchanged. GPU/windowed execution, large-case
+performance, scientific calibration and combined checkpoint/restart remain unqualified.
 
-Claude accepted the bounded source patch with no blocking findings. The reviewed native patch and ownership handoff
-are [here](../agent_handoffs/maple_record_origin_handoff.md). MAPLE's existing absolute-clock completion tolerance
+The [original reviewed native patch](../agent_handoffs/maple_record_origin_handoff.md) is retained for provenance;
+it has been implemented upstream and must not be reapplied to the merged tree. MAPLE's existing absolute-clock completion tolerance
 is retained and may refuse large origins/long accumulated runs; such a refusal blocks publication. It does not
 establish completion. Exact review notes and their dispositions are in the task's acceptance receipt.

@@ -1,5 +1,9 @@
 # Initial upstream interface observations — October 16, 2026
 
+**Current qualification:** [MASY-09 committed Dense CPU pair](source_pair_20261019.md), MAPLE `39bcf79`
++ SYRUP `d05d8c6`, MASY runtime `22aa6ab`. The dated sections below preserve their original observations;
+present-tense blockers in those sections describe those historical revisions.
+
 Read-only source inspection during setup; API candidates and blockers, not runtime compatibility certification. Full observed source manifests/revisions are archived in `agent_handoffs/tasks/bootstrap_20261016/upstream_baseline.json`. Live checkouts can change after this observation.
 
 | Area | Observed source | Implication |
@@ -181,3 +185,23 @@ without blocking findings, followed by Codex's independent source/caller/real ex
 notes/dispositions and exact lifecycle are in the MASY-06 task archive. This does not establish a normal committed
 source pair, production CLI, combined restart, scientific calibration, GPU/windowed or large-case readiness.
 Next is upstream origin-patch adoption/commit and new current committed pair qualification.
+
+## MASY-07 / MASY-08 committed qualification — October 18, 2026 (October 19 UTC)
+
+MASY-07 qualified clean committed `b3e8756` / `b4ee14e` / `22aa6ab` under lock
+`b2cf01e16e80ca575a0f4351e94c170740fdfda2006965ef254f7bee511f2370`. During those checks MAPLE advanced to `39bcf79`;
+its identity was recorded rather than silently rebound. The user then explicitly requested qualification of that merge.
+
+MASY-08 selected current clean committed MAPLE `39bcf79e1e67b6ed960f78a923ddfedf1d173e68`, unchanged committed
+SYRUP `b4ee14e5bf37814efb0d754de17b7ea604b1cd74`, MASY runtime `22aa6ab65ad73a58fb372ffe09e3f7e0ca9893a1`.
+Fresh immutable lock: `ee190c813ae347a1f5c11e7ab5fad595dada898f3a13dddc775fca4488762a70`.
+The old installed metadata correctly refused because it lacks the newly declared optional `windowed` extra;
+actual source-built distribution metadata passes all unchanged native bundle guards. No install or upstream edit.
+
+Execution passes 113 native settlement/origin/unsupported-storage tests, 15 bed+38 subtests, 22 runner+23 subtests
+and three genuine SYRUP wet checkpoint continuations, with no skips. Exact nonempty four-event parity includes the
+second wind at169seconds, unchanged native clocks, class/water budgets, final mobile emptiness, routing and failure
+isolation/recoverable accepted state. Fresh explicit-lock verification passes and all six old locks remain unchanged.
+Independent review status, actual metadata preparation, full evidence and bounded limits are in
+[committed-pair qualification](committed_pair_qualification.md). No new transport physics or product tests changed.
+Shared-storage libraries do not qualify windowed wind/water, GPU, large cases or combined restart.

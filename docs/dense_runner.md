@@ -1,25 +1,23 @@
 # Dense runner (`masy.dense_runner`): ordered wind / rain events on one native bed
 
-Status: **MASY-06 implementation independently reviewed; Dense CPU integration verified on an explicit
-uncommitted development pair, October 18, 2026.** Genuine nonempty wind → rain/recession → nonempty wind → second
-rain/recession matches direct native execution on one six-class evolving bed, including persistent bed fields,
-partial availability, clocks, exports and native class budgets. Routing reuse/rerouting, piecewise rainfall and
-failure isolation also pass. This is a Python API without production CLI or combined checkpoint/restart.
+Status: **Dense CPU integration independently accepted on the committed pair (MASY-09).**
+Genuine nonempty wind → rain/recession → nonempty wind → second rain/recession matches direct native execution
+on one six-class evolving bed, including exact persistent fields, partial availability, native clocks, exports,
+class/water budgets, routing and failure isolation. This is a Python API without production CLI or combined restart.
 Scientific calibration, coupled saltation, GPU/windowed support and large-case performance are unqualified.
 
-The native candidate is MAPLE `7b0e2539` plus the reviewed narrow `record_origin_s` extension, paired with unchanged
-SYRUP `b4ee14e`. Explicit immutable development ID:
-`3eed7f55c5d474531a4dcc38d5f4492a546249845e9a494b1c1348f9d1203320`.
-The live MAPLE tree remains unchanged. Its extension must be adopted and committed in the owning upstream thread,
-then qualified as a new current committed source pair before a normal new run. Current unextended `7b0e2539` is
-refused before transport; older locks are retained unchanged. The separate windowed branch is excluded.
-See the [reviewed native patch handoff](../agent_handoffs/maple_record_origin_handoff.md).
+Current qualified runtime inputs: MAPLE `39bcf79e1e67b6ed960f78a923ddfedf1d173e68`, SYRUP
+`d05d8c6c66d9fd2969c007681916254e8d1c2c7c`, MASY `22aa6ab65ad73a58fb372ffe09e3f7e0ca9893a1`.
+Reference lock: `43976b9a6c3aa5384d0cdfdcf7c61f90d6a2f0ced45a0890e92dad5fb6a5cd33`.
+The native `record_origin_s` extension is committed upstream. All earlier locks remain unchanged, including
+MASY-07's preceding committed `b3e8756` qualification and MASY-08's `39bcf79`/`b4ee14e` qualification.
+See [source-pair qualification](source_pair_20261019.md)
+for actual checks, source-derived metadata, reproducibility and limits. MASY-06's uncommitted development pair
+`3eed7f55c5d474531a4dcc38d5f4492a546249845e9a494b1c1348f9d1203320` is historical evidence only.
 
-Focused checks: 92 native finalizer tests; 15 bed tests plus 38 subtests; 20 runner tests plus 23 subtests;
-264 stdlib tests. No skips. Codex verified actual source/metadata/import origins and native bundle guards before/after
-execution. Claude's independent source-only review accepted the bounded patch with no blocking findings; every
-nonblocking note has a recorded disposition in [review](../agent_handoffs/codex_review.md). Exact manifests,
-commands, lifecycle and results are in [verification](../agent_handoffs/verification.md).
+The later opt-in [production-feature profile](dense_production_wind.md) is
+separately checked on bounded synthetic CPU fixtures. Its calibration and
+resource limits do not broaden this reference profile's qualification.
 
 The caller must establish locked import paths, matching distribution metadata and actual module origins before
 transport. The runner does not select or qualify dependencies itself. The existing runtime command qualifies source
@@ -233,8 +231,8 @@ On any refusal, native exception, limit or incomplete outcome:
 
 - MAPLE must provide the explicit `record_origin_s` finalizer API. Construction refuses older APIs with
   `unsupported_native_finalizer`; no clock reset or forcing prefix substitutes for the extension.
-- The MASY-06 pair is an explicit uncommitted development snapshot. A committed native extension and a new current
-  source-pair qualification remain necessary before a normal new run; old locks are never rebound.
+- Only the exact [qualified committed pair](source_pair_20261019.md) is covered. A newer upstream revision
+  requires fresh qualification; existing locks are never rebound. Shared-storage libraries do not qualify windowed wind.
 - The work-byte cap bounds MASY-side staged copies with a documented estimate. It does not bound native internal
   temporaries.
 - In-process only: no checkpoint, persistence or combined restart. Wet progress is never resumed here.

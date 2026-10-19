@@ -9,19 +9,27 @@ These are MASY milestones, independent of upstream phase numbers. User priority 
 5. **GPU and windowed extension.** Establish actual supported storage/backend handoff, bounded state ownership, native deep references, device compatibility and CPU/GPU physical agreement. Measure transfer/transition costs and full-event memory/runtime. Any upstream missing windowed wind capability is explicit work in MAPLE, not a copied MASY wind implementation.
 6. **Continuous upstream compatibility.** Test new current MAPLE/SYRUP pairs against the alternating case and restart contracts. Adopt updates per new run with recorded manifests; retain explicit previous locks for reproducibility. Hydraulic/pit/outlet refinements remain in SYRUP and reach new wrapper runs through their qualified dependency pair.
 
-First development assignment: Phase 1, a bounded audit/preflight task. No simulation/GPU work or upstream edits were launched by project setup. Commit/push requires its own request for MASY.
+First development assignment: Phase 1, a bounded audit/preflight task. No simulation/GPU work or upstream edits were launched by project setup. At setup, commit/push required its own request. On October19 the user explicitly authorized publication of independently accepted milestones as needed.
 
-## Status on October 18, 2026
+## Status on October 18, 2026 (October 19 UTC)
 
-The CPU source/runtime prerequisites and the restricted Dense schedule, bed adapter and Python event runner are
-independently accepted. Actual MAPLE wind → conservative SYRUP rain/recession → MAPLE wind passes on one evolving
-six-class bed; native controls also cover partial availability, a second rain with routing reuse/rerouting and
-piecewise rainfall. This evidence uses a labelled frozen source pair and uncommitted MASY test snapshot, rather than
-the user's changing MAPLE main. See [runner qualification](dense_runner.md) and [verification](../agent_handoffs/verification.md).
+The restricted Dense schedule, complete-bed adapter, native finalizer adapter and Python event runner pass on
+committed MAPLE `39bcf79` + SYRUP `b4ee14e`, MASY runtime `22aa6ab`, under a fresh genuine immutable lock.
+The real nonempty four-event sequence includes native recession and a second wind starting at 169 seconds.
+Exact persistent fields/clocks, class and water budgets, routing, final settlement and failure isolation pass.
+Three existing genuine SYRUP wet checkpoint continuations also pass; they do not establish combined restart.
+See [committed-pair qualification](committed_pair_qualification.md); Claude accepted its source-only review and Codex verified all execution/evidence conditions.
 
-The native finalizer adapter and narrow absolute-origin extension have now passed independent review and real
-nonempty wind → water/recession → nonempty wind → second water checks on an explicit uncommitted development pair.
-Next, the owning MAPLE thread adopts/commits the [reviewed origin patch](../agent_handoffs/maple_record_origin_handoff.md);
-MASY qualifies that new current committed pair. Windowed storage stays on its independent upstream branch. Then
-prove combined restart and provide the collaborator workflow in phase 4. Current acceptance does not cover coupled saltation, GPU/windowed handoff, large-case performance,
-scientific calibration or a production transport CLI. Leave this task's changes uncommitted until separately asked.
+The origin patch is committed upstream and the shared-storage libraries are merged. Windowed wind remains
+unsupported. Next is phase 4: combined restart and a documented collaborator workflow, addressing the known native
+restart prerequisites in their owning projects. No GPU/windowed execution, large-case performance, scientific
+calibration or production transport CLI is accepted. New upstream revisions require fresh qualification; old locks
+remain unchanged. This task leaves documentation/configuration changes uncommitted.
+
+## Active parallel work on October 19, 2026
+
+MASY-09 committed the reviewed SYRUP storage candidate as `d05d8c6` and accepted its fresh Dense CPU pairing with MAPLE `39bcf79`; see [current qualification](source_pair_20261019.md). Automatic Codex–Claude work is authorized across all three repositories. Independent tasks cover native production reduced-wind configuration, MAPLE vertical-windowed wind foundations, passive exact native restart prerequisites and GPU runtime/backend contracts. One writer per implementation tree; current physical-model choices are not changed by interface work. The user authorized labelled synthetic interface fixtures while leaving production calibration pending, periodic wind with open water drainage, and native avalanching at both wind and water commits. Native envelope rejection remains intact; any new physical choice is asked separately before dependent qualification.
+
+The [vegetation information plan](vegetation_information_plan.md) adds versioned shared vegetation and future joint native soil-water updates to the design. Current static vegetation and dry reset stay qualified as before; ecological laws and retained-water readiness are separate scientific decisions.
+
+Current published CPU additions are described in [bounded production wind](dense_production_wind.md). Native windowed helper release and combined persisted restart remain separate gates. The [GPU runtime](gpu_runtime.md) provides immutable preparation and an identity-only probe; numerical GPU transport remains unqualified. The local orchestration state records exact current task gates and preserved failed attempts.

@@ -1,5 +1,11 @@
 # Owning-MAPLE requirement: explicit absolute origin for a completed wind event
 
+**Historical MASY-06 handoff; fulfilled upstream.** MAPLE committed origin support at `b3e8756` and retained it
+in merged `39bcf79`. Historical MASY-08 checks passed on `39bcf79` + SYRUP `b4ee14e`, lock `ee190c81…`;
+see [that qualification](../docs/committed_pair_qualification.md). The current accepted reference is
+[MASY-09](../docs/source_pair_20261019.md): `39bcf79` + `d05d8c6` + `22aa6ab`, lock `43976b9a…`. The original
+patch/request below is provenance, not an instruction to reapply it to current MAPLE.
+
 Verified on committed MAPLE `7b0e2539f6e57b5b0182280efeadc06488fde37a`, actual SYRUP
 `b4ee14e5bf37814efb0d754de17b7ea604b1cd74`, new immutable CPU lock
 `d29d5740b9633aae346eba53fef05cfeb8bd6376a55b8cb7d33a8dc4417f4eef`.

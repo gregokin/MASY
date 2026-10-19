@@ -2,13 +2,31 @@
 
 MAPLE-SYRUP is designed to alternate actual MAPLE wind events and actual SYRUP water events over one evolving MAPLE sediment landscape. Wind physics stays in `~/MAPLE` and water physics stays in `~/SYRUP`. SYRUP's existing `maple_syrup` package name remains unchanged, and the combined wrapper uses `masy`. The wrapper contains no copied transport physics, no re-created sediment bed between events and no simultaneous wind/water transport.
 
-**Current status:** the restricted Dense CPU integration is independently verified.
+**Current status:** the restricted Dense CPU Python integration passes on committed MAPLE `39bcf79` + SYRUP
+`d05d8c6`, using MASY runtime `22aa6ab`. Claude accepted the source-only qualification review, followed by Codex
+verification of all execution and evidence conditions.
+Actual nonempty wind → rain/recession → nonempty wind → second rain/recession passes on one evolving bed,
+including a second wind at 169 seconds, final settlement, class budgets, routing and staged-failure isolation.
+See [the exact committed pair, lock and checks](docs/source_pair_20261019.md).
 
-- The MASY-01 read-only current-source compatibility preflight.
-- The MASY-03 locked CPU runtime `prepare`/`verify` ([docs/runtime.md](docs/runtime.md)). It seals the committed MAPLE/SYRUP/MASY sources and checks native interfaces. CPU source and interface delivery is independently qualified for MAPLE `5b1a052e` with local SYRUP `b4ee14e`.
-- The MASY-04 [schedule and complete-bed adapter](docs/dense_integration.md) and [Python event runner](docs/dense_runner.md). Actual MAPLE wind → SYRUP rain/recession → MAPLE wind passes on one evolving six-class bed, with partial availability, native class budgets and exact persistent-state agreement with direct upstream execution. Second-rain routing reuse/rerouting and piecewise rainfall also pass.
+Later published MASY additions provide [bounded Dense CPU production-feature
+coupling](docs/dense_production_wind.md), including reduced wind, topographic
+separation, creep and avalanching on labelled synthetic interface fixtures.
+Production calibration remains pending. The [GPU runtime](docs/gpu_runtime.md)
+provides separate immutable source profiles and an identity-only probe;
+numerical GPU transport remains unqualified. These later sources require their
+own new runtime identities and never change the reference lock above.
 
-The native finalizer adapter is now independently reviewed and tested on an explicit uncommitted development pair: MAPLE `7b0e2539` plus its narrow absolute-origin extension, with unchanged SYRUP `b4ee14e`. Genuine nonempty wind → water/recession → nonempty wind → second water matches direct native execution. The [reviewed MAPLE patch](agent_handoffs/maple_record_origin_handoff.md) still needs adoption and a commit in its owning thread, followed by qualification of the new current committed pair; unextended MAPLE is refused before transport. The live upstream trees remain unchanged. This covers small Dense NumPy beds, baseline aerodynamic wind and conservative upwind/array water. Windowed storage, GPU, combined restart and a collaborator transport CLI remain later work. The preflight/runtime tools still report `transport_ready=false`; their success concerns source identity and interfaces.
+The [schedule and bed adapter](docs/dense_integration.md), [Python event runner](docs/dense_runner.md), and
+[native finalization adapter](docs/wind_finalization.md) reuse the actual upstream physics. MAPLE's clock-origin
+extension is committed and included in this merge. Shared-storage libraries are present; windowed wind execution
+remains unqualified. GPU, large cases, combined restart and a collaborator transport CLI require later work.
+The [runtime tools](docs/runtime.md) still report `transport_ready=false` because they have no transport entry point;
+source delivery and the separately tested Python API have distinct acceptance evidence.
+
+The [shared vegetation and soil-water plan](docs/vegetation_information_plan.md) defines future versioned updates
+between events, read by both models, with atomic native water-budget exchanges. Growth, mortality and uptake laws
+remain separate scientific decisions.
 
 MASY now has a static, declarative [pyproject.toml](pyproject.toml) (`masy` `0.0.3.dev0`, equal to `masy.__version__`). It is never installed or built. The runtime uses it only to generate a labelled, run-owned metadata overlay that is not an installation.
 
@@ -72,7 +90,7 @@ The default suite uses stdlib `unittest`, with synthetic temporary Git repositor
 cd /home/okin/MASY && /home/okin/MAPLE/.venv/bin/python -B -m unittest discover -s tests -v
 ```
 
-All 263 stdlib tests pass, including the 70 runtime regressions and 18 schedule tests. Separate native checks pass 15 bed tests and 18 runner tests, plus 59 subtests. Codex also independently reproduced and verified the correction of four bed and four runner findings. See [tests/README.md](tests/README.md) and [verification](agent_handoffs/verification.md) for exact sources, receipts and limits.
+At MASY `bf46354`, 307 stdlib tests and 46 separate native configuration checks pass with no skips. The MASY-09 reference pair passed 153 tests plus 61 subtests and 96 separate component checks. MASY-06’s 264-test result and MASY-08’s 113/15/22/3 native results are historical. GPU source-profile provenance tests also inspect local immutable historical source/build receipts and the retained CPU lock; they launch no accelerator or model. Fresh-checkout test-fixture packaging remains collaborator-workflow work. See [tests/README.md](tests/README.md) and [verification](agent_handoffs/verification.md) for exact sources, receipts and limits.
 
 ## Project rules
 

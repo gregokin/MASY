@@ -49,10 +49,20 @@ compiled environment identities, CPU limits, output paths and child exit/reaping
 receipts and independent review dispositions are linked from [verification](../agent_handoffs/verification.md).
 
 This qualifies only the [restricted Dense CPU runner](../docs/dense_runner.md). Combined restart, coupled saltation,
-the native origin extension still needs a commit/new current-pair qualification; windowed/GPU operation and large-case performance require separate work.
+windowed/GPU operation and large-case performance require separate work. The origin extension is now committed upstream.
 
 MASY-06 adds native finalizer integration: 92 native finalizer checks (including explicit absolute origin, unchanged
 placement, tiny inventory and repeat idempotency), 20 runner checks plus 23 subtests, 15 bed checks plus 38 subtests,
 and 264 stdlib tests pass on proportional sealed snapshots. The genuine nonempty four-event sequence matches direct
 native execution. Finalizer failure/mutation retains the accepted water boundary and blocks the next process.
 See [verification](../agent_handoffs/verification.md) for exact development IDs, source guards and lifecycle.
+
+Historical (MASY-08): this task requalified the merged committed MAPLE `39bcf79` + SYRUP `b4ee14e` pair with unchanged MASY `22aa6ab` runtime.
+Passed: 113 native settlement/origin/unsupported-storage checks; 15 bed +38 subtests; 22 runner +23 subtests;
+three existing genuine wet SYRUP checkpoint continuations. No skips. The runner count includes 20 committed tests
+and two task-local extensions adding exact clock/routing/water-budget and staged-content/recovery assertions.
+All 361 captured native test/helper files are verified against exact committed Git blobs. Independent review status,
+source/metadata preparation and limits are in [committed-pair qualification](../docs/committed_pair_qualification.md).
+Historical (MASY-08): no runtime code or committed product tests changed; the stdlib suite was not rerun for that documentation task.
+
+Current published wrapper milestone `bf46354` passed 307 stdlib checks and 46 native configuration checks, with no skips. MASY-09’s reference pair passed 153 tests plus 61 subtests and 96 separate component checks. That reference retains its original locked runtime; later wrapper commits have separate identities. GPU source-profile tests use bounded immutable Git fixtures. Two provenance/retention tests also inspect the existing local historical source object, task08 source-built metadata receipt and retained CPU lock. These source-only checks run no accelerator or model. Packaging fixtures for a fresh checkout remains collaborator-workflow work.
