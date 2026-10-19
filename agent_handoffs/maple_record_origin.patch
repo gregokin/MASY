@@ -1,0 +1,207 @@
+--- a/src/maple/aeolian/scheduler/finalization.py
++++ b/src/maple/aeolian/scheduler/finalization.py
+@@ -298,7 +298,9 @@
+ # --------------------------------------------------------------------------
+ 
+ 
+-def _require_completed_record(state: SchedulerState, record: WindForcingRecordSpec) -> None:
++def _require_completed_record(
++    state: SchedulerState, record: WindForcingRecordSpec, *, record_origin_s: float = 0.0,
++) -> None:
+     """The deliberate completed-event marker: the caller hands over the
+     wind record the state advanced through, and the state must sit
+     EXACTLY at its end by the scheduler's own bookkeeping.
+@@ -306,8 +308,8 @@
+     `advance_wind_record` and the orchestrator loop move `block_index` to
+     `len(record.blocks)` with `block_offset_s == 0.0` only once the last
+     block's own duration is consumed, and `physical.time_s` then equals
+-    the record's total duration (every block's start/end time is derived
+-    from the same cumulative sum). The last block's own resolved wind is
++    `record_origin_s + record.total_duration_s()`. The record remains local
++    to zero; the origin maps it onto the unchanged physical clock. The last block's own resolved wind is
+     what `last_resolved_wind` records. A paused run, a checkpoint taken
+     mid-record, or a state advanced through a DIFFERENT record fails one
+     of these and is refused -- never silently finalized.
+@@ -320,6 +322,21 @@
+             ),
+         ])
+     validate_wind_forcing_record(record)
++    # This is bookkeeping only: never rebase physical or cohort timestamps.
++    # Refuse invalid origins before doing any physical work, including bools.
++    if (isinstance(record_origin_s, (bool, np.bool_))
++            or not isinstance(record_origin_s, (int, float, np.integer, np.floating))):
++        raise WindEventFinalizationError(["record_origin_s must be a finite nonnegative real number"])
++    try:
++        origin = float(record_origin_s)
++    except (OverflowError, ValueError) as exc:
++        raise WindEventFinalizationError(["record_origin_s must be a finite nonnegative real number"]) from exc
++    if not math.isfinite(origin) or origin < 0.0 or math.copysign(1.0, origin) < 0.0:
++        raise WindEventFinalizationError(["record_origin_s must be a finite nonnegative real number"])
++    duration = record.total_duration_s()
++    end_time_s = origin + duration
++    if not math.isfinite(end_time_s) or (duration > 0.0 and end_time_s <= origin):
++        raise WindEventFinalizationError(["record_origin_s + record duration is not a finite advancing time"])
+     violations: list[str] = []
+     n_blocks = len(record.blocks)
+     if state.block_index != n_blocks:
+@@ -333,14 +350,13 @@
+             f"the wind event is not complete: state.block_offset_s is {state.block_offset_s!r}, "
+             "but a completed record leaves it exactly 0.0"
+         )
+-    end_time_s = record.total_duration_s()
+     if not (
+         math.isfinite(state.physical.time_s)
+         and abs(float(state.physical.time_s) - end_time_s) <= _RECORD_END_EPS_S
+     ):
+         violations.append(
+             f"the wind event is not complete: physical.time_s {state.physical.time_s!r} is not the "
+-            f"record's own end time {end_time_s!r}"
++            f"record's end time {end_time_s!r} at origin {origin!r}"
+         )
+     if n_blocks:
+         last = record.blocks[-1]
+@@ -805,6 +821,8 @@
+     state: SchedulerState,
+     config: SchedulerPhysicsConfig,
+     record: WindForcingRecordSpec,
++    *,
++    record_origin_s: float = 0.0,
+ ) -> WindEventFinalizationResult:
+     """Settle every airborne cohort of a DELIBERATELY COMPLETED wind event
+     into the bed at the event-end instant, and return the water-ready
+@@ -813,10 +831,17 @@
+     `record` is the completed-event marker: the wind-forcing record this
+     state was advanced through, which the state must sit exactly at the
+     end of (`block_index == len(record.blocks)`, `block_offset_s == 0.0`,
+-    `physical.time_s` at the record's end, `last_resolved_wind` the last
++    `physical.time_s` at `record_origin_s + record.total_duration_s()`,
++    `last_resolved_wind` the last
+     block's own wind). Anything else raises `WindEventFinalizationError`
+     before any physics runs. See the module docstring for the physical
+     rules reused, the accounting, and the failure semantics.
++
++    The forcing record uses its normal local zero origin. For an event
++    following water or another event, supply its absolute start as
++    `record_origin_s`. This does not change any native clock, cohort launch
++    or impact time, or deposition position. The default preserves the
++    zero-origin API.
+ 
+     Never mutates `state` or `config`. On every path that does not
+     complete, the returned `state` IS the input object.
+@@ -837,7 +862,7 @@
+     physical = state.physical
+ 
+     # --- 1. validation, all of it before anything is computed ---------
+-    _require_completed_record(state, record)
++    _require_completed_record(state, record, record_origin_s=record_origin_s)
+     time_s = float(physical.time_s)
+     _validate_mobile_state_against_config(physical.mobile_state, config, time_s)
+     validate_scheduler_state(state, n_classes, config=config)
+--- a/docs/user-guide/wind-event-finalization.md
++++ b/docs/user-guide/wind-event-finalization.md
+@@ -240,3 +240,25 @@
+   available.
+ * Scope: boundary-only. No cadence, calibration, airflow, creep, commit
+   or storage default changes; the ordinary fast path is untouched.
++
++### Completed wind records after a water event
++
++The forcing record keeps its usual local zero origin. When an external
++scheduler starts a later wind event at an absolute native time, advance each
++block at `origin + local_start` through `origin + local_end`, retain the actual
++native physical clock and cohort timestamps, and apply the native record-loop
++terminal cursor bookkeeping only after the last block is consumed. Then call:
++
++```python
++result = finalize_wind_event(state, scheduler_config, completed_wind_record,
++                             record_origin_s=wind_event_absolute_start_s)
++```
++
++The finalizer compares the unchanged physical end clock with
++`record_origin_s + completed_wind_record.total_duration_s()` using its existing
++completion tolerance. The default origin is zero for existing callers. A bad
++origin, incomplete cursor or mismatched final wind still blocks handoff.
++The origin changes only completed-record bookkeeping; deposition still uses the
++actual event-end physical time and original cohort trajectories. It adds no
++elapsed interval and no artificial forcing prefix. Retain the returned bed,
++ledger and availability and count returned export once, as for a zero-origin event.
+--- /dev/null
++++ b/tests/unit/test_wind_event_origin.py
+@@ -0,0 +1,77 @@
++"""Explicit completed-event origins preserve native clocks and finalization guards."""
++import dataclasses
++import math
++import numpy as np
++import pytest
++from maple.aeolian.scheduler.finalization import finalize_wind_event, WindEventFinalizationError
++from maple.aeolian.cohorts.dispatch import mobile_state_is_genuinely_empty
++from maple.core.backend import array_leaves
++from tests.unit.test_wind_event_finalization import (
++    _geometry, _one, _state_and_config, _assert_finalized_shell, _budget_closes,
++    _bed_by_cell, _expected_request,
++)
++
++
++def absolute_state(origin=169.0, mass=1e-3):
++    # Test fixture uses actual absolute kinematics; no rebasing happens in the API.
++    state, cfg, record, _ = _state_and_config([
++        _one(_geometry(), launch=origin + 9.5, impact=origin + 10.5, mass=mass)])
++    state = dataclasses.replace(state, physical=dataclasses.replace(state.physical, time_s=origin + 10.0))
++    return state, cfg, record
++
++
++@pytest.mark.parametrize('origin', [0.0, 169.0, 1e6])
++@pytest.mark.parametrize('mass', [1e-3, 1e-14])
++def test_absolute_clock_position_tiny_inventory_and_repeat(origin, mass):
++    state, cfg, record = absolute_state(origin, mass)
++    original = [a.copy() for a in array_leaves(state)]
++    result = finalize_wind_event(state, cfg, record, record_origin_s=origin)
++    _assert_finalized_shell(result, state, cfg)
++    _budget_closes(result, state, 1)
++    # Absolute time must not become trajectory age: age is exactly 0.5 s,
++    # at 1 m/s east, regardless of the event's origin.
++    expected, exported = _expected_request(cfg.geometry, 1, [1.75], [1.25], [0], [mass])
++    np.testing.assert_allclose(_bed_by_cell(result.state.physical) - _bed_by_cell(state.physical),
++                               expected, rtol=0.0, atol=result.reservoir_identity_bound_kg)
++    np.testing.assert_array_equal(result.boundary_export_mass_by_class_kg, exported)
++    assert result.airborne_mass_before_by_class_kg[0] == mass
++    assert result.deposited_mass_by_class_kg[0] + result.boundary_export_mass_by_class_kg[0] > 0
++    assert result.state.physical.time_s.hex() == state.physical.time_s.hex()
++    for before, after in zip(original, array_leaves(state), strict=True):
++        np.testing.assert_array_equal(before, after)
++    repeat = finalize_wind_event(result.state, cfg, record, record_origin_s=origin)
++    assert repeat.completed and repeat.status == 'already_empty'
++    assert not np.any(repeat.deposited_mass_by_class_kg) and not np.any(repeat.boundary_export_mass_by_class_kg)
++
++
++@pytest.mark.parametrize('origin', [True, np.bool_(False), -1.0, -0.0, math.inf, math.nan, '169', 10**1000])
++def test_bad_origin_fails_before_mutation(origin):
++    state, cfg, record = absolute_state()
++    original = [a.copy() for a in array_leaves(state)]
++    with pytest.raises(WindEventFinalizationError, match='record_origin_s'):
++        finalize_wind_event(state, cfg, record, record_origin_s=origin)
++    for before, after in zip(original, array_leaves(state), strict=True):
++        np.testing.assert_array_equal(before, after)
++
++
++def test_wrong_origin_and_original_cursor_wind_guards_remain():
++    state, cfg, record = absolute_state()
++    for origin in [0.0, 168.0, 170.0]:
++        with pytest.raises(WindEventFinalizationError, match='end time'):
++            finalize_wind_event(state, cfg, record, record_origin_s=origin)
++    for bad in [dataclasses.replace(state, block_index=0),
++                dataclasses.replace(state, block_offset_s=0.1),
++                dataclasses.replace(state, last_resolved_wind=None)]:
++        with pytest.raises(WindEventFinalizationError):
++            finalize_wind_event(bad, cfg, record, record_origin_s=169.0)
++    with pytest.raises(WindEventFinalizationError, match='advancing time'):
++        finalize_wind_event(state, cfg, record, record_origin_s=1e308)
++
++
++def test_omitted_origin_preserves_zero_based_api():
++    state, cfg, record = absolute_state(0.0)
++    default = finalize_wind_event(state, cfg, record)
++    explicit = finalize_wind_event(state, cfg, record, record_origin_s=0.0)
++    assert default.completed and explicit.completed
++    for name in ('deposited_mass_by_class_kg', 'boundary_export_mass_by_class_kg', 'bed_change_by_class_kg'):
++        np.testing.assert_array_equal(getattr(default, name), getattr(explicit, name))

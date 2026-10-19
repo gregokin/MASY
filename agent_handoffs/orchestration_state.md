@@ -1,11 +1,32 @@
-# MAPLE-SYRUP — MASY-03 prerequisites accepted
+# MASY-06 complete: reviewed MASY adapter adopted; native commit/pair promotion next
 
-Latest task: commit/push, then complete prerequisites. Initial publication204622d is on GitHub. CPU prerequisites are independently accepted and adopted on local MASY main through328b59721a02d86d2954be2a459ef85e4add8be1 (implementation446b2af/c8e23aa). Accepted source/metadata hashes, findings and tests are in tasks/masy03_prerequisites_20261018/prerequisite_acceptance.json and verification.md.
+Publication authorized by the user: commit and push the accepted MASY work to origin/main. This commit contains
+that reviewed integration and the MAPLE patch handoff. Before publication, MASY-06 source/docs matched all 53 final
+manifest entries; no functional source or test changed. Actual resulting commit/push verification is recorded locally
+in agent_handoffs/tasks/masy06_publish_20261018/. All simulation/review processes are exited/reaped; no watcher or
+background resumption is active. MAPLE's owning developer will handle the native clock-origin patch.
 
-MAPLE remains5b1a052e; local SYRUP main isb4ee14e, the narrow reviewed checkpoint-registry fix. SYRUP remote was NOT pushed. MASY new main still needs the final bookkeeping commit, final current-HEAD qualification and push at the point this file is committed. Authoritative completion receipts: tasks/masy03_prerequisites_20261018/final_runtime_summary.json and publication_receipt.json (local/ignored to avoid a fabricated self-reference). If either receipt is absent or reports failure, finish that step before declaring the user's task complete. If both succeed, stop this bounded task; the next development task is the actual Dense adapters/alternating case, not more runtime infrastructure.
+MASY calls genuine native wind finalization at deliberate WindEvent completion; true-empty wind handoff, unchanged
+clocks, native returned bed/availability/ledger, one-time export/internal deposition accounting and staged failure
+recovery are verified. Genuine nonempty wind-water/recession-wind-second-water matches direct native execution.
+Explicit uncommitted development ID3eed7f55c5d474531a4dcc38d5f4492a546249845e9a494b1c1348f9d1203320.
+92 native tests,20 runner+23 subtests,15 bed+38 subtests,264 stdlib pass in proportional checks. Final adoption hashes
+match the functional source exactly; post-adoption docs explain current qualification/limits. See verification.md.
 
-All eight Claude stages exited/reaped; no active writer, goal scheduler, model/GPU job or background-resumption promise. Failed guard/retry/test attempts and all submitted-source hashes/raw separate streams are retained. Sessions/PID/start identities are in stage launch.json/exit.json. A restricted API attempt was stopped and relaunched once with reviewed network access; no Claude permission bypass or invented usage/reset claim. Tests were authored in a separate source-only tree; no implementation tree had competing writers.
+Claude source-only review ACCEPT, no blocking findings. Sessiona5f38e54-b39c-47f2-aca7-b0d4b3f4979b,
+PID278576/start38630474, exit0/reaped,115.0547s. All tools disabled; exact source receipts/no model payload sharing.
+Codex independently checked actual diffs/callers and execution and recorded every nonblocking disposition.
 
-All confirmed review findings C1/C2/B1/B2/B3 are closed. Tests:245 MASY stdlib pass;291 current native checkpoint pass/8skip;404 genuine reference pass/6skip;3 locked-native wet Dense checkpoint continuations pass. Preparation/two fresh verifies of the corrected committed candidate pass; older lock after generator change passes; two verifies with BOTH configured source roots absent pass. Worktrees were restored. Actual adopted-root preparation also passes. Preserve every old lock/source object and the private authored checkpoint payloads; no auto-GC, source upgrades, installs or guard bypass.
+Live MAPLE remains clean7b0e2539; SYRUP cleanb4ee14e; windowed branch/environment/jobs are untouched. The native
+explicit record_origin_s extension is isolated, reviewed, zero-default compatible and passes apply-check. Public
+handoff: agent_handoffs/maple_record_origin_handoff.md and maple_record_origin.patch. Current unextended7b is
+refused before transport. Old locks remain immutable. Native adoption stays with the owning thread; no silent
+upstream edit or fabricated current-committed promotion. The optional ownership question received no answer;
+it did not block preparation/review/testing or MASY adoption, and no new mandatory approval was invented.
 
-Code scope remains source/runtime identity and native interfaces, with transport_ready=false. Next bounded work must implement actual MAPLE/SYRUP Dense state adapters, native wind mobile settlement and cache/routing reentry, then wind→rain/recession→wind with class budgets. Combined restart, windowed/GPU coupling and performance remain separate qualification. Use current clean committed heads for NEW runs, the original lock for old state, and never silently update a running job or include actual saved payloads in source review.
+Next bounded step: owning MAPLE thread adopts/commits the narrow reviewed origin patch; then qualify actual new
+committed HEAD+current SYRUP as a NEW pair. Do not relabel/rebind the uncommitted development bundle or older locks.
+After that, combined restart and the collaborator workflow remain phase4. GPU/windowed/large-case, calibration,
+coupled saltation and production CLI remain unqualified. Never reset/rebase clocks or invent prefix wind forcing.
+
+Task archive: agent_handoffs/tasks/masy06_origin_integration_20261018; all previous handoffs/failed attempts preserved.

@@ -10,3 +10,18 @@ These are MASY milestones, independent of upstream phase numbers. User priority 
 6. **Continuous upstream compatibility.** Test new current MAPLE/SYRUP pairs against the alternating case and restart contracts. Adopt updates per new run with recorded manifests; retain explicit previous locks for reproducibility. Hydraulic/pit/outlet refinements remain in SYRUP and reach new wrapper runs through their qualified dependency pair.
 
 First development assignment: Phase 1, a bounded audit/preflight task. No simulation/GPU work or upstream edits were launched by project setup. Commit/push requires its own request for MASY.
+
+## Status on October 18, 2026
+
+The CPU source/runtime prerequisites and the restricted Dense schedule, bed adapter and Python event runner are
+independently accepted. Actual MAPLE wind → conservative SYRUP rain/recession → MAPLE wind passes on one evolving
+six-class bed; native controls also cover partial availability, a second rain with routing reuse/rerouting and
+piecewise rainfall. This evidence uses a labelled frozen source pair and uncommitted MASY test snapshot, rather than
+the user's changing MAPLE main. See [runner qualification](dense_runner.md) and [verification](../agent_handoffs/verification.md).
+
+The native finalizer adapter and narrow absolute-origin extension have now passed independent review and real
+nonempty wind → water/recession → nonempty wind → second water checks on an explicit uncommitted development pair.
+Next, the owning MAPLE thread adopts/commits the [reviewed origin patch](../agent_handoffs/maple_record_origin_handoff.md);
+MASY qualifies that new current committed pair. Windowed storage stays on its independent upstream branch. Then
+prove combined restart and provide the collaborator workflow in phase 4. Current acceptance does not cover coupled saltation, GPU/windowed handoff, large-case performance,
+scientific calibration or a production transport CLI. Leave this task's changes uncommitted until separately asked.

@@ -605,6 +605,12 @@ class RequiredSurfaceTests(unittest.TestCase):
         self.module("maple.aeolian.scheduler.block").advance_wind_block = advance_wind_block
         self.assertEqual(self.failures(), [("advance_wind_block", "missing parameter(s) ['config']")])
 
+    def test_finalizer_without_absolute_origin_fails(self) -> None:
+        def finalize_wind_event(state, config, record):
+            return None
+        self.module("maple.aeolian.scheduler.finalization").finalize_wind_event = finalize_wind_event
+        self.assertEqual(self.failures(), [("finalize_wind_event", "missing parameter(s) ['record_origin_s']")])
+
     def test_removed_reroute_threshold_fails(self) -> None:
         del self.module("maple_syrup.sediment_bed").reroute_threshold_m
         self.assertEqual(self.failures(), [("reroute_threshold_m", "attribute missing")])

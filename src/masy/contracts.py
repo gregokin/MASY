@@ -96,6 +96,16 @@ class Requirement:
 # actually starts calling something. No threshold VALUE is read or frozen.
 MASY_REQUIRED_API: tuple[Requirement, ...] = (
     Requirement("maple.aeolian.scheduler.block", "advance_wind_block", ("state", "block", "config")),
+    Requirement("maple.aeolian.scheduler.finalization", "finalize_wind_event",
+                ("state", "config", "record", "record_origin_s"),
+                required_by="masy.dense_runner deliberate absolute-origin wind completion"),
+    Requirement("maple.aeolian.scheduler.finalization", "WindEventFinalizationResult", kind="dataclass", fields=(
+        "completed", "status", "reasons", "state", "time_s", "block_index", "block_offset_s",
+        "representation", "placement_rule", "airborne_mass_before_by_class_kg", "airborne_mass_after_by_class_kg",
+        "deposited_mass_by_class_kg", "boundary_export_mass_by_class_kg", "bed_change_by_class_kg",
+        "numerical_residual_scalar_kg", "transfer_identity_gap_by_class_kg", "transfer_identity_bound_kg",
+        "reservoir_identity_gap_by_class_kg", "reservoir_identity_bound_kg", "n_settled", "n_exported",
+        "algorithm_version"), required_by="masy.dense_runner native finalizer accounting"),
     Requirement("maple.aeolian.scheduler.state", "initial_scheduler_state", (
         "voxel_column", "active_layer", "mobile_state", "ledger", "committed_topography",
         "threshold_modifier_state", "time_s", "coupled", "vegetation", "sediment_availability", "water",

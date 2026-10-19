@@ -16,7 +16,7 @@ Prefer one Python process with one qualified MAPLE package and thin `masy.adapte
 
 An ordered list defines wind and water events. Wind forcing uses native MAPLE shear velocity, direction and durations. Rainfall uses native SYRUP semantics and exact units/interval integration. The wrapper derives global intervals from actual elapsed durations; maps between local and global clocks must be invertible and persisted.
 
-A rain series finishing does not end its water event: recession and terminal sediment handling count as elapsed time. A wind block finishing does not authorize deleting airborne cohorts. First integration must establish native supported end-of-wind handling and report any extra physical settlement time. A rejected/incomplete event stops before the next process starts, with a truthful restart boundary.
+A rain series finishing does not end its water event: recession and terminal sediment handling count as elapsed time. At an intentional wind-event end, the user's October 18 rule assumes wind becomes zero and native MAPLE settles every remaining airborne cohort conservatively at the unchanged event-end clock. Pauses, checkpoints and intermediate forcing blocks retain ordinary continuation semantics. MASY calls and validates native finalization with an explicit event origin, adopts its returned bed/ledger and counts boundary export once. The adapter is verified on an explicit development pair; the native origin extension still needs an upstream commit and new current-pair qualification. Older APIs refuse before transport. A rejected event stops before the next process starts.
 
 Sequential examples are not fixed-calendar forecasts. Future prescribed absolute start times must refuse overlap with ongoing flow/transport unless a separately specified physical policy exists. No concurrent transport, forcing truncation, hidden time dilation, repeated storm rain or rain dropped during wind.
 
@@ -60,8 +60,17 @@ The combined runner is not implemented at setup. Current SYRUP legacy replay is 
 
 The import resolver must verify that the actual `maple`, `maple_syrup` and `masy` module origins and distribution metadata match immutable run sources, even when the chosen existing interpreter has editable installs. Reuse upstream dependency-bundle metadata mechanisms; never silently use a live checkout through site-packages. Record environment/package versions and relevant compiled-extension identities, disable upstream bytecode writes, and keep caches/output in run-owned paths.
 
-Wind settlement must have a finite explicit guard and stop incomplete with preserved load if it cannot finish. Never park airborne cohorts across a water event. All process case parameters, masks and prescribed surface mappings are hashed alongside forcing. Shared vegetation is prescribed landscape content; process-specific modifiers retain declared units and time basis. Water reset belongs only in water accounting unless an actual documented operation also exchanges sediment.
+Wind finalization must have finite time/resource guards and stop incomplete with preserved load if it fails. Under the instantaneous event-end assumption it adds no physical elapsed time; no calm coasting substitutes for that native operation. Never park airborne cohorts across a water event. All process case parameters, masks and prescribed surface mappings are hashed alongside forcing. Shared vegetation is prescribed landscape content; process-specific modifiers retain declared units and time basis. Water reset belongs only in water accounting unless an actual documented operation also exchanges sediment.
 
 Global-clock representation is a Phase-1 contract: retain native solver clocks and returned elapsed values without timestep rounding, using exact accumulation/anchors at event boundaries so restart maps do not drift. Input schedule and realized intervals are distinct records. Fixed-calendar start fields are rejected in the first sequential schema.
 
 Rollback should use versioned deep references and bounded journals/touched-window staging, not a full deep-volume copy; the tiny dense milestone can stage a bounded copy. Preflight free space and declared host/device/store/thread budgets. Keep every reference needed by a retained checkpoint and do not add automatic GC.
+
+## MASY-04 implementation status
+
+The [Dense Python runner](dense_runner.md) now implements and verifies the restricted in-process transition path on
+an explicit frozen CPU pair. It stages small Dense bed copies and mutable private wind/water memory, checks event
+and aggregate budgets and prepares all publication references before adoption. It retains the latest accepted bed,
+private state, routing pair, cursor, receipts and exact clock ledger. This is an in-memory transaction boundary;
+there is no persistent combined checkpoint or active-event resume yet. The broader storage/backend/restart contracts
+above remain requirements for later qualification.

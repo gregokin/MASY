@@ -99,3 +99,85 @@ Appended by MASY-03. The sections above remain historical. Codex independently q
 **Runtime prerequisite.** The separate [runtime tool](runtime.md) seals all three committed source scopes, reuses the unmodified upstream `dependency_bundle` and `check_runtime`, and selects matching metadata from the frozen objects. The native resolver, actual API lists, both registry probes and all package origins passed. MAPLE package digest is `97b3df72336e6313e8d89d0b7b20784b9a0f001e30a4fc3035360e6de6068612`; SYRUP is `6973938042b878449a7dce5744bef7aecc72cc73adda2dc73672b8ef149dc517`. Explicit old locks verified twice while both configured source roots were absent, and an older lock still verified after the wrapper generator changed. All old versions are retained.
 
 **Validation.** All 245 MASY stdlib tests pass. Native checkpoint regressions: current 291 passed/8 skipped; genuine reference compact/windowed 404 passed/6 skipped. Three additional genuine wet Dense checkpoint save/load/continuation checks passed on the locked source/metadata paths, with exact persistent native state and continuation assertions, unchanged source objects and no unexpected native origins. These are bounded CPU fixtures. Full receipts, findings and limitations are in [verification](../agent_handoffs/verification.md).
+
+---
+
+## MASY-04 Dense coupling qualification — October 18, 2026
+
+The original task baseline was MAPLE `5b1a052e` and SYRUP `b4ee14e`, both matching GitHub main at capture. SYRUP's
+checkpoint fix is now pushed. Subsequent user-owned MAPLE main finalizer edits are outside this evidence; windowed
+storage is being developed on another branch. MASY modified neither upstream tree or environment.
+
+The explicit immutable CPU lock `172d9916c03c47ce44ab7c324b6e8dfe165329bffe567dd0eb5e574f6f9b0c28` supplies both native
+packages and their actual metadata. MASY's new code is a separately sealed, explicitly uncommitted development test
+snapshot. Actual package/submodule origins and native source/metadata identity are checked before and after the final
+native checks. This is not a new-current-main or production-runtime claim.
+
+Confirmed actual paths: MAPLE `initial_scheduler_state` and `advance_wind_block`; SYRUP `BedState` / `BedContext`,
+`commit_bed`, `RainfallSchedule`, `complete_event` and genuine `DryHandoff`. One complete native Dense bed passes
+through actual nonzero baseline aerodynamic wind, conservative upwind water plus physical recession, and another
+wind. Native persistent fields, clocks, class exports and inventories match direct upstream execution. Partial
+availability evolves natively. The retained water graph/source survive dry reset and wind; the actual `commit_bed`
+decision retains their identities below its configured gate and reroutes above it. Piecewise rainfall also passes.
+
+The old pair has no qualified instantaneous wind finalizer. The output lifecycle helper `commit_and_end_event` does
+not receive mobile cohorts and does not supply that contract. MASY accepts a wind boundary only when the native pool
+is genuinely empty; any residual, including a sub-resolution value, stops incomplete with the next process blocked.
+The user's native MAPLE main fix must be committed and qualified before MASY calls its actual API. Calm coasting and
+wrapper sediment deletion/deposition are not substitutes.
+
+Accepted scope and limits are in [dense_runner.md](dense_runner.md). Combined restart, alternate wind/transport
+modes, GPU/windowed storage and performance remain separate qualifications; the native hydraulic/scientific
+limitations above remain in force. Full review findings and receipts are in
+[verification](../agent_handoffs/verification.md).
+
+## MASY-05 native finalizer qualification — October 18, 2026
+
+MAPLE main `7b0e2539f6e57b5b0182280efeadc06488fde37a` is locally committed, clean in the runtime scope and unpushed.
+With SYRUP `b4ee14e`, it passes a new immutable CPU runtime qualification, lock
+`d29d5740b9633aae346eba53fef05cfeb8bd6376a55b8cb7d33a8dc4417f4eef`. Previous locks remain unchanged. The existing
+Dense runner regressions pass 18 tests and 21 subtests on this pair. This does not claim that MASY calls the new API.
+
+An independent native check confirms actual nonempty wind settlement at zero origin: class budgets close, mobile
+state becomes genuinely empty, event-end clock/cursor are preserved, and a repeated call transfers nothing. An
+actual subsequent wind after SYRUP recession exposes a completed-record clock limitation: it starts at 169 s and
+ends natively at 171.00000000000045 s. The finalizer rejects its relative 2 s record because the native clock is not
+2 s; putting its actual absolute block into a record fails the record validator's zero-based cumulative check.
+Both failures preserve input arrays. No class, guard, timestamp or native binding was patched for this proof.
+
+Full MASY finalizer integration therefore requires a narrow owning-MAPLE completed-event marker extension for an
+explicit nonzero absolute origin. Placement must keep actual physical/cohort timestamps; no clock resetting or
+fabricated prefix wind history is acceptable. The concrete contract and reproduction are in
+[the MAPLE handoff requirement](../agent_handoffs/maple_finalizer_clock_requirement.md). MASY's accepted physics
+code remains unchanged pending that API. Windowed storage stays outside this qualification.
+
+Claude's source-only design launch hit its reported session limit, resetting at 6:50 p.m. America/Los_Angeles on
+October 18 (01:50 UTC October 19). No completed Claude design or implementation review is claimed, and no automatic
+retry/watcher was created. Exact new-pair receipts and independent native evidence are retained under
+`agent_handoffs/tasks/masy05_native_finalizer_20261018/`.
+
+
+## MASY-06 finalizer adapter and explicit origin (October 18, 2026)
+
+The F1 completed-record origin gap is resolved by a narrow independently reviewed native extension proposal,
+`finalize_wind_event(..., record_origin_s=0.0)`. It preserves local forcing validation, terminal cursor/final wind,
+all physical/trajectory/class-budget/fluvial guards and all settling physics. It maps only completed-record end
+bookkeeping onto the unchanged absolute native clock. Its reviewed patch passes `git apply --check` against current
+MAPLE `7b0e2539`; the live upstream source and separate windowed work remain untouched. See
+[owning-MAPLE handoff](../agent_handoffs/maple_record_origin_handoff.md).
+
+MASY's actual adapter is adopted, uncommitted. It uses genuine native completion, preserves returned evolving
+bed/availability/ledger, adds finalizer boundary export once and reports internal deposition without applying it
+again. Native errors/incomplete outcomes preserve the accepted staged boundary and block water. The required API
+now includes the finalizer's explicit origin signature/result. Actual unextended `7b0e2539` is refused before
+transport; no older lock is rebound or silently selected. Native clock tolerance remains unchanged and can fail
+closed at large origins/long accumulated runs.
+
+The exact development pair `3eed7f55c5d474531a4dcc38d5f4492a546249845e9a494b1c1348f9d1203320` is explicitly uncommitted,
+using genuine SYRUP bundle provenance and unchanged SYRUP `b4ee14e`. Proportional checks pass: 92 native finalizer,
+20 runner + 23 subtests, 15 bed + 38 subtests and 264 stdlib. Genuine nonempty wind-water/recession-wind-second-water
+matches direct native execution, including all persistent fields and clocks. Claude accepted the source patch
+without blocking findings, followed by Codex's independent source/caller/real execution acceptance. Full review
+notes/dispositions and exact lifecycle are in the MASY-06 task archive. This does not establish a normal committed
+source pair, production CLI, combined restart, scientific calibration, GPU/windowed or large-case readiness.
+Next is upstream origin-patch adoption/commit and new current committed pair qualification.
