@@ -31,6 +31,7 @@ pool, cursor). Unaccepted native output is kept only as the latest
 docs/dense_runner.md.
 
 Importing this module imports neither numpy nor a native model.
+An explicit opt-in reduced profile is bounded separately in docs/dense_production_wind.md.
 """
 
 from __future__ import annotations
@@ -298,7 +299,8 @@ class DenseRunner:
     returns its receipt (accepted, or the stop receipt); `run()` steps until the schedule is done or stops."""
 
     def __init__(self, bed: DenseBed, schedule: DenseSchedule, *, wind: DenseWindInputs, water: DenseWaterInputs,
-                 control: DenseRunnerControl, limits: DenseRunnerLimits) -> None:
+                 control: DenseRunnerControl, limits: DenseRunnerLimits, wind_profile: Any = None,
+                 production_limits: Any = None) -> None:
         if type(bed) is not DenseBed:
             raise DenseRunnerError("invalid_input", "bed must be a DenseBed")
         if type(schedule) is not DenseSchedule:
@@ -309,6 +311,20 @@ class DenseRunner:
                 raise DenseRunnerError("invalid_input", f"expected {expected.__name__}, got {type(value).__name__}")
         if len(schedule.events) > limits.max_events:
             raise DenseRunnerError("event_limit", f"{len(schedule.events)} events > max_events={limits.max_events}")
+        # The default path imports no production/resource module and retains its original preflight.
+        self._production = None
+        if wind_profile is None:
+            if production_limits is not None:
+                raise DenseRunnerError("invalid_input", "production_limits requires an explicit wind_profile")
+        else:
+            from masy import dense_production
+            try:
+                process = dense_production.check_process(production_limits, checkpoint="construction")
+            except dense_production.DenseProductionError as exc:
+                raise DenseRunnerError(exc.code, exc.detail) from exc
+            self._production = dense_production
+            self._wind_profile, self._production_limits = wind_profile, production_limits
+            self._worker_identity = process["process_identity"]
         n = _native()
         np = n.np
         try:
@@ -317,7 +333,13 @@ class DenseRunner:
             raise DenseRunnerError(exc.code, exc.detail) from exc
         if "record_origin_s" not in inspect.signature(n.finalize_wind_event).parameters:
             raise DenseRunnerError("unsupported_native_finalizer", "MAPLE must support explicit record_origin_s")
-        self._check_wind(n, bed, wind)
+        if self._production is None:
+            self._check_wind(n, bed, wind)
+        else:
+            try:
+                self._production.controlling_record(n, bed, wind, schedule, wind_profile, production_limits)
+            except self._production.DenseProductionError as exc:
+                raise DenseRunnerError(exc.code, exc.detail) from exc
         soil = self._check_water(n, bed, water, control, limits)
 
         self._bed, self._schedule = bed, schedule
@@ -326,7 +348,9 @@ class DenseRunner:
         self._static_parts_sha256 = _bed._sha256(self._static_parts)
         self._static_record = {
             "schema": STATIC_SCHEMA,
-            "profile": dict(PROFILE),
+            "profile": (dict(PROFILE) if self._production is None else
+                        {**PROFILE, "wind_detachment": "native_reduced", "avalanching": "native_configured",
+                         "scope": self._production.SCOPE, "calibration": "not_qualified_by_interface_tests"}),
             "case_sha256": bed.case_sha256,
             "schedule_sha256": schedule.digest,
             "case_schedule_sha256": case_schedule_digest(bed.case_sha256, schedule),
@@ -454,7 +478,7 @@ class DenseRunner:
     def _static_parts_record(self, n: SimpleNamespace) -> dict[str, Any]:
         """Every controlling static input (recomputed live before each publication)."""
         np, w, c = n.np, self._water, self._control
-        return {
+        record = {
             "wind_config": _canonical_input(np, self._wind.config, "wind.config"),
             "terrain": _canonical_input(np, w.terrain, "water.terrain"),
             "column": _canonical_input(np, w.column, "water.column"),
@@ -466,6 +490,13 @@ class DenseRunner:
             "report_every_s": encode_time(c.report_every_s),
             "schedule": self._schedule.as_record(),
         }
+        if self._production is not None:
+            try:
+                record["production"] = self._production.controlling_record(
+                    n, self._bed, self._wind, self._schedule, self._wind_profile, self._production_limits)
+            except self._production.DenseProductionError as exc:
+                raise DenseRunnerError(exc.code, exc.detail) from exc
+        return record
 
     @staticmethod
     def _private_identity(np: Any, pool: Any, soil: Any) -> str:
@@ -478,9 +509,11 @@ class DenseRunner:
         return _bed._sha256({"mobile_state": arrays, "soil_water_m": _bed._array_digest(soil)})
 
     def _precheck(self) -> None:
-        """Before ANY work copy, allocation or native call of an event: case inputs, every controlling static
+        """Before any event work copy or native transport call: case inputs, every controlling static
         input and the accepted bed / pool / soil must still be what the runner accepted. A difference can only
-        come from outside the runner; it is refused as such, and nothing is repaired or replaced."""
+        come from outside the runner; it is refused as such, and nothing is repaired or replaced.
+        Opt-in native configuration audits may allocate small records before work staging."""
+        self._production_process_check()
         n = _native()
         try:
             self._bed.verify_case_inputs()
@@ -569,10 +602,16 @@ class DenseRunner:
                 return self._wind_event(index, event, resolved)
             return self._rain_event(index, event, resolved)
         except _Stop as stop:
+            if self._production is not None and isinstance(stop.exception, MemoryError):
+                stop = _Stop("runner_error", "address_space_exhausted", _detail(stop.exception),
+                             exception=stop.exception, elapsed=stop.elapsed, evidence=stop.evidence,
+                             guarantee=stop.guarantee)
             return self._stop(index, event.kind, start, stop)
         except Exception as exc:  # noqa: BLE001 - publication is the last fallible step; stop unpublished
+            code = ("address_space_exhausted" if self._production is not None and isinstance(exc, MemoryError)
+                    else "runner_internal_error")
             return self._stop(index, event.kind, start,
-                              _Stop("runner_error", "runner_internal_error", _detail(exc), exception=exc))
+                              _Stop("runner_error", code, _detail(exc), exception=exc))
 
     def _stop(self, index: int, kind: str, start: float, stop: _Stop) -> dict[str, Any]:
         receipt = {"schema": RECEIPT_SCHEMA, "index": index, "kind": kind, "status": stop.status, "code": stop.code,
@@ -584,10 +623,24 @@ class DenseRunner:
         self._stop_receipt, self._active_evidence = receipt, stop.evidence
         return copy.deepcopy(receipt)
 
+    def _production_process_check(self, upcoming_wrapper_bytes: int = 0, *, checkpoint: str = "event_entry",
+                                  elapsed: str | None = None, evidence: Any = None) -> Any:
+        if self._production is None:
+            return None
+        try:
+            return self._production.check_process(self._production_limits, self._worker_identity,
+                                                  upcoming_wrapper_bytes=upcoming_wrapper_bytes, checkpoint=checkpoint)
+        except self._production.DenseProductionError as exc:
+            raise _Stop("refused", exc.code, exc.detail, exception=exc, elapsed=elapsed, evidence=evidence) from exc
+        except MemoryError as exc:
+            raise _Stop("runner_error", "address_space_exhausted", _detail(exc), exception=exc,
+                        elapsed=elapsed, evidence=evidence) from exc
+
     def _work_bytes_check(self, estimate: int) -> None:
         if estimate > self._limits.max_work_bytes:
             raise _Stop("refused", "work_bytes_cap", f"estimated work copies {estimate} bytes > max_work_bytes="
                         f"{self._limits.max_work_bytes}")
+        self._production_process_check(estimate, checkpoint="wrapper_work")
 
     def _stage(self) -> Any:
         try:
@@ -628,6 +681,11 @@ class DenseRunner:
                         "exceeds the split's own FP rounding (the native split drops or extends scheduled time)")
 
 
+        if self._production is not None:
+            try:
+                self._production.require_dry_wind_water(np, bed.state.water)
+            except self._production.DenseProductionError as exc:
+                raise _Stop("refused", exc.code, exc.detail, exception=exc) from exc
         stage = self._stage()
         pool = copy.deepcopy(self._pool)
         try:
@@ -813,6 +871,26 @@ class DenseRunner:
             },
         }
 
+        if self._production is not None:
+            try:
+                body["production"] = self._production.wind_evidence(n, result, final, bed.state.water)
+                body["production"]["worker"] = self._production_process_check(
+                    checkpoint="after_native_wind", elapsed=elapsed, evidence=evidence)
+                body["production"]["retained_wrapper_owners"] = self._production.retained_wrapper_owners(
+                    bed, self._wind, self._water, self._control, self._wind_profile,
+                    self._pool, self._soil, self._routing, len(self._receipts))
+            except _Stop:
+                raise
+            except MemoryError as exc:
+                raise _Stop("runner_error", "address_space_exhausted", _detail(exc), exception=exc,
+                            elapsed=elapsed, evidence=evidence) from exc
+            except self._production.DenseProductionError as exc:
+                raise _Stop("incomplete", exc.code, exc.detail, exception=exc,
+                            elapsed=elapsed, evidence=evidence) from exc
+            except Exception as exc:
+                raise _Stop("runner_error", "production_evidence_failure", _detail(exc), exception=exc,
+                            elapsed=elapsed, evidence=evidence) from exc
+
         def publish() -> None:
             bed.adopt_scheduler_physical(physical)
 
@@ -992,6 +1070,23 @@ class DenseRunner:
                "combined_water_residual_m3": float(acc["combined_water_residual_m3"]),
                "dry_reset": "external dry-again removal (native); soil water is zero after the reset"},
         }
+        if self._production is not None:
+            try:
+                body["production"] = {"scope": self._production.SCOPE,
+                                      "worker": self._production_process_check(
+                                          checkpoint="after_native_rain", elapsed=elapsed, evidence=wet),
+                                      "entry_commit": self._production.commit_evidence(np, boundary.maple_result),
+                                      "retained_wrapper_owners": self._production.retained_wrapper_owners(
+                                          bed, self._wind, self._water, self._control, self._wind_profile,
+                                          self._pool, self._soil, self._routing, len(self._receipts))}
+            except _Stop:
+                raise
+            except MemoryError as exc:
+                raise _Stop("runner_error", "address_space_exhausted", _detail(exc), exception=exc,
+                            elapsed=elapsed, evidence=wet) from exc
+            except Exception as exc:
+                raise _Stop("runner_error", "production_evidence_failure", _detail(exc), exception=exc,
+                            elapsed=elapsed, evidence=wet) from exc
         water_delta = {"rain_m3": float(budget["rain_m3"]), "drainage_m3": float(budget["drainage_m3"]),
                        "storm_export_m3": float(budget["export_m3"]),
                        "dry_surface_removed_m3": float(acc["surface_removed_m3"]),
@@ -1091,6 +1186,18 @@ class DenseRunner:
                 or self._private_identity(np, self._pool, self._soil) != self._accepted_private):
             raise stop("refused", "accepted_state_changed", "the accepted bed / pool / soil changed outside the "
                        "runner while the event was staged", guarantee=_EXTERNAL)
+        # Allocation-light final OS/process check after identities, immediately before adoption.
+        # Its refusal is internal resource failure, not an assertion of outside bed mutation.
+        if self._production is not None:
+            try:
+                self._production.check_process(self._production_limits, self._worker_identity,
+                                               checkpoint="before_publication")
+            except self._production.DenseProductionError as exc:
+                raise stop("refused", exc.code, exc.detail, exc) from exc
+            except MemoryError as exc:
+                raise stop("runner_error", "address_space_exhausted", _detail(exc), exc) from exc
+            except Exception as exc:
+                raise stop("runner_error", "production_resource_observation_failure", _detail(exc), exc) from exc
         try:
             publish()  # validates fully before its single replacement; a refusal publishes nothing
         except DenseBedError as exc:
