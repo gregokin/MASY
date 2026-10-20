@@ -100,7 +100,10 @@ def _native() -> SimpleNamespace:
     from maple.core.boundaries import AxisBoundary
     from maple.core.parameters.avalanching import AvalanchingSpec
     from maple.core.parameters.geometry import GeometrySpec, validate_geometry
-    from maple.core.parameters.grain_classes import GrainClassSet, validate_grain_classes
+    from maple.core.parameters.grain_classes import (
+        GrainClassSet,
+        validate_grain_classes,
+    )
     from maple.core.parameters.topographic_commit import TopographicCommitSpec
     from maple.core.parameters.voxel_growth import DISABLED_VOXEL_GROWTH
     from maple.core.types.active_layer import ActiveLayerState
@@ -109,14 +112,32 @@ def _native() -> SimpleNamespace:
         SedimentAvailabilityState,
         sediment_availability_state_from_active_layer,
     )
-    from maple.core.types.sediment_ledger import SedimentLedgerState, zeros_sediment_ledger_state
-    from maple.core.types.threshold_modifiers import ThresholdModifierState, validate_threshold_modifier_state
-    from maple.core.types.topographic_commit import CommittedTopographyState, validate_committed_topography_state
-    from maple.core.types.vegetation import VegetationState, validate_vegetation_state, vegetation_content_hash
+    from maple.core.types.sediment_ledger import (
+        SedimentLedgerState,
+        zeros_sediment_ledger_state,
+    )
+    from maple.core.types.threshold_modifiers import (
+        ThresholdModifierState,
+        validate_threshold_modifier_state,
+    )
+    from maple.core.types.topographic_commit import (
+        CommittedTopographyState,
+        validate_committed_topography_state,
+    )
+    from maple.core.types.vegetation import (
+        VegetationState,
+        validate_vegetation_state,
+        vegetation_content_hash,
+    )
     from maple.core.types.voxel import VoxelColumnState, zeros_voxel_column_state
     from maple.core.types.water import WaterState, water_state_from_depth
-    from maple.coupling.sediment_ledger.validation import validate_ledger_state, validate_mass_resolution_kg
-    from maple.surface.active_layer.initialization import initialize_active_layer_from_voxels
+    from maple.coupling.sediment_ledger.validation import (
+        validate_ledger_state,
+        validate_mass_resolution_kg,
+    )
+    from maple.surface.active_layer.initialization import (
+        initialize_active_layer_from_voxels,
+    )
     from maple.surface.active_layer.validation import (
         check_active_layer_voxel_partition,
         check_voxel_column_geometry_shape,
@@ -358,10 +379,39 @@ class DenseStage:
         return bool(self._ticket.get("consumed"))
 
 
+@dataclasses.dataclass(frozen=True)
+class _PreparedVegetationBed:
+    owner: Any
+    previous_state: Any
+    previous_time_s: float
+    previous_envelope: Any
+    publication_source: Any
+    kind: str
+    state: Any
+    time_s: float
+    envelope: Any
+    vegetation: Any
+    identity_sha256: str
+
+
 class DenseBed:
     """MASY-owned holder of the CURRENT shared bed. Construct only with
-    `build_dense_bed`. Mutated only by the explicit `adopt_*` / `restore_stage`
+    `build_dense_bed` or the private native-load bridge. Mutated only by `adopt_*` / `restore_stage`
     methods, which validate before replacing anything."""
+
+    @classmethod
+    def _from_native_boundary_load(cls, loaded: Any, config: Any, *, inputs: Any,
+                                   expected_identity: dict[str, Any], max_bytes: int) -> DenseBed:
+        """Internal actual-loader handoff without initializing sediment.
+
+        This opt-in physical bridge is not a runner/event continuation API.
+        Raw physical carriers are unsupported. This is a private ownership protocol.
+        All original input and native state checks precede exposing the holder.
+        """
+        from masy.dense_checkpoint import _restore_dense_bed
+
+        return _restore_dense_bed(cls, loaded, config, inputs=inputs, expected_identity=expected_identity,
+                                  cap=max_bytes)
 
     def __init__(self, token: object, *, case_record: dict[str, Any], held_inputs: dict[str, Any], context: Any,
                  state: Any, vegetation: Any, threshold_modifier_state: Any, time_s: float, limits: DenseBedLimits,
@@ -403,6 +453,8 @@ class DenseBed:
 
     @property
     def vegetation(self) -> Any:
+        if hasattr(self, "_dynamic"):
+            return self._dynamic.state
         return self._vegetation
 
     @property
@@ -424,6 +476,8 @@ class DenseBed:
     def vegetation_cover_fraction(self):
         """The canonical prescribed cover FRACTION array (same object; never
         converted). SYRUP's `sediment_physics_step` converts to percent itself."""
+        if hasattr(self, "_dynamic"):
+            return self._dynamic.cover_fraction_snapshot()
         return self._vegetation.raster.cover_fraction
 
     # verification ------------------------------------------------------------------------------------------------
@@ -465,6 +519,9 @@ class DenseBed:
         self._check_prescribed(n)
 
     def _check_prescribed(self, n: SimpleNamespace) -> None:
+        if hasattr(self, "_dynamic"):
+            self._check_dynamic_prescribed(n)
+            return
         current = {
             "vegetation": _sha256(_canonical_static(self._vegetation, "vegetation")),
             "native_vegetation_content_sha256": n.vegetation_content_hash(self._vegetation),
@@ -475,6 +532,28 @@ class DenseBed:
             changed = sorted(key for key in current if current[key] != self._prescribed_digests[key])
             raise DenseBedError("prescribed_field_changed", f"prescribed field(s) {changed} changed; no growth or "
                                 "moisture law exists in this adapter")
+
+    def _check_dynamic_prescribed(self, n: SimpleNamespace) -> None:
+        """Original controlling inputs remain static; current state is separately versioned."""
+        from masy.landscape_vegetation import LandscapeVegetation, VegetationError
+        if type(self._dynamic) is not LandscapeVegetation:
+            raise DenseBedError("vegetation_profile_changed", "dynamic envelope type changed")
+        initial = {
+            "vegetation": _sha256(_canonical_static(self._veg_initial, "vegetation")),
+            "native_vegetation_content_sha256": n.vegetation_content_hash(self._veg_initial),
+            "threshold_modifier_state": _sha256(_canonical_static(self._threshold_modifier_state,
+                                                                  "threshold_modifier_state")),
+        }
+        if initial != self._prescribed_digests:
+            raise DenseBedError("prescribed_field_changed", "initial vegetation or threshold input changed")
+        try:
+            self._dynamic.verify()
+            current = self._dynamic._native_borrow()
+        except VegetationError as exc:
+            raise DenseBedError(exc.code, exc.detail) from exc
+        if (self._vegetation is not current or self._dynamic.initial_native_content_sha256 !=
+                self._prescribed_digests["native_vegetation_content_sha256"]):
+            raise DenseBedError("vegetation_profile_changed", "native current/initial vegetation binding changed")
 
     def _validate_shared(self, n: SimpleNamespace, state: Any) -> None:
         """Exact native types, Dense host float64 layout and native validators; never mutates."""
@@ -594,15 +673,10 @@ class DenseBed:
             raise DenseBedError("native_factory_mismatch", "initial_scheduler_state did not carry the shared objects")
         return scheduler
 
-    def adopt_scheduler_physical(self, physical: Any) -> Any:
-        """Take the shared fields of a native `SchedulerPhysicalState` back by
-        reference (returns the new current `BedState`). The prescribed fields
-        must be the held objects; the wind pool must be empty (airborne load is
-        resolved natively before any bed handoff, never dropped here)."""
-        n = _native()
-        self._verify_static(n)
+    def _prepare_scheduler_physical(self, n: SimpleNamespace, physical: Any, *, expected_vegetation: Any):
+        """The original complete wind-adoption guards, without publication."""
         _check_exact_type(physical, n.SchedulerPhysicalState, "physical")
-        if physical.vegetation is not self._vegetation:
+        if physical.vegetation is not expected_vegetation:
             raise DenseBedError("prescribed_field_replaced", "physical.vegetation is not the held prescribed object")
         if physical.threshold_modifier_state is not self._threshold_modifier_state:
             raise DenseBedError("prescribed_field_replaced",
@@ -615,7 +689,14 @@ class DenseBed:
             raise DenseBedError("mobile_state_not_empty", "airborne wind load remains; no bed handoff")
         candidate = n.BedState(physical.voxel_column, physical.active_layer, physical.water, physical.ledger,
                                physical.committed_topography, physical.sediment_availability)
-        return self._adopt(n, candidate, physical.time_s)
+        return candidate, physical.time_s
+
+    def adopt_scheduler_physical(self, physical: Any) -> Any:
+        """Native wind adoption; same complete guards and native order as the static profile."""
+        n = _native()
+        self._verify_static(n)
+        candidate, time_s = self._prepare_scheduler_physical(n, physical, expected_vegetation=self._vegetation)
+        return self._adopt(n, candidate, time_s)
 
     def adopt_bed_state(self, state: Any, *, time_s: float) -> Any:
         """Take an actual SYRUP `BedState` returned by native water code (e.g.
@@ -626,15 +707,96 @@ class DenseBed:
 
     def _adopt(self, n: SimpleNamespace, state: Any, time_s: Any) -> Any:
         """Callers have already run `_verify_static`. Every check precedes the single replacement."""
+        state, value = self._prepare_adopt(n, state, time_s)
+        self._state, self._time_s = state, value
+        return state
+
+    def _prepare_adopt(self, n: SimpleNamespace, state: Any, time_s: Any):
         value = self._advance_time(time_s)
         self._validate_shared(n, state)
         _check_commit_stamp(state, value)
-        self._state, self._time_s = state, value
-        return state
+        return state, value
+
+    def _prepare_dynamic(self, publication_source: Any, *, kind: str, time_s: float, prepared_vegetation: Any):
+        from masy.landscape_vegetation import PreparedVegetation, VegetationError
+        n = _native()
+        self._verify_static(n)
+        if not hasattr(self, "_dynamic") or type(prepared_vegetation) is not PreparedVegetation:
+            raise DenseBedError("invalid_vegetation_publication", "typed dynamic bed preparation required")
+        if kind == "wind":
+            state, native_time = self._prepare_scheduler_physical(
+                n, publication_source, expected_vegetation=self._vegetation)
+            if float(native_time).hex() != float(time_s).hex():
+                raise DenseBedError("vegetation_clock_mismatch", "typed wind physical time differs from event end")
+        elif kind == "rain":
+            state = publication_source  # actual native DryHandoff.bed, already checked by runner
+        else:
+            raise DenseBedError("invalid_vegetation_publication", "unknown event kind")
+        state, value = self._prepare_adopt(n, state, time_s)
+        if prepared_vegetation.base is not self._dynamic or prepared_vegetation.duplicate:
+            raise DenseBedError("vegetation_lineage_mismatch", "prepared base is not the current envelope")
+        try:
+            prepared_vegetation.base.verify()
+            prepared_vegetation.envelope.verify()
+            vegetation = prepared_vegetation.envelope._native_borrow()
+        except VegetationError as exc:
+            raise DenseBedError(exc.code, exc.detail) from exc
+        if (prepared_vegetation.envelope.plan is not self._dynamic.plan or
+                prepared_vegetation.resource.vegetation_version_sha256 !=
+                prepared_vegetation.envelope.version_sha256):
+            raise DenseBedError("vegetation_lineage_mismatch", "plan/resource publication binding changed")
+        identity = _sha256(self._dynamic_identity(state, value, prepared_vegetation.envelope))
+        return _PreparedVegetationBed(self._owner, self._state, self._time_s, self._dynamic, publication_source, kind, state, value,
+                                      prepared_vegetation.envelope, vegetation, identity)
+
+    def _verify_prepared(self, prepared: Any) -> None:
+        """All fallible lineage/native checks precede the assignment-only publication."""
+        n = _native()
+        self._verify_static(n)
+        if (type(prepared) is not _PreparedVegetationBed or prepared.owner is not self._owner
+                or prepared.previous_state is not self._state or prepared.previous_envelope is not self._dynamic
+                or prepared.previous_time_s.hex() != self._time_s.hex()):
+            raise DenseBedError("vegetation_lineage_mismatch", "prepared publication is foreign or stale")
+        # Recheck the actual typed wind carrier at the same final boundary as
+        # native adoption; do not replace its complete guards with a BedState-only check.
+        if prepared.kind == "wind":
+            source, source_time = self._prepare_scheduler_physical(
+                n, prepared.publication_source, expected_vegetation=self._vegetation)
+            if (any(getattr(source, name) is not getattr(prepared.state, name) for name in SHARED_FIELDS)
+                    or float(source_time).hex() != prepared.time_s.hex()):
+                raise DenseBedError("vegetation_publication_changed", "native wind carrier changed after preparation")
+        elif prepared.kind != "rain" or prepared.publication_source is not prepared.state:
+            raise DenseBedError("vegetation_publication_changed", "native water carrier changed after preparation")
+        prepared.envelope.verify()
+        if prepared.vegetation is not prepared.envelope._native_borrow():
+            raise DenseBedError("vegetation_lineage_mismatch", "prepared native vegetation reference changed")
+        self._prepare_adopt(n, prepared.state, prepared.time_s)
+        if _sha256(self._dynamic_identity(prepared.state, prepared.time_s, prepared.envelope)) != prepared.identity_sha256:
+            raise DenseBedError("vegetation_publication_changed", "prepared state identity changed")
+
+    def _publish_prepared(self, prepared: _PreparedVegetationBed) -> None:
+        # Caller has run _verify_prepared after all candidate serialization.
+        # Existing attributes only; no native call, validation, copy or allocation.
+        self._state = prepared.state
+        self._time_s = prepared.time_s
+        self._vegetation = prepared.vegetation
+        self._dynamic = prepared.envelope
+
+    def _dynamic_identity(self, state: Any, time_s: float, envelope: Any, *, case_sha256: str | None = None):
+        from masy.landscape_vegetation import BED_IDENTITY_SCHEMA_V2
+        return {"schema": BED_IDENTITY_SCHEMA_V2, "case_sha256": self._case_sha256 if case_sha256 is None else case_sha256,
+                "time_s": encode_time(time_s),
+                "fields": {name: _canonical_static(getattr(state, name), name) for name in SHARED_FIELDS},
+                "prescribed_initial": dict(self._prescribed_digests),
+                "vegetation": {"plan_sha256": envelope.plan.plan_sha256, "version": envelope.version,
+                    "version_sha256": envelope.version_sha256, "native_content_sha256": envelope.native_content_sha256,
+                    "metadata_sha256": envelope.metadata_sha256}}
 
     # evolving identity and bounded staging -----------------------------------------------------------------------
     def identity_record(self) -> dict[str, Any]:
         """Evolving bed identity (separate from the static case digest)."""
+        if hasattr(self, "_dynamic"):
+            return self._dynamic_identity(self._state, self._time_s, self._dynamic)
         return {
             "schema": BED_IDENTITY_SCHEMA,
             "case_sha256": self._case_sha256,
@@ -663,6 +825,8 @@ class DenseBed:
         return stage
 
     def _stage_identity(self, stage: DenseStage) -> dict[str, Any]:
+        if hasattr(self, "_dynamic"):
+            return self._dynamic_identity(stage.state, stage.time_s, self._dynamic, case_sha256=stage.case_sha256)
         return {"schema": BED_IDENTITY_SCHEMA, "case_sha256": stage.case_sha256, "time_s": encode_time(stage.time_s),
                 "fields": {name: _canonical_static(getattr(stage.state, name), name) for name in SHARED_FIELDS},
                 "prescribed": dict(self._prescribed_digests)}
@@ -693,7 +857,7 @@ def build_dense_bed(*, geometry: Any, grain_classes: Any, mass_resolution_kg: fl
                     initial_bed_elevation_m: Any, initial_class_fractions: Any, initial_available_fraction: Any,
                     initial_water_depth_m: Any, vegetation: Any, threshold_modifier_state: Any,
                     topographic_commit_spec: Any, avalanching_spec: Any, active_mask: Any, initial_time_s: float,
-                    limits: DenseBedLimits, backend: str = "numpy") -> DenseBed:
+                    limits: DenseBedLimits, backend: str = "numpy", vegetation_profile: Any = None) -> DenseBed:
     """Validate every static input, check capacities and the host-memory cap,
     then initialize the native bed ONCE. Nothing is allocated at domain size
     before every check has passed; a native failure returns nothing.
@@ -811,6 +975,34 @@ def build_dense_bed(*, geometry: Any, grain_classes: Any, mass_resolution_kg: fl
         "threshold_modifier_state": _sha256(case_record["threshold_modifier_state"]),
     }
 
+    dynamic = None
+    if vegetation_profile is not None:
+        from masy.landscape_vegetation import (
+            CASE_SCHEMA_V2,
+            LandscapeVegetation,
+            VegetationError,
+            VegetationPlan,
+        )
+        if type(vegetation_profile) is not VegetationPlan:
+            raise DenseBedError("invalid_vegetation_profile", "vegetation_profile must be an authored VegetationPlan")
+        vegetation_profile.verify()
+        if (vegetation_profile.shape != (ny, nx) or vegetation_profile.n_classes != nc
+                or vegetation_profile.n_voxels != nv):
+            raise DenseBedError("vegetation_profile_mismatch", "plan dimensions differ from the shared native bed")
+        extra = 5 * 8 * ny * nx
+        if estimate + extra > limits.host_memory_cap_bytes:
+            raise DenseBedError("host_memory_cap_exceeded", "initial dynamic vegetation copy exceeds host cap")
+        if extra + 8 * ny * nx > vegetation_profile.limits.max_run_copy_bytes:
+            raise DenseBedError("vegetation_copy_cap_exceeded", "initial owned state/runner cover exceed run copy cap")
+        try:
+            dynamic = LandscapeVegetation.from_native(vegetation, plan=vegetation_profile)
+        except VegetationError as exc:
+            raise DenseBedError(exc.code, exc.detail) from exc
+        case_record["schema"] = CASE_SCHEMA_V2
+        case_record["vegetation_profile"] = {"profile": dynamic.plan.plan_record()["profile"],
+            "plan_sha256": dynamic.plan.plan_sha256, "initial_version_sha256": dynamic.version_sha256,
+            "initial_native_content_sha256": dynamic.initial_native_content_sha256}
+
     # Genuine one-time native initialization (all local until every check passes).
     request = cell_mass[:, :, None] * fractions
     column = n.zeros_voxel_column_state(ny, nx, nv, nc)
@@ -851,6 +1043,11 @@ def build_dense_bed(*, geometry: Any, grain_classes: Any, mass_resolution_kg: fl
                    context=context, state=state, vegetation=vegetation,
                    threshold_modifier_state=threshold_modifier_state, time_s=t0, limits=limits,
                    initialization_receipt=receipt, prescribed_digests=prescribed)
+    if dynamic is not None:
+        bed._veg_initial = vegetation
+        bed._dynamic = dynamic
+        bed._vegetation = dynamic._native_borrow()
+        receipt["vegetation_initial_owned_copy_bytes"] = 5 * 8 * ny * nx
     bed._verify_static(n)
     bed._validate_shared(n, state)
     _check_commit_stamp(state, t0)

@@ -252,10 +252,11 @@ class _CupyOps:
     """Production adapter; only an already-imported genuine CuPy is accepted."""
 
     def __init__(self, cp):
+        import numpy
         from maple.core.backend import arrays_share_memory, read_transfer_counters
         from maple_syrup.event_backend import host_packet
 
-        self.xp, self.array_type = cp, cp.ndarray
+        self.xp, self.array_type, self.host_np = cp, cp.ndarray, numpy
         self.overlap, self._counters, self._host_packet = (
             arrays_share_memory,
             read_transfer_counters,
@@ -283,6 +284,9 @@ class _CupyOps:
 
     def packet(self, flags):
         return self._host_packet(self.xp, flags)
+
+    def vector_packet(self, vector):
+        return self._host_packet(self.xp, [], vector)
 
     def counters(self):
         return dataclasses.asdict(self._counters())
@@ -346,6 +350,144 @@ def _schemas(n):
             ("available_mass_kg", "bound_mass_kg"), "array"
         ),
     }
+
+
+def _role_shape(role, geometry, n_voxels, n_classes, n_processes):
+    """Native Dense leaf shape of one closed-schema role (pure metadata)."""
+    g, nc = geometry, n_classes
+    cell, classes = (g.ny, g.nx), (g.ny, g.nx, nc)
+    if role == "voxel_column.mass_kg":
+        return (*cell, n_voxels, nc)
+    if role in (
+        "water.depth_m",
+        "committed_topography.reference_elevation_m",
+        "committed_topography.elevation_offset_m",
+    ):
+        return cell
+    if role.startswith("ledger."):
+        key = role.split(".")[1]
+        if key in ("process_totals_kg", "process_totals_compensation_kg"):
+            return n_processes, nc
+        if key not in (
+            "pending_bed_mass_change_kg",
+            "pending_compensation_kg",
+            "n_physical_touches",
+        ):
+            return n_processes, *classes
+    return classes
+
+
+def _closed_tree(
+    schemas, np, value, kind, path, arrays, scalars, *, array_type, shape_of, device_of=None, device=None
+):
+    """Pure closed walk of the six native holders: exact holder types, field/init
+    schemas, no undeclared attributes, exact array type/layout/shape/dtype and
+    exact finite host scalars. `device_of=None` is the host (pre-copy) walk."""
+    if kind == "array":
+        if type(value) is not array_type:
+            raise DeviceBedError(
+                "unsupported_backend", f"{path}: exact resident array required"
+            )
+        if not value.flags.c_contiguous or value.dtype.hasobject:
+            raise DeviceBedError(
+                "unsupported_layout",
+                f"{path}: contiguous non-object array required",
+            )
+        if device_of is not None and device_of(value) != device:
+            raise DeviceBedError(
+                "wrong_device", f"{path}: leaf is not on pinned device"
+            )
+        if tuple(value.shape) != shape_of(path):
+            raise DeviceBedError(
+                "invalid_shape", f"{path}: shape differs from native Dense schema"
+            )
+        touches = path == "ledger.n_physical_touches"
+        if (touches and value.dtype.kind not in "iu") or (
+            not touches and value.dtype != np.float64
+        ):
+            raise DeviceBedError(
+                "invalid_dtype", f"{path}: native Dense dtype required"
+            )
+        arrays.append((path, value))
+        return
+    if kind in (float, int):
+        if type(value) is not kind or (kind is float and not math.isfinite(value)):
+            raise DeviceBedError(
+                "invalid_scalar",
+                f"{path}: exact finite native host scalar required",
+            )
+        scalars.append((path, value.hex() if kind is float else value))
+        return
+    if type(value) is not kind:
+        raise DeviceBedError(
+            "unsupported_holder", f"{path}: exact native holder required"
+        )
+    schema = schemas[kind]
+    if tuple((f.name, f.init) for f in dataclasses.fields(value)) != tuple(
+        (key, True) for key in schema
+    ):
+        raise DeviceBedError(
+            "unsupported_schema", f"{path}: native field/init schema changed"
+        )
+    if "__post_init__" in vars(kind) or set(vars(value)) != set(schema):
+        raise DeviceBedError(
+            "unsupported_schema",
+            f"{path}: native attribute/reconstruction schema changed",
+        )
+    for key, child_kind in schema.items():
+        _closed_tree(
+            schemas,
+            np,
+            getattr(value, key),
+            child_kind,
+            f"{path}.{key}" if path else key,
+            arrays,
+            scalars,
+            array_type=array_type,
+            shape_of=shape_of,
+            device_of=device_of,
+            device=device,
+        )
+
+
+def _host_bed_schema(state, *, geometry, n_voxels, n_classes):
+    """Private pre-copy admission of a genuine CPU source bed: the SAME closed
+    six-holder walk the device owner applies, with NumPy as the explicit
+    expected array type, bounded geometry metadata first, and native leaf
+    discovery required to equal the closed schema (no untracked payload).
+    Pure metadata: no copy, clone, allocation or backend injection."""
+    from maple.core.backend import array_leaves
+    from maple.core.types.sediment_ledger import N_LEDGER_PROCESSES
+
+    n = _native()
+    nv, nc = _integer(n_voxels, "n_voxels"), _integer(n_classes, "n_classes")
+    _geometry_metadata(n, geometry, nc)
+    arrays, scalars = [], []
+    _closed_tree(
+        _schemas(n),
+        n.np,
+        state,
+        n.BedState,
+        "",
+        arrays,
+        scalars,
+        array_type=n.np.ndarray,
+        shape_of=lambda role: _role_shape(role, geometry, nv, nc, N_LEDGER_PROCESSES),
+    )
+    if [id(a) for a in array_leaves(state)] != [id(a) for _, a in arrays]:
+        raise DeviceBedError(
+            "unsupported_schema", "native leaf discovery disagrees with closed schema"
+        )
+    for i, (_, left) in enumerate(arrays):
+        for _, right in arrays[i + 1 :]:
+            if left is not right and n.np.shares_memory(left, right):
+                raise DeviceBedError(
+                    "overlapping_views", "distinct overlapping leaves unsupported"
+                )
+    return (
+        tuple((p, a.dtype.str, tuple(a.shape)) for p, a in arrays),
+        tuple(scalars),
+    )
 
 
 class DeviceDenseBedOwner:
@@ -514,88 +656,22 @@ class DeviceDenseBedOwner:
             )
 
     def _shape(self, role):
-        g, nc = self._geometry, self._nc
-        cell, classes = (g.ny, g.nx), (g.ny, g.nx, nc)
-        if role == "voxel_column.mass_kg":
-            return (*cell, self._nv, nc)
-        if role in (
-            "water.depth_m",
-            "committed_topography.reference_elevation_m",
-            "committed_topography.elevation_offset_m",
-        ):
-            return cell
-        if role.startswith("ledger."):
-            key = role.split(".")[1]
-            if key in ("process_totals_kg", "process_totals_compensation_kg"):
-                return self._processes, nc
-            if key not in (
-                "pending_bed_mass_change_kg",
-                "pending_compensation_kg",
-                "n_physical_touches",
-            ):
-                return self._processes, *classes
-        return classes
+        return _role_shape(role, self._geometry, self._nv, self._nc, self._processes)
 
     def _closed(self, value, kind, path, arrays, scalars):
-        if kind == "array":
-            if type(value) is not self._ops.array_type:
-                raise DeviceBedError(
-                    "unsupported_backend", f"{path}: exact resident array required"
-                )
-            if not value.flags.c_contiguous or value.dtype.hasobject:
-                raise DeviceBedError(
-                    "unsupported_layout",
-                    f"{path}: contiguous non-object array required",
-                )
-            if self._ops.device(value) != self._device:
-                raise DeviceBedError(
-                    "wrong_device", f"{path}: leaf is not on pinned device"
-                )
-            if tuple(value.shape) != self._shape(path):
-                raise DeviceBedError(
-                    "invalid_shape", f"{path}: shape differs from native Dense schema"
-                )
-            touches = path == "ledger.n_physical_touches"
-            if (touches and value.dtype.kind not in "iu") or (
-                not touches and value.dtype != self._n.np.float64
-            ):
-                raise DeviceBedError(
-                    "invalid_dtype", f"{path}: native Dense dtype required"
-                )
-            arrays.append((path, value))
-            return
-        if kind in (float, int):
-            if type(value) is not kind or (kind is float and not math.isfinite(value)):
-                raise DeviceBedError(
-                    "invalid_scalar",
-                    f"{path}: exact finite native host scalar required",
-                )
-            scalars.append((path, value.hex() if kind is float else value))
-            return
-        if type(value) is not kind:
-            raise DeviceBedError(
-                "unsupported_holder", f"{path}: exact native holder required"
-            )
-        schema = self._schemas[kind]
-        if tuple((f.name, f.init) for f in dataclasses.fields(value)) != tuple(
-            (key, True) for key in schema
-        ):
-            raise DeviceBedError(
-                "unsupported_schema", f"{path}: native field/init schema changed"
-            )
-        if "__post_init__" in vars(kind) or set(vars(value)) != set(schema):
-            raise DeviceBedError(
-                "unsupported_schema",
-                f"{path}: native attribute/reconstruction schema changed",
-            )
-        for key, child_kind in schema.items():
-            self._closed(
-                getattr(value, key),
-                child_kind,
-                f"{path}.{key}" if path else key,
-                arrays,
-                scalars,
-            )
+        _closed_tree(
+            self._schemas,
+            self._n.np,
+            value,
+            kind,
+            path,
+            arrays,
+            scalars,
+            array_type=self._ops.array_type,
+            shape_of=self._shape,
+            device_of=self._ops.device,
+            device=self._device,
+        )
 
     def _describe(self, state):
         arrays, scalars = [], []
@@ -815,8 +891,16 @@ class DeviceDenseBedOwner:
         return prepared
 
     def publish(self, prepared):
+        self._check_publish(prepared)
+        self._swap(prepared)
+
+    def _check_publish(self, prepared):
+        """Private: every fallible publication check, no assignment."""
         self._ticket(prepared, _Prepared)
         self.verify()  # Every fallible check precedes the accepted-record replacement.
+
+    def _swap(self, prepared):
+        """Private: assignment-only half of `publish`; callers ran `_check_publish`."""
         record = prepared._accepted
         stage = prepared._stage
         self._accepted = record
@@ -834,6 +918,26 @@ class DeviceDenseBedOwner:
         else:
             ticket._state = None
         ticket._consumed, self._active = True, None
+
+    def _discard_active(self):
+        """Private cleanup: discard whichever ticket (stage or prepared) is active."""
+        if self._active is not None:
+            self.discard(self._active)
+
+    def _compact(self, fn, *, max_values):
+        """Private trusted read: native reduction `fn` over the accepted state,
+        returned only as ONE compact host packet of at most `max_values` values.
+        The accepted (writable) state itself never leaves the owner."""
+        _integer(max_values, "max_values")
+        self._scope()
+        value = fn(self._accepted.state)
+        shape = tuple(getattr(value, "shape", ()))
+        if len(shape) > 1 or (shape and shape[0] > max_values):
+            raise DeviceBedError("spatial_payload", "compact reductions are class vectors or scalars only")
+        self._counts["packet_attempts"] += 1
+        packet = self._ops.vector_packet(value)
+        self._counts["packets_completed"] += 1
+        return packet
 
     @property
     def time_s(self):

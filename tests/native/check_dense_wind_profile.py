@@ -583,3 +583,217 @@ def test_module_imports_lazily():
     result = subprocess.run([sys.executable, "-I", "-B", "-c", code], env=dict(os.environ),
                             capture_output=True, text=True, timeout=15, check=False)
     assert result.returncode == 0, result.stderr
+
+# Task63: explicitly labelled authored synthetic config only; no physical events.
+def _synthetic_wake_profile(config=None, *, status=SYNTHETIC):
+    if config is None:
+        raw = _synthetic_raw(out_of_envelope_policy="reject")
+        raw["vegetation_wake"] = {"enabled": True}  # native coefficient defaults only
+        config = _config(raw)
+    return dwp.DenseSyntheticVegetationWakeProfile(
+        config, status, "authored synthetic native-wake interface; native100um test fit; NOT MEASURED")
+
+
+def _synthetic_wake_build(profile=None, *, availability=None):
+    profile = _synthetic_wake_profile() if profile is None else profile
+    envelope = _envelope()
+    fraction = _availability() if availability is None else availability
+    config = dwp.build_dense_synthetic_vegetation_wake_config(profile,
+        wind_envelope_record=envelope, initial_available_fraction=fraction)
+    return profile, envelope, fraction, config
+
+
+@pytest.mark.parametrize("readonly", [False, True])
+def test_synthetic_wake_exact_native_builder_and_no_input_mutation(readonly):
+    from maple.experiment.scheduler_adapter import build_scheduler_physics_config
+    profile = _synthetic_wake_profile()
+    model_before = _canon(dwp._native().config_to_dict(profile.model_config))
+    wake_before = _canon(profile.model_config.vegetation_wake)
+    fraction = _availability()
+    fraction.flags.writeable = not readonly
+    before, flags = fraction.tobytes(), fraction.flags.writeable
+    profile, envelope, fraction, config = _synthetic_wake_build(profile, availability=fraction)
+    direct = build_scheduler_physics_config(profile.model_config,
+        initial_available_fraction=fraction, wind_record=envelope)
+    assert _canon(config) == _canon(direct)
+    assert config.initial_available_fraction is fraction
+    assert config.vegetation_wake_spec is profile.model_config.vegetation_wake
+    assert fraction.tobytes() == before and fraction.flags.writeable == flags
+    assert _canon(dwp._native().config_to_dict(profile.model_config)) == model_before
+    assert _canon(profile.model_config.vegetation_wake) == wake_before
+    assert profile.calibration_status == SYNTHETIC
+    assert profile.interface_feature == dwp.SYNTHETIC_WAKE_FEATURE
+
+
+def test_original_factory_and_audit_still_refuse_synthetic_wake_profile():
+    profile, envelope, fraction, config = _synthetic_wake_build()
+    _raises("wrong_native_type", build_dense_production_wind_config, profile,
+        wind_envelope_record=envelope, initial_available_fraction=fraction)
+    _raises("wrong_native_type", audit_dense_production_wind_config, profile, config,
+        wind_envelope_record=envelope, initial_available_fraction=fraction)
+    ordinary = DenseProductionWindProfile(profile.model_config, SYNTHETIC, "same authored config, ordinary API")
+    _raises("unsupported_mode", build_dense_production_wind_config, ordinary,
+        wind_envelope_record=envelope, initial_available_fraction=fraction)
+
+
+def test_synthetic_audit_binds_marker_exact_native_spec_and_controlling_inputs():
+    from masy.dense_bed import _sha256
+    profile, envelope, fraction, config = _synthetic_wake_build()
+    record = dwp.audit_dense_synthetic_vegetation_wake_config(profile, config,
+        wind_envelope_record=envelope, initial_available_fraction=fraction)
+    assert record["schema"] == dwp.SYNTHETIC_WAKE_AUDIT_SCHEMA and record["transport_ready"] is False
+    assert record["synthetic_interface"]["feature"] == dwp.SYNTHETIC_WAKE_FEATURE
+    assert record["synthetic_interface"]["native_wake_spec"]["canonical"] == _canon(profile.model_config.vegetation_wake)
+    assert record["synthetic_interface"]["native_wake_spec"]["sha256"] == _sha256(_canon(profile.model_config.vegetation_wake))
+    assert record["synthetic_interface"]["native_default_coefficients_only"] is True
+    assert "not_supplied" in record["synthetic_interface"]["raster_binding"]
+    assert record["factory_policy"]["refused_unless_false"] == [
+        "water_coupling.enabled", "prescribed_external_shear.enabled", "topographic_commit.dry_aeolian_commit_separation_enabled"]
+    assert record["scheduler_config"]["canonical"] == _canon(config)
+    assert record["model_config"]["config_to_dict"] == _canon(dwp._native().config_to_dict(profile.model_config))
+    assert record["availability"]["array"] == _canon(fraction)
+    assert record["wind_envelope"]["record"] == _canon(envelope)
+    assert record["audit_sha256"] == _sha256({k: value for k, value in record.items() if k != "audit_sha256"})
+    changed = dataclasses.replace(envelope, source_path="authored-revision2.yaml")
+    changed_config = dwp.build_dense_synthetic_vegetation_wake_config(profile,
+        wind_envelope_record=changed, initial_available_fraction=fraction)
+    changed_audit = dwp.audit_dense_synthetic_vegetation_wake_config(profile, changed_config,
+        wind_envelope_record=changed, initial_available_fraction=fraction)
+    assert changed_audit["audit_sha256"] != record["audit_sha256"]
+
+
+@pytest.mark.parametrize("kind", ["wake_subclass", "windward_subclass", "wake_object", "enabled_numpy", "coefficient_numpy", "changed_coefficient", "disabled"])
+def test_synthetic_native_wake_holders_and_defaults_refuse_before_builder(monkeypatch, kind):
+    from maple.core.parameters.vegetation_wake import (
+        VegetationWakeSpec,
+        VegetationWindwardSpec,
+    )
+    profile = _synthetic_wake_profile()
+    wake = profile.model_config.vegetation_wake
+    if kind == "wake_subclass":
+        class SubWake(VegetationWakeSpec):
+            pass
+        wake = SubWake(**{f.name: getattr(wake, f.name) for f in dataclasses.fields(wake)})
+    elif kind == "windward_subclass":
+        class SubWindward(VegetationWindwardSpec):
+            pass
+        wake = dataclasses.replace(wake, windward=SubWindward())
+    elif kind == "wake_object":
+        wake = object()
+    elif kind == "enabled_numpy":
+        wake = dataclasses.replace(wake, enabled=np.bool_(True))
+    elif kind == "coefficient_numpy":
+        wake = dataclasses.replace(wake, immediate_lee_shear_velocity_ratio=np.float64(0.32))
+    elif kind == "changed_coefficient":
+        wake = dataclasses.replace(wake, immediate_lee_shear_velocity_ratio=0.31)
+    else:
+        wake = dataclasses.replace(wake, enabled=False)
+    bad = _synthetic_wake_profile(dataclasses.replace(profile.model_config, vegetation_wake=wake))
+    _forbid_native_build(monkeypatch)
+    code = "wrong_native_type" if kind in ("wake_subclass", "windward_subclass", "wake_object") else "unsupported_mode"
+    _raises(code, _synthetic_wake_build, bad)
+
+
+@pytest.mark.parametrize("kind", ["geometry_object", "large_grid", "cell_product", "bool_dimension", "numpy_dimension", "huge_dimension", "classes_object", "two_classes", "feature", "reviewed", "unknown_calibration", "subclass"])
+def test_synthetic_scope_and_provenance_refuse_before_builder(monkeypatch, kind):
+    profile = _synthetic_wake_profile()
+    config = profile.model_config
+    if kind == "geometry_object":
+        config = dataclasses.replace(config, geometry=object())
+    elif kind == "large_grid":
+        config = dataclasses.replace(config, geometry=dataclasses.replace(config.geometry, nx=65))
+    elif kind == "cell_product":
+        config = dataclasses.replace(config, geometry=dataclasses.replace(config.geometry, ny=8, nx=9))
+    elif kind == "bool_dimension":
+        config = dataclasses.replace(config, geometry=dataclasses.replace(config.geometry, nx=True))
+    elif kind == "numpy_dimension":
+        config = dataclasses.replace(config, geometry=dataclasses.replace(config.geometry, nx=np.int64(4)))
+    elif kind == "huge_dimension":
+        config = dataclasses.replace(config, geometry=dataclasses.replace(config.geometry, nx=10**10000))
+    elif kind == "classes_object":
+        config = dataclasses.replace(config, grain_classes=object())
+    elif kind == "two_classes":
+        config = dataclasses.replace(config, grain_classes=dataclasses.replace(config.grain_classes, classes=config.grain_classes.classes * 2))
+    elif kind == "unknown_calibration":
+        config = dataclasses.replace(config, reduced_detachment=dataclasses.replace(config.reduced_detachment, calibration_id="other-authored-case"))
+    profile = _synthetic_wake_profile(config, status=REVIEWED if kind == "reviewed" else SYNTHETIC)
+    if kind == "feature":
+        object.__setattr__(profile, "interface_feature", "other-feature")
+    elif kind == "subclass":
+        class SubProfile(dwp.DenseSyntheticVegetationWakeProfile):
+            pass
+        profile = SubProfile(config, SYNTHETIC, "authored subclass must refuse")
+    _forbid_native_build(monkeypatch)
+    if kind in ("geometry_object", "classes_object", "subclass"):
+        code = "wrong_native_type"
+    elif kind == "feature":
+        code = "invalid_interface_feature"
+    elif kind == "reviewed":
+        code = "invalid_calibration_declaration"
+    elif kind == "unknown_calibration":
+        code = "calibration_declaration_refused"
+    else:
+        code = "synthetic_interface_scope"
+    _raises(code, _synthetic_wake_build, profile)
+
+
+@pytest.mark.parametrize("kind", ["large_grid", "geometry_object", "classes_object", "feature"])
+def test_synthetic_raw_admission_precedes_native_validation(monkeypatch, kind):
+    import maple.core.parameters as params
+    profile = _synthetic_wake_profile()
+    config = valid_config = profile.model_config
+    if kind == "large_grid":
+        config = dataclasses.replace(config, geometry=dataclasses.replace(config.geometry, nx=65))
+    elif kind == "geometry_object":
+        config = dataclasses.replace(config, geometry=object())
+    elif kind == "classes_object":
+        config = dataclasses.replace(config, grain_classes=object())
+    profile = _synthetic_wake_profile(config)
+    if kind == "feature":
+        object.__setattr__(profile, "interface_feature", "invalid")
+    def forbidden(*args, **kwargs):
+        raise AssertionError("native validation must follow finite raw admission")
+    monkeypatch.setattr(params, "validate_config", forbidden)
+    code = ("synthetic_interface_scope" if kind == "large_grid" else
+            "invalid_interface_feature" if kind == "feature" else "wrong_native_type")
+    _raises(code, _synthetic_wake_build, profile)
+    # Live-target control: the same patched lookup must reject a valid profile.
+    with pytest.raises(AssertionError, match="native validation must follow"):
+        _synthetic_wake_build(_synthetic_wake_profile(config=valid_config))
+
+
+@pytest.mark.parametrize("group,name,value", [
+    ("execution", "backend", "cupy"),
+    ("reduced_detachment", "out_of_envelope_policy", "warn"),
+    ("water_coupling", "enabled", True),
+    ("prescribed_external_shear", "enabled", True),
+    ("topographic_commit", "dry_aeolian_commit_separation_enabled", True),
+])
+def test_new_synthetic_path_preserves_other_native_mode_refusals(monkeypatch, group, name, value):
+    profile = _synthetic_wake_profile()
+    config = profile.model_config
+    config = dataclasses.replace(config, **{group: dataclasses.replace(getattr(config, group), **{name: value})})
+    bad = _synthetic_wake_profile(config)
+    _forbid_native_build(monkeypatch)
+    with pytest.raises(ProductionProfileError) as error:
+        _synthetic_wake_build(bad)
+    assert error.value.code in {"unsupported_mode", "invalid_model_config"}
+
+
+def test_native_builder_forbidden_sentinel_is_on_live_new_path(monkeypatch):
+    profile = _synthetic_wake_profile()
+    _forbid_native_build(monkeypatch)
+    with pytest.raises(AssertionError, match="native builder reached"):
+        _synthetic_wake_build(profile)
+
+
+def test_synthetic_audit_cannot_change_following_ordinary_v1_audit():
+    ordinary, envelope, fraction, config = _build()
+    before = audit_dense_production_wind_config(ordinary, config,
+        wind_envelope_record=envelope, initial_available_fraction=fraction)
+    marked, marked_envelope, marked_fraction, marked_config = _synthetic_wake_build()
+    dwp.audit_dense_synthetic_vegetation_wake_config(marked, marked_config,
+        wind_envelope_record=marked_envelope, initial_available_fraction=marked_fraction)
+    after = audit_dense_production_wind_config(ordinary, config,
+        wind_envelope_record=envelope, initial_available_fraction=fraction)
+    assert json.dumps(before,sort_keys=True,separators=(",", ":")) == json.dumps(after,sort_keys=True,separators=(",", ":"))

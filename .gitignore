@@ -20,3 +20,6 @@ dist/
 # Requested Linux-local aliases; portable project tracks uppercase entry points only
 /agents.md
 /claude.md
+
+# Retained local orchestration snapshots
+agent_handoffs/state_history_*/

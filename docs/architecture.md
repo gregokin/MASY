@@ -1,6 +1,6 @@
 # Wrapper architecture and handoff contract
 
-This is the initial design contract, not a statement that integration is implemented.
+This is the initial design contract, not a statement that integration is implemented. Dated implementation status is appended at the end.
 
 ## Components
 
@@ -78,3 +78,19 @@ above remain requirements for later qualification.
 ## October 19 current pair and shared vegetation plan
 
 The fresh [MASY-09 qualification](source_pair_20261019.md) accepts MAPLE `39bcf79` with newly committed SYRUP `d05d8c6`, under lock `43976b9a…`. Earlier pair references above remain their historical acceptance. Bounded synthetic [Dense CPU production-feature coupling](dense_production_wind.md) is published; production calibration, windowed/GPU execution and combined persisted restart remain separate work. The [vegetation information plan](vegetation_information_plan.md) binds future accepted native vegetation and soil-water references, payload-bound updates and exactly-once receipts; physics questions require the user’s decision before dependent implementation.
+
+## October 19 coherent CPU candidate status
+
+Accepted CPU components now share one engine, and the default runner's results are unchanged:
+
+- **Vegetation.** [Manual versioned vegetation](vegetation_information_plan.md#current-accepted-cpu-component-status-october-19)
+  holds all five native fields. A native wake response reads the latest accepted cover. The SYRUP-owned soil object
+  passes unchanged after the existing native dry reset, and the joint soil exchange seam refuses any nonempty
+  exchange.
+- **Persistence.** The [accepted-boundary store](dense_boundary_store.md) is a first bounded slice of the combined
+  manifest above. It persists immutable originals, native checkpoints and passive images under an atomic `HEAD`,
+  locked to source manifests. It restarts only from accepted boundaries.
+- **Not yet met.** Active-event resume, power-loss recovery, committed-lock binding, dynamic-vegetation persistence,
+  GPU and windowed storage are not covered. The restart and backend requirements above still stand for these.
+- **Device.** The [private device runner](dense_device_runner.md) reuses the same engine. It is qualified only for
+  CPU semantics.

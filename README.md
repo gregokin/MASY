@@ -17,16 +17,30 @@ provides separate immutable source profiles and an identity-only probe;
 numerical GPU transport remains unqualified. These later sources require their
 own new runtime identities and never change the reference lock above.
 
+**Coherent CPU components (October 19).** The coherent CPU publication candidate is the immutable source-manifest
+prototype `77f9c077…`, built over live published MASY `72a7d1d`, MAPLE `89a2775` and SYRUP `d05d8c6`. It uses one
+shared CPU engine whose ordinary default results stay byte-identical to the original runner. Accepted components on
+that engine are [manual versioned vegetation updates with a native wake
+response](docs/vegetation_information_plan.md#current-accepted-cpu-component-status-october-19) and an opt-in
+[accepted-boundary store prototype](docs/dense_boundary_store.md) bound to immutable source manifests. Neither
+component is tied to a committed runtime lock yet. The earlier store refusal at exact environment identity was
+measured as exactly two missing compiled child extensions (`readline`, `resource`); after a test-fixture-only
+correction, the fresh targeted store, routing and schema checks and two native controls passed on this candidate
+(see [Tests](#tests)). Publication and a fresh committed CPU lock are still pending. No production calibration, GPU,
+windowed or full-scale support is claimed. The project goal of full alternating operation remains active.
+
 The [schedule and bed adapter](docs/dense_integration.md), [Python event runner](docs/dense_runner.md), and
 [native finalization adapter](docs/wind_finalization.md) reuse the actual upstream physics. MAPLE's clock-origin
 extension is committed and included in this merge. Shared-storage libraries are present; windowed wind execution
-remains unqualified. GPU, large cases, combined restart and a collaborator transport CLI require later work.
+remains unqualified. GPU events ([private device runner](docs/dense_device_runner.md)), large cases, general
+combined restart and a collaborator transport CLI require later work.
 The [runtime tools](docs/runtime.md) still report `transport_ready=false` because they have no transport entry point;
 source delivery and the separately tested Python API have distinct acceptance evidence.
 
-The [shared vegetation and soil-water plan](docs/vegetation_information_plan.md) defines future versioned updates
-between events, read by both models, with atomic native water-budget exchanges. Growth, mortality and uptake laws
-remain separate scientific decisions.
+The [shared vegetation and soil-water plan](docs/vegetation_information_plan.md) defines versioned updates between
+events, read by both models. Manual CPU updates of the five native fields now exist. Joint soil-water exchange is
+still refused until it is scientifically specified. Growth, mortality and uptake laws remain separate scientific
+decisions.
 
 MASY now has a static, declarative [pyproject.toml](pyproject.toml) (`masy` `0.0.3.dev0`, equal to `masy.__version__`). It is never installed or built. The runtime uses it only to generate a labelled, run-owned metadata overlay that is not an installation.
 
@@ -90,7 +104,7 @@ The default suite uses stdlib `unittest`, with synthetic temporary Git repositor
 cd /home/okin/MASY && /home/okin/MAPLE/.venv/bin/python -B -m unittest discover -s tests -v
 ```
 
-At MASY `bf46354`, 307 stdlib tests and 46 separate native configuration checks pass with no skips. The MASY-09 reference pair passed 153 tests plus 61 subtests and 96 separate component checks. MASY-06’s 264-test result and MASY-08’s 113/15/22/3 native results are historical. GPU source-profile provenance tests also inspect local immutable historical source/build receipts and the retained CPU lock; they launch no accelerator or model. Fresh-checkout test-fixture packaging remains collaborator-workflow work. See [tests/README.md](tests/README.md) and [verification](agent_handoffs/verification.md) for exact sources, receipts and limits.
+On the task-80 source prototype, 12 completed groups passed 543 tests plus 150 subtests, with byte-exact whole default and synthetic production-feature parity. Its store component failed, and the task-82 narrow parent/child import-symmetry attempt also refused at exact environment identity before its kill point; both failed attempts are preserved. Task 86 measured the cause as exactly the missing compiled `readline`/`resource` child extensions, with every other environment operand exact. Task 87 appended those two symbols symmetrically to the test `cpu_declarations` tuple only (no guard, physics, tolerance or runtime change; native runtime `4139f62a…` unchanged). Its fresh targeted run then passed 17 methods plus 50 subtests (store 2, routing 5+6, schema 10+44) and two native controls, with no failures or skips. Publication and a fresh committed lock remain pending. At MASY `bf46354`, 307 stdlib tests and 46 separate native configuration checks pass with no skips. The MASY-09 reference pair passed 153 tests plus 61 subtests and 96 separate component checks. MASY-06’s 264-test result and MASY-08’s 113/15/22/3 native results are historical. GPU source-profile provenance tests also inspect local immutable historical source/build receipts and the retained CPU lock; they launch no accelerator or model. Fresh-checkout test-fixture packaging remains collaborator-workflow work. See [tests/README.md](tests/README.md) and [verification](agent_handoffs/verification.md) for exact sources, receipts and limits.
 
 ## Project rules
 

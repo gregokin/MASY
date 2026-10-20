@@ -1,5 +1,5 @@
 {
-  "updated_utc": "2026-10-19T19:02:49.270396+00:00",
+  "updated_utc": "2026-10-20T04:10:23.363613+00:00",
   "answered_original_questions": "tasks/masy10_production_wind_20261019/physics_questions.json",
   "pending": [],
   "answered": [
@@ -23,6 +23,23 @@
       "answer": "Yes, use existing native error bounds (Recommended)",
       "answered_utc": "2026-10-19T19:02:49.270396+00:00",
       "implementation": "Reuse existing native bounds with honest operand/term counts; no tolerance relaxation. Per-voxel/active transfers must match; no global bitwise identity claim. No automatic physical correction/rescaling."
+    },
+    {
+      "id": "complete_cpu_gpu_event_comparison_policy",
+      "status": "answered",
+      "question": "For future full CPU versus GPU event comparisons, may MASY use the models existing native backend comparison tolerances, with exact copies/handoffs/discrete values and unchanged native conservation? SYRUP sediment rtol1e-10/atol1e-14 and water rtol2e-12/atol1e-14; MAPLE bounds recorded per field without silently adopting historical test floors.",
+      "recommended": "Use existing native comparison bounds",
+      "alternatives": [
+        "Require bitwise-identical CPU and GPU event results",
+        "Leave full-event comparison policy pending"
+      ],
+      "source": "SYRUP/tests/conservative_water/test_complete_backend.py:13-15,126-141; MAPLE/tests/gpu_cpu_equivalence/test_wind_event_finalization_backends.py",
+      "independent_work": "Ownership/staging, native storage, passive restart, alias API diagnostic continue. This only blocks adopting a full CPU-GPU event qualification comparison policy.",
+      "prior_windowed_decision_is_not_automatic_backend_approval": true,
+      "reissued_async_utc": "2026-10-20T01:47:12.160987+00:00",
+      "answer": "Use existing native comparison bounds; do not relax them (Recommended)",
+      "answered_utc": "2026-10-20T04:10:23.363613+00:00",
+      "implementation": "Existing source-traced fieldwise backend comparison bounds only, without relaxation. Copies, handoffs and discrete decisions remain exact where required; all native conservation checks remain unchanged. Prior primitive tests do not establish full event qualification."
     }
   ]
 }

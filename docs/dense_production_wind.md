@@ -73,3 +73,39 @@ water avalanche on an authored unstable initial mound. Latest-commit vectors are
 convergence history. Conservative signed domain nets do not prove gross motion.
 A mound-induced native hydraulic sink is retained as a truthful failed transition;
 no sink policy, filling/carving, calibration allowance or tolerance is altered.
+
+## Explicit authored synthetic native vegetation-wake interface
+
+Task63's isolated source candidate adds `DenseSyntheticVegetationWakeProfile`
+(three inherited arguments plus a fixed feature marker), and separately named
+`build_dense_synthetic_vegetation_wake_config` /
+`audit_dense_synthetic_vegetation_wake_config`. The ordinary factory/audit still
+refuse this exact new type. Ordinary three-argument profiles, v1 records, policies
+and digests are unchanged. Only the production adapter's exact-type selection uses
+the new audit; subclasses fall through to the existing refusal.
+
+The new path requires the known native synthetic test fixture ID/schema,
+`synthetic_test_fixture` status, <=64 cells/1 class, exact native geometry/class,
+wake and windward holders, actual `enabled is True`, and exact native default
+wake/windward coefficients. Native validation and the one native mapper still
+operate on the original caller config, without overrides. A temporary disabled
+wake spec is used only for exact default comparison. Existing reduced reject,
+composition/envelope, backend, source/context, dry-water, soil, voxel and OS limits
+remain active. No tolerance, calibration or physical law is changed.
+
+The new audit uses an explicit schema/feature marker and binds actual native wake
+configuration plus the existing model/scheduler/envelope/availability inputs. It
+is labelled synthetic configuration-only and `transport_ready=False`. The factory
+receives no vegetation arrays or bed/process and therefore claims no raster or
+OS observation. Actual existing `DenseProductionLimits` / `check_process` retain
+64cell/1class/16voxel,4GiBAS/CPU120,135/CORE0/FSIZE128MiB policy. No estimator or
+limit mutation is added.
+
+No applied vegetation response is established by construction or audit selection.
+A later separately accepted task51 response candidate must bind its actual shared
+five-field version and water cover, compare the actual native following-wind
+modifier/cache/source fields with direct native API output, preserve clocks,
+soil and atomicity, and meet native periodic support/geometry guards using a
+separately labelled authored fixture. The original/default fixture stays unchanged.
+Native calibration, production science, GPU/windowed and dynamic restart remain
+separate qualification work.

@@ -33,3 +33,20 @@ MASY-09 committed the reviewed SYRUP storage candidate as `d05d8c6` and accepted
 The [vegetation information plan](vegetation_information_plan.md) adds versioned shared vegetation and future joint native soil-water updates to the design. Current static vegetation and dry reset stay qualified as before; ecological laws and retained-water readiness are separate scientific decisions.
 
 Current published CPU additions are described in [bounded production wind](dense_production_wind.md). Native windowed helper release and combined persisted restart remain separate gates. The [GPU runtime](gpu_runtime.md) provides immutable preparation and an identity-only probe; numerical GPU transport remains unqualified. The local orchestration state records exact current task gates and preserved failed attempts.
+
+## Coherent CPU components (October 19, later)
+
+The full goal is still active. Its CPU parts now exist as accepted components on one shared engine. That engine
+keeps the original constructor, attributes and byte-identical default results.
+
+- **Phase 3 extensions:** bounded synthetic production-feature coupling, manual versioned vegetation over the five
+  native fields, and a native wake response that reads the latest accepted cover
+  ([vegetation status](vegetation_information_plan.md#current-accepted-cpu-component-status-october-19)).
+  Production calibration still waits for the user's choice.
+- **Phase 4 (partial):** an opt-in [accepted-boundary store](dense_boundary_store.md) restarts at accepted
+  boundaries. Its actual four-event crash/retry/exactly-once qualification passed on the exact task-77 source-manifest
+  prototype. Its targeted store/routing/schema reruns and native controls have since passed on the coherent
+  candidate after a test-fixture-only environment-declaration correction (task 87). Still open: publication with a
+  fresh committed lock, a committed-lock binding, active-event resume, a collaborator CLI and a packaged example.
+- **Phase 5:** a [private device runner](dense_device_runner.md) passes CPU semantic checks only. Windowed native
+  wind remains source/design work. No GPU event, windowed run, memory fit or large-catchment result is accepted.

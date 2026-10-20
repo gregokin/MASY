@@ -1,6 +1,6 @@
 # Shared Landscape Vegetation: Information Plan (MASY-09)
 
-**Status:** This is a design only.
+**Status:** This began as a design only. Accepted CPU components now exist; see [current status](#current-accepted-cpu-component-status-october-19). The original design text below is kept as written.
 - **Phase 1 publication** means writing this file to `docs/vegetation_information_plan.md` in the MASY working tree. The user subsequently authorized commit/push of accepted milestones; this design may be published with its scope intact.
 - **Out of scope for this task:** code, data, response laws and soil-water policy.
 - **Parallel work:** it runs alongside the SYRUP candidate review and commit and the new Dense pair qualification, and blocks neither.
@@ -271,3 +271,124 @@ There is one logical authority per landscape: `LandscapeVegetation`. It is a MAS
 - **Pre-reset exposure.** The data exists only inside SYRUP. Once the `DryHandoff` is returned, depth and soil water are already zero.
 - **Tile bit-identity.** A tile re-rasterization must reproduce the `np.add.at` order and the cap rescale exactly.
 - **Snapshot coverage.** These sources do not show whether MAPLE `save_state_snapshot` stores vegetation, so combined-restart coverage must be confirmed.
+
+## Isolated dynamic dense CPU interface prototype (task51 StageB)
+
+This opt-in prototype layers the accepted vegetation component onto the explicit
+ec2 + task43 source-manifest prototype with native MAPLE89/SYRUPd05 from immutable
+lock851. It is not a current committed runtime or production calibration. The
+original static runner keeps its 26 fields, schemas, input checks and artifacts.
+
+Author a `VegetationPlan` before bed construction with the exact schedule digest,
+event kinds, grid, class count and voxel count. Pass that same object as
+`build_dense_bed(..., vegetation_profile=plan)` and
+`DenseRunner(..., vegetation_plan=plan)`. Omitting both selects the unchanged
+static profile; selecting only one refuses. Dynamic case, bed identity, static
+record, receipts and report use explicit v2 schemas. Updates run after accepted
+native event completion and before the next event starts. The binding contains
+the complete native `ClockLedger` record, including returned elapsed time and any
+realized clock discrepancy. Native rain schedule kind `rain` maps explicitly to
+the prescribed `water` proposer. Empty boundaries still advance their binding
+cursor, and repeated/conflicting updates use the component's exactly-once rules.
+
+All five native canonical raster fields are retained in one versioned envelope.
+Native wind receives its private read-only authority by reference through the
+actual scheduler factory. The actual SYRUP completion API accepts only cover
+fraction, so it receives an owned current cover array, bound in each receipt to
+the shared version/native-content identity. The other four fields remain in the
+same shared envelope; this prototype does not add an unimplemented SYRUP API.
+Public `DenseBed.vegetation` and cover snapshots are independent caller-owned
+copies in this profile. Its original prescribed vegetation is retained separately
+and checked against the original case digest. Wind admission retains every native
+physical/mobile/threshold/reconciliation/clock guard.
+
+The joint-resource candidate carries the runner's actual event-candidate soil
+object unchanged. Any named water exchange refuses, even a zero-valued channel.
+The existing native dry reset still runs before the vegetation hook, and no water
+or soil reset is replayed or credited by a vegetation update. New growth,
+mortality, uptake, evapotranspiration or retention laws are absent.
+
+Publication first prepares vegetation, complete native bed adoption, aggregate
+budgets, full clocks, soil/pool/routing references, canonical receipts and all
+accepted identities. It then checks the prepared native/source lineage and makes
+only reference assignments. A late ordinary exception leaves the last accepted
+bed, vegetation, soil, clocks, routing and totals unchanged. An exception from a
+native call may expose no partial result; the stop receipt makes no invented
+completion, elapsed-time or recovery claim. This is ordinary exception atomicity,
+not protection against process death and not active-event restart.
+
+The component's finite logical array/metadata/copy bounds apply before its
+allocations. Runner-required constructor cover, production diagnostic snapshots,
+water covers and update copies are charged to finite event/run copy limits;
+additional component/retained-owner/metadata reservations also enter the existing
+`max_work_bytes` check before event staging. Public user-requested snapshots are
+caller-owned and are outside accepted runner traffic. These logical reservations
+are not a whole-native peak estimator. Qualification uses a dedicated CPU worker
+with enforced 4GiB address space, CPU 120/135s and 128MiB file ceiling, a 180s wall
+limit, bounded streams and fresh host/disk admission. Native FFT, physics and
+conservation tolerances are unchanged.
+
+The clearly labelled four-event synthetic fixture uses the existing planar
+100um test configuration, topographic wind/separation, creep and native configured
+avalanching with periodic wind/open water boundaries. It prescribes a positive
+update after the first wind and a negative update after the first rain, and checks
+both following models' actual inputs. It is not measured calibration or evidence
+for a scientific vegetation response. The existing production-profile foundation
+still refuses enabled vegetation wake; separate task63 must qualify an explicit
+synthetic-only admission and actual native modifier witness before claiming an
+applied following-wind response. No disabled-wake result is labelled such evidence.
+
+The original task43 passive codec refuses the dynamic v0 layout before writing.
+Dynamic boundary/active-event restart, scalable/windowed storage and GPU events
+remain separate work. No wrapper reroute decision or new vegetation trigger is
+introduced: any hydraulic reroute remains the existing native physical-surface
+rule with its actual configured threshold.
+
+
+## Task70 separate authored native wake response qualifier
+
+A fresh isolated full StageB prototype with the exact accepted task63 synthetic
+factory/adapter overlay has a separately named response qualifier. It retains
+all original/default fixtures and native source. Authored cover-weighted plant
+heights meet the unchanged native periodic-support guard; only the native wake
+master enable differs from its default spec. Wake/windward coefficients are not
+recalibrated. Native sampling ladders include zero distance. Actual wind observes barev0
+(no sampling) andv2 with3wake samples(0,0.125,0.25m) and1windward sample(0m).
+The authoredv1 height would yield5wake/1windward samples but is observed by
+water cover alone, so it establishes no wind response. The native windward
+witness covers only the occupied-cell zero-distance response, with no off-cell
+windward support qualification. Both native kernel fields and their combined
+modifier must match the direct native result.
+
+The qualifier compares all five current landscape fields/version at wind entry,
+the actual reduced transport modifier against direct native output, native cache
+key/integrity/reuse, and owned current cover at water entry. Native SYRUP currently
+uses cover alone; the other fields remain in the shared envelope. It also checks
+actual native soil reset/candidate identity, full clocks/accounting, late failure
+atomicity and exact copy admission. Source alone proves no response: an accepted
+actual bounded run and independent review are required. No growth/mortality/uptake
+law, tolerance, production calibration, GPU/windowed/scale or dynamic restart
+qualification is inferred. The separate accepted common-engine prototype still
+requires an explicitly coherent integration.
+
+## Current accepted CPU component status (October 19)
+
+This status supersedes the pending notes in the two sections above.
+
+**What is accepted.** On the coherent shared CPU engine, typed versioned updates
+of all five native fields (StageA/B, task 51) are accepted. These are manual
+boundary updates. The native wake response (tasks 63/70) is also accepted: the
+direct CPU wind response uses the latest accepted cover. In the source fixture,
+wind sees v0 and then v2, and water sees v1 and then v2. The wind response has
+three native wake samples and one windward zero-distance sample. Source-only
+defaults are unchanged.
+
+**Soil water.** The SYRUP-owned soil object passes unchanged after the current
+native explicit dry reset, so soil is zero at each accepted water boundary. A
+typed future joint soil/vegetation exchange seam exists. It refuses any nonempty
+exchange until the exchange is specified scientifically.
+
+**Not included.** There is no growth, mortality, uptake or ET law, and no
+retained-soil policy. Dynamic-vegetation persisted restart, GPU and windowed
+runs are refused. The [boundary store](dense_boundary_store.md) persists only
+the static profile.

@@ -19,6 +19,12 @@ The later opt-in [production-feature profile](dense_production_wind.md) is
 separately checked on bounded synthetic CPU fixtures. Its calibration and
 resource limits do not broaden this reference profile's qualification.
 
+On the coherent CPU candidate this runner is the shared engine. Its public constructor, its 26 instance attributes
+and its ordinary result structure are preserved. Default and synthetic production-feature results, including
+late wind/water fault operands, are byte-identical to the original runner. Two opt-in components build on it:
+[manual vegetation updates](vegetation_information_plan.md#current-accepted-cpu-component-status-october-19) and
+the [accepted-boundary store](dense_boundary_store.md). The runner itself remains in-memory only.
+
 The caller must establish locked import paths, matching distribution metadata and actual module origins before
 transport. The runner does not select or qualify dependencies itself. The existing runtime command qualifies source
 identity; it does not launch this API or make an uncommitted wrapper a committed production source.
@@ -227,6 +233,30 @@ On any refusal, native exception, limit or incomplete outcome:
 - The changing graph, routing source, soil and pool are evolving state. They are not static inputs; only their
   initial values are recorded.
 
+## Private host array and ownership operations
+
+- `_HostArrayOps` and `_HostOwnership` are the private host bodies of the engine's array-op and ownership hooks.
+  They are not exported, and the public `DenseRunner` constructor, default profile and passive checkpoint
+  behavior always use them; nothing public selects or injects another body. Each method body is the former inline
+  host expression, so values, shapes and reduction order are unchanged.
+- Native class and accounting vectors cross one explicit class-vector seam (`class_vector`). The receipt
+  serialization of raw native vectors in the wind and rain events uses `float_values`, which keeps the existing
+  host `_floats` result. A native scalar still becomes a one-element list. Native spatial sums stay native and are
+  converted only afterwards. The native `flow_end_settlement` list is already a plain host list and is copied
+  unchanged. Compact class-vector arithmetic on the host stays in the engine.
+- Publication records are explicit. A wind event prepares the full native `SchedulerPhysicalState`
+  (`_SchedulerPublication`). A rain event prepares the native `BedState` and its native time (`_BedPublication`).
+  Every `DenseBed` validation still runs at commit, in the same late adoption position as before.
+- The only other bodies belong to the private explicit factory `masy.dense_device_runner._create_dense_device_runner`
+  ([device runner](dense_device_runner.md)). It builds the SAME engine (same `step` / wind / rain / finish code)
+  with private device ownership, compact array-op and per-rain `CudaHydraulics` hook bodies, including the three
+  retained-routing calls. `dense_runner` does not import it, and it is not the default. It is an unqualified
+  prototype: device construction, events, peak memory fit and restart are not qualified, and nothing here makes
+  or implies a GPU-ready claim.
+- CPU evolving vegetation (an explicit `vegetation_plan` over a dynamic bed; see the
+  [vegetation plan](vegetation_information_plan.md)) runs only through this CPU engine. The
+  device factory refuses a dynamic-vegetation bed (`unsupported_profile`) before any native, CuPy or copy work.
+
 ## Limitations
 
 - MAPLE must provide the explicit `record_origin_s` finalizer API. Construction refuses older APIs with
@@ -235,7 +265,9 @@ On any refusal, native exception, limit or incomplete outcome:
   requires fresh qualification; existing locks are never rebound. Shared-storage libraries do not qualify windowed wind.
 - The work-byte cap bounds MASY-side staged copies with a documented estimate. It does not bound native internal
   temporaries.
-- In-process only: no checkpoint, persistence or combined restart. Wet progress is never resumed here.
+- In-process only: the runner itself has no checkpoint, persistence or combined restart, and it never resumes wet
+  progress. The separate opt-in [boundary store](dense_boundary_store.md) persists accepted boundaries only; it
+  has no active-event resume.
 - The duration-coverage guard checks the native split plan. Actual native accumulation is preserved and recorded
   (`coverage.elapsed_discrepancy_s`); the finalizer additionally checks the mapped completed-record endpoint using
   its unchanged native clock tolerance. Support for sub-epsilon durations or changed tolerances belongs upstream.

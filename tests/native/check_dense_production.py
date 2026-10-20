@@ -411,3 +411,69 @@ def test_actual_airborne_finalization_before_and_after_water():
     emit({"test": "nonempty_native_finalization", "events": 3,
           "before_and_after_water": True, "shared_fields_and_native_clocks_equal": True,
           "airborne_before_kg": [w["airborne_mass_before_by_class_kg"] for w in winds]})
+
+# Task63 audit selection only: these new checks do not execute a wind/water event.
+def synthetic_wake_components():
+    from masy.dense_wind_profile import (
+        DenseSyntheticVegetationWakeProfile,
+        build_dense_synthetic_vegetation_wake_config,
+    )
+    bed, events, wind, water, old = fixture.components(mound=False)
+    model = dataclasses.replace(old.model_config,
+        vegetation_wake=dataclasses.replace(old.model_config.vegetation_wake, enabled=True))
+    profile = DenseSyntheticVegetationWakeProfile(model, "synthetic_test_fixture",
+        "authored configuration-only wake admission; native default coefficients; NOT MEASURED")
+    envelope, _ = dp.schedule_envelope(events)
+    config = build_dense_synthetic_vegetation_wake_config(profile,
+        wind_envelope_record=envelope, initial_available_fraction=bed.context.initial_available_fraction)
+    return bed, events, dataclasses.replace(wind, config=config), water, profile
+
+
+def test_exact_synthetic_profile_selects_new_audit_and_binds_shared_context():
+    from masy.dense_wind_profile import (
+        SYNTHETIC_WAKE_AUDIT_SCHEMA,
+        SYNTHETIC_WAKE_FEATURE,
+    )
+    bed, events, wind, water, profile = synthetic_wake_components()
+    before = bed.identity_sha256()
+    runner = dr.DenseRunner(bed, events, wind=wind, water=water, control=legacy.runner_control(),
+        limits=legacy.limits(), wind_profile=profile, production_limits=dp.DenseProductionLimits())
+    audit = runner._static_parts["production"]["native_config_audit"]
+    assert audit["schema"] == SYNTHETIC_WAKE_AUDIT_SCHEMA
+    assert audit["synthetic_interface"]["feature"] == SYNTHETIC_WAKE_FEATURE
+    assert wind.config.initial_available_fraction is bed.context.initial_available_fraction
+    assert runner._next == 0 and bed.identity_sha256() == before
+    assert audit["transport_ready"] is False  # no applied-modifier qualification here
+
+
+def test_new_synthetic_dispatch_preserves_original_dimension_admission(monkeypatch):
+    import masy.dense_wind_profile as profile_module
+    bed, events, wind, water, profile = synthetic_wake_components()
+    before = bed.identity_sha256()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("new audit reached before original production dimension guard")
+    monkeypatch.setattr(profile_module, "audit_dense_synthetic_vegetation_wake_config", forbidden)
+    with pytest.raises(dr.DenseRunnerError, match="production_dimension_limit"):
+        dr.DenseRunner(bed, events, wind=wind, water=water, control=legacy.runner_control(),
+            limits=legacy.limits(), wind_profile=profile, production_limits=dp.DenseProductionLimits(max_cells=15))
+    assert bed.identity_sha256() == before
+    # A valid-cap call must reach the same module lookup, proving the patch live.
+    with pytest.raises(AssertionError, match="new audit reached before original"):
+        dr.DenseRunner(bed, events, wind=wind, water=water, control=legacy.runner_control(),
+            limits=legacy.limits(), wind_profile=profile, production_limits=dp.DenseProductionLimits())
+    assert bed.identity_sha256() == before
+
+
+def test_synthetic_profile_subclass_does_not_select_new_audit(monkeypatch):
+    import masy.dense_wind_profile as profile_module
+    from masy.dense_wind_profile import DenseSyntheticVegetationWakeProfile
+    bed, events, wind, water, profile = synthetic_wake_components()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("subclass must not select new audit")
+    monkeypatch.setattr(profile_module, "audit_dense_synthetic_vegetation_wake_config", forbidden)
+    class SubProfile(DenseSyntheticVegetationWakeProfile):
+        pass
+    bad = SubProfile(profile.model_config, "synthetic_test_fixture", "authored unsupported subclass")
+    with pytest.raises(dr.DenseRunnerError, match="wrong_native_type"):
+        dr.DenseRunner(bed, events, wind=wind, water=water, control=legacy.runner_control(),
+            limits=legacy.limits(), wind_profile=bad, production_limits=dp.DenseProductionLimits())

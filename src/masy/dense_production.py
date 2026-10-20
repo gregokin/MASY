@@ -134,8 +134,10 @@ def controlling_record(n: Any, bed: Any, wind: Any, schedule: Any, profile: Any,
 
     from masy.dense_bed import DenseBedError, _require_host_arrays
     from masy.dense_wind_profile import (
+        DenseSyntheticVegetationWakeProfile,
         ProductionProfileError,
         audit_dense_production_wind_config,
+        audit_dense_synthetic_vegetation_wake_config,
     )
     ctx, cfg = bed.context, wind.config
     if type(cfg) is not n.SchedulerPhysicsConfig:
@@ -153,8 +155,12 @@ def controlling_record(n: Any, bed: Any, wind: Any, schedule: Any, profile: Any,
         raise DenseProductionError("production_dimension_limit", f"case dimensions {dimensions} exceed the bounded CPU policy")
     try:
         envelope, binding = schedule_envelope(schedule)
-        audit = audit_dense_production_wind_config(profile, cfg, wind_envelope_record=envelope,
-                                                  initial_available_fraction=ctx.initial_available_fraction)
+        if type(profile) is DenseSyntheticVegetationWakeProfile:
+            audit = audit_dense_synthetic_vegetation_wake_config(profile, cfg, wind_envelope_record=envelope,
+                initial_available_fraction=ctx.initial_available_fraction)
+        else:
+            audit = audit_dense_production_wind_config(profile, cfg, wind_envelope_record=envelope,
+                                                      initial_available_fraction=ctx.initial_available_fraction)
     except ProductionProfileError as exc:
         raise DenseProductionError(exc.code, exc.detail) from exc
     for scheduler_name, model_name in (("geometry", "geometry"), ("grain_classes", "grain_classes"),
