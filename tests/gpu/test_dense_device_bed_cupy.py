@@ -5,7 +5,8 @@ launch this callable under a NEW genuine sealed GPU profile containing the
 owner, exact worker environment and bounded run_bounded lifecycle. It supplies
 both the native identity/allocation gate and the additional copy-test scope.
 Missing scope is a refusal, never a skip or permission inferred from collection.
-This file is source-only in task39; it has NOT executed on hardware.
+Collection stays dormant; only explicit parent run receipts determine whether
+and how this source executed or qualified.
 """
 
 from __future__ import annotations
@@ -164,6 +165,7 @@ def run_authorized_checks(request, scope, *, base_sys_path):
 
     Returns bounded metadata and required checkset. No full fields or datasets.
     Runtime/source/profile preparation and actual allocation query are external.
+    Execution/qualification status comes only from explicit parent run receipts.
     """
     from masy import gpu_runtime_worker as guard
 
@@ -216,6 +218,7 @@ def run_authorized_checks(request, scope, *, base_sys_path):
     import cupy as cp  # All explicit authority/source/process checks already passed.
     from maple.core.backend import array_leaves, arrays_share_memory, to_device_tree
     from maple.core.backend.selection import resolve_backend
+    from maple_syrup.event_backend import host_packet
 
     if cp.cuda.runtime.getDeviceCount() != 1:
         raise ValueError("exactly one physically scoped visible device required")
@@ -275,7 +278,23 @@ def run_authorized_checks(request, scope, *, base_sys_path):
                     "publication did not advance to an independent accepted copy"
                 )
             completed.add("candidate_isolation")
-            owner._accepted.state.water.depth_m[0, 0] = -0.0
+
+            def _bits_hold(*flags):
+                # One bounded boolean packet; no full-field transfer.
+                packet = host_packet(cp, list(flags))
+                return packet.shape == (len(flags),) and all(
+                    float(v) == 1.0 for v in packet
+                )
+
+            pos_zero = cp.uint64(0)
+            neg_zero = cp.uint64(0x8000000000000000)  # IEEE binary64 -0.0
+            # Admitted accepted leaves are C-contiguous float64, so this is a bit view.
+            bits = owner._accepted.state.water.depth_m.view(cp.uint64)
+            if not _bits_hold(bits[0, 0] == pos_zero):
+                raise AssertionError("fixture baseline is not exact positive-zero bits")
+            bits[0, 0] = neg_zero
+            if not _bits_hold(bits[0, 0] == neg_zero, bits[0, 0] != pos_zero):
+                raise AssertionError("negative-zero bit pattern was not written")
             try:
                 owner.verify()
             except device.DeviceBedError as exc:
@@ -283,7 +302,9 @@ def run_authorized_checks(request, scope, *, base_sys_path):
                     raise
             else:
                 raise AssertionError("raw signed-zero corruption not detected")
-            owner._accepted.state.water.depth_m[0, 0] = 0.0
+            bits[0, 0] = pos_zero
+            if not _bits_hold(bits[0, 0] == pos_zero):
+                raise AssertionError("positive-zero bit pattern was not restored")
             owner.verify()
             completed.add("signed_zero_integrity")
             stage = owner.begin_stage()
