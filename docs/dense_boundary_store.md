@@ -200,3 +200,17 @@ bounded protocols precede publication; a new committed module/lock, fresh CPU
 qualification and fresh original/genesis/store identities are required before
 cold positive component and four-event durable-restart qualification. The
 historical task-78 result above remains evidence for its exact prototype only.
+
+## Namespace-local mount ID (task-111 correction)
+
+Linux mount IDs are local to a process's mount namespace, so a genuine store
+could refuse cold recovery in a fresh namespace although its filesystem was
+unchanged. Saved and current mount observations must still be exactly
+`{mount_id, mount_path, major_minor, fs_type}` with a positive plain-integer
+`mount_id` and string fields. The ID is retained in the probe receipt only as
+diagnosis. Recovery compares `mount_path`, `major_minor` and `fs_type`. The
+persisted probe raw SHA-256, root path/dev/ino, `f_fsid`, ext4/xfs, the
+longest-enclosing-mount/device check and every other guard are unchanged. This
+correction does not qualify cross-process restart and does not migrate old
+artifacts. That still needs new committed source, a new lock and fresh
+originals/genesis. There is still no power-loss guarantee.

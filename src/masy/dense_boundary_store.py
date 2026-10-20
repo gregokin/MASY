@@ -472,6 +472,21 @@ def _sync_tree(root):
         os.close(held)
 
 
+def _durable_mount(value, where):
+    """Closed typed observation; namespace-local mount_id is diagnosis only."""
+    _keys(value, ("mount_id", "mount_path", "major_minor", "fs_type"), where)
+    if (
+        type(value["mount_id"]) is not int
+        or not 1 <= value["mount_id"] < 1 << 63
+        or any(
+            type(value[name]) is not str
+            for name in ("mount_path", "major_minor", "fs_type")
+        )
+    ):
+        _fail("storage_observation", where)
+    return value["mount_path"], value["major_minor"], value["fs_type"]
+
+
 def _mount_unescape(value):
     if re.search(r"\\(?!040|011|012|134)", value):
         _fail("storage_observation", "unsupported mountinfo escape")
@@ -2245,6 +2260,7 @@ class DenseBoundaryStore:
         ):
             _fail("storage_contract", "persisted root/declarations differ")
         observed = _mount_observation(self._root, info.st_dev)
+        durable = _durable_mount(observed, "current mount observation")
         if (
             observed["fs_type"] not in ("ext4", "xfs")
             or observed["fs_type"] != record["observed_fs_type"]
@@ -2254,7 +2270,8 @@ class DenseBoundaryStore:
         probe, raw = _record(self._root / ".storage_probe/result.json", 32 << 10)
         if (
             _sha(raw) != record["probe_file_sha256"]
-            or probe.get("observation") != observed
+            or _durable_mount(probe.get("observation"), "saved mount observation")
+            != durable
             or probe.get("f_fsid") != record["observed_fs_id"]
             or probe.get("root_dev") != info.st_dev
             or probe.get("root_ino") != info.st_ino
