@@ -418,6 +418,52 @@ class CompactReads(unittest.TestCase):
             ops.class_vector("not a value")
 
 
+    def test_native_host_lists_keep_values_order_and_signed_zero_without_device_read(self):
+        ops = drun._DeviceArrayOps(np, NC)
+        ops._packet = mock.Mock(side_effect=AssertionError("host list used device packet"))
+        expected = np.array([-0.0, 0.0, 1.25, 2.5, 3.75, 4.0], dtype=np.float64)
+        self.assertEqual(expected.size, NC)
+        for values in (expected.tolist(), [-0.0, 0, 1.25, 2.5, 3.75, 4]):
+            with self.subTest(values_type="native .tolist or mixed plain numbers"):
+                got = ops.class_vector(values)
+                self.assertEqual(got.shape, (NC,))
+                self.assertEqual(got.dtype, np.dtype(np.float64))
+                self.assertEqual(got.tobytes(), expected.tobytes())
+                self.assertEqual([v.hex() for v in ops.float_values(values)],
+                                 [float(v).hex() for v in expected])
+        self.assertEqual(ops.scalar([-0.0]).hex(), (-0.0).hex())
+        self.assertEqual(ops.class_vector([]).shape, (0,))
+        ops._packet.assert_not_called()
+
+    def test_host_list_size_refuses_before_inspection_or_allocation(self):
+        ops = drun._DeviceArrayOps(np, NC)
+        ops._packet = mock.Mock(side_effect=AssertionError("host list used device packet"))
+        with mock.patch.object(np, "asarray", side_effect=AssertionError("premature allocation")) as convert:
+            with self.assertRaises(dense_runner.DenseRunnerError) as caught:
+                ops.class_vector([object()] * (NC + 1))
+            self.assertEqual(caught.exception.code, "spatial_payload")
+            convert.assert_not_called()
+        ops._packet.assert_not_called()
+
+    def test_non_plain_host_list_items_and_sequences_refuse_before_allocation(self):
+        class ListSubclass(list):
+            pass
+
+        ops = drun._DeviceArrayOps(np, NC)
+        ops._packet = mock.Mock(side_effect=AssertionError("host list used device packet"))
+        values = ([[1.0]], [True], [np.float64(1)], [np.int64(1)], [np.array(1.0)],
+                  [object()], ListSubclass([1.0]), (1.0,))
+        with mock.patch.object(np, "asarray", side_effect=AssertionError("premature allocation")) as convert:
+            for value in values:
+                with self.subTest(value_type=type(value).__name__):
+                    with self.assertRaises(dense_runner.DenseRunnerError) as caught:
+                        ops.class_vector(value)
+                    self.assertEqual(caught.exception.code, "unsupported_value")
+            convert.assert_not_called()
+        ops._packet.assert_not_called()
+
+
+
 class TypedPrivateTransactions(unittest.TestCase):
     def test_lifecycle_disjointness_and_ticket_refusals(self):
         env, other = owners(), owners()

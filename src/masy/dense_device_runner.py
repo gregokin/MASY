@@ -689,6 +689,12 @@ class _DeviceArrayOps:
             if value.ndim > 1 or value.size > self._max:
                 raise DenseRunnerError("spatial_payload", "compact reads are class vectors or scalars only")
             return self._packet(self._cp, [], value).reshape(-1)
+        if type(value) is list:
+            if len(value) > self._max:
+                raise DenseRunnerError("spatial_payload", "compact reads are class vectors or scalars only")
+            if any(type(v) not in (float, int) for v in value):
+                raise DenseRunnerError("unsupported_value", "host lists must hold plain floats or ints")
+            return np.asarray(value, dtype=np.float64).reshape(-1)
         if type(value) is np.ndarray or type(value) in (float, int) or isinstance(value, (np.floating, np.integer)):
             array = np.asarray(value, dtype=np.float64).reshape(-1)
             if array.size > self._max:
