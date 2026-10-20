@@ -80,3 +80,86 @@ accelerator/device/bed/owner/runner/transport operations, and binds exact origin
 and compiled dependencies under fixed CPU-only limits. Source acceptance and
 execution results are separate receipts; adding these checks alone establishes
 no device or event qualification.
+
+
+## Private production device owner
+
+`masy.dense_device_runner._create_dense_production_device_runner` is an explicit
+private opt-in factory. The default device factory, default six-class profile,
+shared event engine and native wind/water APIs retain their existing behavior.
+This owner component is source-only until its separate source, allocation and
+protected-worker gates pass. Adding its dormant check does not qualify production
+construction, events, restart, calibration or a memory peak.
+
+The first owner profile is exactly one class on a 4 by 4 dense grid with six
+voxels, flat cohorts up to 4000 slots, up to eight hop bins and the original
+wind/rain/wind/rain schedule. Separation uses the actual native sampling-step,
+crest-lookahead and sample-count resolvers. It refuses more than 128 samples or
+16 owners before allocating a sampling workspace; it never clips a native value.
+Wind remains periodic, water retains its native open-boundary mapping, shared
+water depth uses `constant_depth`, and actual native wind and water commit
+avalanching remains enabled. The native reduced, FFT topographic wind, separation
+and creep algorithms are not copied into the wrapper. The synthetic100um
+interface declaration retains production calibration pending.
+
+The new `dense_device_production` module supplies the shared engine's production
+record, process checks and bounded commit diagnostics. Three device ownership
+hooks require dry accepted water, verify exact water bytes against result and
+final native water, and report compact native wind/commit and retained-owner
+evidence. A result's native topographic modifier is a diagnostic; finalizer cache
+invalidation remains required. A zero signed domain creep total is not evidence
+of zero gross creep. Five selected native avalanche class vectors preserve
+`None`, values and signed zero through the owning native `to_host` transfer;
+these bounded observer lists never become a second sediment authority.
+
+Original host ModelConfig, hop tables, availability policy and shared geometry,
+class and commit anchors remain host references. Only the existing device static
+leaves are converted. Both device BedContext and the device scheduler use the
+same owned availability static. Native hop/reduced kernels may copy their small
+host-at-rest tables at point of use; these native transfers must be counted in
+later event qualification. No claim of zero host/device transfers is made.
+
+A closed metadata-only host-bed view retains original host BedContext, bounded
+primitive case metadata and the initial case identity. It contains no physical
+state, voxel store or reference back to the original full CPU DenseBed. The
+existing device metadata checks bind that view to the same context and case;
+source identity is checked before and after conversion. The full CPU bed is a
+construction input that can be released afterward. A unit weak-reference test
+uses a clearly authored retention sentinel, while the dormant construction check
+requires release of the actual original DenseBed and private device owners.
+
+`DeviceProductionLimits` requires four explicit positive
+`DECLARED_UNMEASURED` reserves: FFT workspace, driver/JIT, native transients and
+diagnostic scratch. Each is at most 1 GiB and their sum is at most 4 GiB. Existing
+bed, private-resource, routing and native water-preflight terms remain separate.
+Per-array FFT payloads and declared separation-shape allowances are identified as
+such; they do not estimate a whole FFT/JIT/native peak. The read-only library
+checks the already-enforced CPU, core, file and descriptor limits, worker
+PID/start/boot, current device/stream, host RSS/global MemAvailable, actual pool
+cap and prospective device work. Before the first domain copy it rechecks
+post-context free memory against the admitted bytes and the 10 GiB floor.
+Subsequent checkpoints apply incremental-work/current-free checks without
+reapplying the entry free floor. Device-driver virtual mappings are not treated
+as the CPU address-space budget. No resource setter is called by the library.
+
+The GPU worker's existing closed environment remains authoritative. It includes
+`JAX_PLATFORMS=cpu` and `NUMBA_DISABLE_CUDA=1`; the six CPU-style thread/arena
+overrides are absent. Thread and arena counts are therefore **unbounded by that
+environment**, and independent whole-worker CPU/RSS/wall/cache/output/device
+monitoring is required. The dormant source follows the accepted protected-worker
+cadence: unchanged native process check before native imports, then exact
+recorded installed-JAX additions `TF_CPP_MIN_LOG_LEVEL=1` and
+`TPU_SKIP_MDS_QUERY=1`, with all other environment/process/path drift refused.
+This adapter does not change the native profile or worker guard. A separately
+reviewed concrete process recipe remains necessary; no memory-fit claim follows.
+
+The dormant `tests/gpu/test_dense_device_production_cupy.py` refuses ordinary
+automatic collection. A reviewed protected parent must provide a new genuine
+committed source profile, both distinct grants, exact test/module/fixture bytes,
+fresh selected UUID/PCI allocation and complete source/bootstrap/environment and
+resource checks. Its four-event construction executes zero steps and requires
+all three native transport tripwires to remain zero. Hashes inside its supplied
+scope are inherited controller source bindings, not an independently external
+root. Later paired production events need separate native comparisons, complete
+transfer/memory observations and ROOT execution admission. CPU metadata tests
+alone do not satisfy any of those device or transport gates.

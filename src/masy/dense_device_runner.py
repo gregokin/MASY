@@ -769,6 +769,123 @@ class _DeviceOwnership:
         self._routing_stamp = object()
         self.cleanup_failures = 0
 
+    def _production_module(self, production: ModuleType) -> ModuleType:
+        from . import dense_device_production
+
+        if production is not dense_device_production:
+            raise dense_device_production.DenseProductionError(
+                "unknown_production_module", "device production hooks accept only dense_device_production")
+        return production
+
+    def production_require_dry(self, production: ModuleType, np: Any) -> None:
+        mod = self._production_module(production)
+        xp = self._ops.xp
+        flags = self._owner._compact(lambda state: xp.stack([xp.any(state.water.depth_m != 0.0),
+                                                             xp.any(state.water.mobile_mass_by_cell_class_kg != 0.0)]), max_values=2)
+        if any(float(v) != 0.0 for v in flags):
+            raise mod.DenseProductionError("wind_water_exchange", "accepted water is not dry for a wind-only run")
+
+    def production_wind_evidence(self, production: ModuleType, n: SimpleNamespace, result: Any,
+                                 final: Any) -> dict[str, Any]:
+        import math
+
+        mod = self._production_module(production)
+        ops, xp = self._ops, self._ops.xp
+        targets = (result.state.physical.water, final.state.physical.water)
+
+        def flags(state: Any) -> Any:
+            held = state.water
+            for target in targets:  # type/shape/dtype guards before any comparison
+                if type(target) is not type(held):
+                    raise mod.DenseProductionError("wind_water_layout", "native water is not the accepted water type")
+                for name in ("depth_m", "mobile_mass_by_cell_class_kg"):
+                    a, b = getattr(held, name), getattr(target, name)
+                    if (type(a) is not xp.ndarray or type(b) is not xp.ndarray or a.dtype != xp.float64
+                            or b.dtype != a.dtype or b.shape != a.shape
+                            or not a.flags.c_contiguous or not b.flags.c_contiguous):
+                        raise mod.DenseProductionError("wind_water_layout", f"native water {name} is not admitted")
+            out = []
+            for target in targets:
+                changed = None
+                for name in ("depth_m", "mobile_mass_by_cell_class_kg"):
+                    a, b = getattr(held, name), getattr(target, name)
+                    out.append(xp.any(b != 0.0))
+                    diff = xp.any(a.view(xp.uint64) != b.view(xp.uint64))
+                    changed = diff if changed is None else changed | diff
+                out.append(changed)
+            return xp.stack(out)
+
+        if any(float(v) != 0.0 for v in self._owner._compact(flags, max_values=6)):
+            raise mod.DenseProductionError("wind_water_exchange", "native wind wetted or changed the dry water")
+        exchanges: dict[str, float | None] = {}
+        for name in ("water_clamp_added_volume_m3", "water_displaced_volume_m3"):
+            value = getattr(result.accounting, name)
+            exchanges[name] = None if value is None else ops.scalar(value)
+            if exchanges[name] is not None and exchanges[name] != 0.0:
+                raise mod.DenseProductionError("wind_water_exchange", f"native wind reported nonzero {name}")
+        if final.state.physical.ledger_reconciliation_baseline is not None:
+            raise mod.DenseProductionError("unsupported_reconciliation_baseline",
+                                           "native wind returned a reconciliation baseline without a shared-bed owner")
+        if final.state.topographic_wind_cache is not None or final.state.active_layer_composition_cache is not None:
+            raise mod.DenseProductionError("wind_cache_not_invalidated",
+                                           "native finalizer did not invalidate topographic/composition caches")
+        cache = result.state.topographic_wind_cache
+        modifier = None if cache is None else cache.modifier
+        if modifier is None:
+            topography: dict[str, Any] = {"status": "absent"}
+        else:
+            version, direction = modifier.algorithm_version, ops.scalar(modifier.wind_direction_deg)
+            if type(version) is not str or not 0 < len(version) <= 128 or not math.isfinite(direction):
+                raise mod.DenseProductionError("wind_modifier_metadata", "native modifier metadata is not bounded")
+            bubble = None
+            if modifier.separation is not None:
+                mask = modifier.separation.bubble_mask
+                if type(mask) is not xp.ndarray or tuple(mask.shape) != (4, 4) or mask.dtype != xp.bool_:
+                    raise mod.DenseProductionError("wind_modifier_metadata", "bubble mask is not a 2-D device bool")
+                count = ops.scalar(xp.count_nonzero(mask))
+                if not count.is_integer() or not 0.0 <= count <= mask.size:
+                    raise mod.DenseProductionError("wind_modifier_metadata", "bubble count is not a bounded integer")
+                bubble = int(count)
+            topography = {"status": "native_modifier", "algorithm_version": version, "wind_direction_deg": direction,
+                          "separation_present": modifier.separation is not None, "separation_bubble_cells": bubble,
+                          "envelope_role": "wind_diagnostic_never_bed_input"}
+        return {"scope": mod.SCOPE, "water_rule": "constant_depth", "dry_water_preserved": True,
+                "water_comparison": "device_uint64_bytes_vs_private_accepted_water",
+                "water_volume_exchanges_m3": exchanges, "topographic_wind": topography,
+                "transport_launched_mass_by_class_kg": ops.float_values(result.accounting.launched_mass_by_class_kg),
+                "latest_wind_commit": mod.commit_evidence(n.np, result.last_scheduler_commit_result),
+                "creep_evidence": "signed_domain_net_is_not_a_gross_activity_witness"}
+
+    def production_retained_owners(self, production: ModuleType, wind: Any, water: Any, control: Any,
+                                   profile: Any, pool: Any, soil: Any, routing: Any,
+                                   n_receipts: int) -> dict[str, Any]:
+        mod = self._production_module(production)
+        if type(n_receipts) is not int or not 0 <= n_receipts <= 8:
+            raise mod.DenseProductionError("invalid_receipts", "n_receipts must be a plain int in [0, 8]")
+        self._owner._scope()
+        self._res._scope()
+        hop = (wind.config.hop_bins.hop_distance_m, wind.config.hop_bins.weight)
+        if any(type(t) is not self._ops._np.ndarray or t.dtype != self._ops._np.float64
+               or t.ndim != 2 or t.shape[0] != 1 or not 1 <= t.shape[1] <= 8
+               or not t.flags.c_contiguous for t in hop):
+            raise mod.DenseProductionError("invalid_hop_tables", "two original host float64 (1, <=8) hop tables required")
+        policy = self._metadata.host_context.initial_available_fraction
+        if (type(policy) is not self._ops._np.ndarray or policy.dtype != self._ops._np.float64
+                or policy.shape != (4, 4, 1)):
+            raise mod.DenseProductionError("invalid_host_policy", "original host initial-availability policy differs")
+        held = None if routing is None else self._held_routing(routing, water)
+        return {"scope": mod.SCOPE, "full_production_peak": "unqualified_not_estimated",
+                "receipts_retained": n_receipts,
+                "bed_owner": self._owner.evidence(), "resources": self._res.evidence(),
+                "owned_device_bytes": {"private_pool": self._res.pool_bytes(), "private_soil": self._res.soil_bytes()},
+                "host_reference_bytes": {"hop_tables": sum(int(t.nbytes) for t in hop), "initial_host_policy": int(policy.nbytes)},
+                "routing": {"status": "absent"} if held is None else {"status": "held", "generation": held.generation},
+                "alias_categories": {"owned_device": ["accepted_bed_state", "private_pool", "private_soil"],
+                                     "static_device": ["static_resource_tables"],
+                                     "host_reference": ["hop_tables", "initial_host_policy"],
+                                     "observation": ["compact_packets", "evidence_counters"]},
+                "labels": "category_names_not_physical_content_sha"}
+
     # labels (verified mirror / generation / host metadata; never content SHAs) ---------------------------------
     @staticmethod
     def _bed_label(generation: int, time_s: float) -> str:
@@ -1074,6 +1191,17 @@ class _DeviceDenseRunner(DenseRunner):
         except DeviceResourceError as exc:
             raise DenseRunnerError(exc.code, exc.detail) from exc
         view = self._host_view
+        if self._production is not view._production:
+            raise DenseRunnerError("device_config_diverged", "production module differs from the original host view")
+        if self._production is not None:
+            from masy import dense_device_production as production
+
+            if (self._production is not production or self._wind_profile is not view._wind_profile
+                    or self._production_limits is not view._production_limits
+                    or type(view._bed) is not production._HostBedView):
+                raise DenseRunnerError("device_config_diverged", "production fields differ from the original host view")
+            view._bed.bind_metadata(self._bed)
+            self._bed.verify(n)
         _bind_device_inputs(n.np, self._cp, view._wind, view._water, self._wind, self._water,
                             self._device_resources)
         return DenseRunner._static_parts_record(view, n)
@@ -1168,8 +1296,39 @@ def _create_dense_device_runner(bed: DenseBed, schedule: DenseSchedule, *, wind:
     return runner
 
 
+def _create_dense_production_device_runner(bed: DenseBed, schedule: DenseSchedule, *, wind: DenseWindInputs,
+        water: DenseWaterInputs, control: DenseRunnerControl, limits: DenseRunnerLimits,
+        device_limits: DeviceRunnerLimits, bed_limits: DeviceBedLimits, resource_limits: DeviceResourceLimits,
+        device_id: int, wind_profile: Any, production_limits: Any,
+        worker_identity: dict[str, Any]) -> _DeviceDenseRunner:
+    """Private opt-in construction only; external genuine-source/resource/device grants remain mandatory."""
+    from masy import dense_device_production as production
+
+    made: dict[str, Any] = {}
+    failure: tuple[str, str] | None = None
+    try:
+        runner = _build_impl(bed, schedule, wind, water, control, limits, device_limits, bed_limits, resource_limits,
+            device_id, made, _production=(wind_profile, production_limits, worker_identity))
+    except (DenseRunnerError, DenseBedError, DeviceBedError, DeviceResourceError,
+            production.DenseProductionError) as exc:
+        failure = (exc.code, exc.detail)
+    except Exception as exc:  # noqa: BLE001 - conversion/refusal evidence, same bounded cleanup as the default
+        failure = ("device_construction_failure", _runner._detail(exc))
+    if failure is not None:
+        made.clear()
+        raise DenseRunnerError(*failure)
+    return runner
+
+
 def _build(bed: Any, schedule: Any, wind: Any, water: Any, control: Any, limits: Any, device_limits: Any,
            bed_limits: Any, resource_limits: Any, device_id: Any, made: dict[str, Any]) -> _DeviceDenseRunner:
+    return _build_impl(bed, schedule, wind, water, control, limits, device_limits, bed_limits, resource_limits,
+                       device_id, made)
+
+
+def _build_impl(bed: Any, schedule: Any, wind: Any, water: Any, control: Any, limits: Any, device_limits: Any,
+           bed_limits: Any, resource_limits: Any, device_id: Any, made: dict[str, Any], *,
+                _production: tuple[Any, Any, Any] | None = None) -> _DeviceDenseRunner:
     if type(bed) is not DenseBed:
         raise DenseRunnerError("invalid_input", "bed must be a validated CPU DenseBed")
     if type(schedule) is not DenseSchedule:
@@ -1189,27 +1348,61 @@ def _build(bed: Any, schedule: Any, wind: Any, water: Any, control: Any, limits:
     n = _runner._native()
     np = n.np
     # Finite first profile, then the closed live CPU bed schema, BEFORE any canonicalization/hash/copy.
-    _check_profile_caps(n, bed, wind, limits)
+    production = production_bed = wind_profile = production_limits = worker_identity = None
+    if _production is None:
+        _check_profile_caps(n, bed, wind, limits)
+    else:
+        from masy import dense_device_production as production
+        from masy.dense_wind_profile import DenseProductionGpuWindProfile
+
+        if type(_production) is not tuple or len(_production) != 3:
+            raise DenseRunnerError("invalid_production", "closed production factory arguments required")
+        wind_profile, production_limits, worker_identity = _production
+        if (type(wind_profile) is not DenseProductionGpuWindProfile
+                or type(production_limits) is not production.DeviceProductionLimits):
+            raise DenseRunnerError("invalid_production", "exact production profile and limits required")
+        # Finite raw metadata only: no public case deepcopy, case hash or mapper/audit yet.
+        production.profile_admission(n, bed.context, bed._case_record, bed._case_sha256,
+                                     wind, schedule, wind_profile, production_limits, limits)
     host_schema = _host_bed_admission(bed)
+    if production is not None:
+        # Admit every existing host/static source before bed verification/canonicalization or metadata copying.
+        g = bed.context.geometry
+        water_device, _ = _water_parameter_sources(np, water.column, water.sediment,
+                                                    (g.ny, g.nx), len(bed.context.grain_classes.classes))
+        if (type(water.field) is not n.RainfallField or water.field.xp is not np
+                or water.field.shape != (g.ny, g.nx)):
+            raise DenseRunnerError("incompatible_water_inputs", "field must be the NumPy source RainfallField on the grid")
+        _closed_host_sources(np, bed, wind, water)
+        production_bed = production._HostBedView.create(n, bed.context, bed._case_record, bed._case_sha256)
     cp = _genuine_cupy()
     bed.verify_case_inputs()
     import inspect
 
     if "record_origin_s" not in inspect.signature(n.finalize_wind_event).parameters:
         raise DenseRunnerError("unsupported_native_finalizer", "MAPLE must support explicit record_origin_s")
-    DenseRunner._check_wind(n, bed, wind)  # strict default profile; every enabled unsupported feature refused
+    if production is None:
+        DenseRunner._check_wind(n, bed, wind)  # original strict default profile unchanged
     soil = _check_device_water(n, bed, water, control, limits)
     ctx, g = bed.context, bed.context.geometry
     nc = len(ctx.grain_classes.classes)
-    if nc != _N_CLASSES:
-        raise DenseRunnerError("unsupported_profile", f"first device profile is the six-class fixture, got {nc}")
+    if production is None:
+        if nc != _N_CLASSES:
+            raise DenseRunnerError("unsupported_profile", f"first device profile is the six-class fixture, got {nc}")
+    elif nc != 1:
+        raise DenseRunnerError("unsupported_profile", "production device profile requires one class")
     if int(cp.cuda.runtime.getDevice()) != device_id:
         raise DenseRunnerError("device_mismatch", "device_id must be the current CuPy device")
 
     host_view = SimpleNamespace(_water=water, _control=control, _wind=wind, _schedule=schedule, _production=None)
+    if production is not None:
+        # This metadata-only view never references the original CPU bed or physical state.
+        host_view._bed, host_view._production = production_bed, production
+        host_view._wind_profile, host_view._production_limits = wind_profile, production_limits
     # Exact native parameter holders and the closed host pool/static metadata BEFORE the first source hash/copy.
-    water_device, _ = _water_parameter_sources(np, water.column, water.sediment, (g.ny, g.nx), nc)
-    _closed_host_sources(np, bed, wind, water)
+    if production is None:
+        water_device, _ = _water_parameter_sources(np, water.column, water.sediment, (g.ny, g.nx), nc)
+        _closed_host_sources(np, bed, wind, water)
     before = _source_identity(n, bed, host_view, soil)
 
     # Known construction admission BEFORE the first domain copy: owner caps, the native CUDA preflight (exact
@@ -1236,6 +1429,14 @@ def _build(bed: Any, schedule: Any, wind: Any, water: Any, control: Any, limits:
     from maple.core.backend import to_device_tree
     from maple_syrup.rainfall import rainfall_field
 
+    production_admission = production_process = None
+    if production is not None:
+        production_admission = production.construction_admission(
+            n, production_bed, wind, schedule, production_limits, required, device_limits)
+        required = production_admission["required_bytes"]
+        # Fresh post-context/free/pool observation AFTER imports, immediately BEFORE the first DOMAIN copy.
+        production_process = production.check_process(production_limits, worker_identity,
+            upcoming_wrapper_bytes=required, checkpoint="constructing")
     made["state"] = to_device_tree(bed.state, cp)
     made["pool"] = to_device_tree(wind.initial_mobile_state, cp)
     made["soil"] = to_device_tree(soil, cp)
@@ -1280,9 +1481,14 @@ def _build(bed: Any, schedule: Any, wind: Any, water: Any, control: Any, limits:
     ops = _DeviceArrayOps(cp, nc)
     metadata = _HostMetadataBed(owner, bed, resources)  # device context bound to the owned availability static
     metadata.verify(n)
+    if production is not None:
+        production_bed.bind_metadata(metadata)
     own = _DeviceOwnership(owner, resources, ops, nc, reserves["bed_transfer_bytes"], metadata)
     runner = object.__new__(_DeviceDenseRunner)
-    runner._production = None
+    runner._production = production
+    if production is not None:
+        runner._wind_profile, runner._production_limits = wind_profile, production_limits
+        runner._worker_identity = dict(worker_identity)  # exact primitive identity already compared with this worker
     runner._device_bed, runner._device_resources = owner, resources
     runner._device_ops, runner._device_own = ops, own
     runner._device_limits, runner._hydraulics, runner._hydraulics_summary = device_limits, None, None
@@ -1304,7 +1510,9 @@ def _build(bed: Any, schedule: Any, wind: Any, water: Any, control: Any, limits:
     runner._static_parts_sha256 = _bed._sha256(runner._static_parts)
     runner._static_record = {
         "schema": DEVICE_STATIC_SCHEMA,
-        "profile": dict(DEVICE_PROFILE),
+        "profile": (dict(DEVICE_PROFILE) if production is None else
+                    {"scope": production.SCOPE, "backend": "cupy", "grain_classes": 1,
+                     "production_calibration": "pending_synthetic_interface_only"}),
         "case_sha256": bed.case_sha256,
         "schedule_sha256": schedule.digest,
         "case_schedule_sha256": case_schedule_digest(bed.case_sha256, schedule),
@@ -1332,6 +1540,19 @@ def _build(bed: Any, schedule: Any, wind: Any, water: Any, control: Any, limits:
         "source_copy_verification": {**copy_check, "scope": "construction only, raw bytes host vs device, one "
                                                             "counted native to_host per device leaf"},
     }
+    if production is not None:
+        runner._construction_evidence["native_preflight_scope"] = (
+            "native MAPLE/SYRUP water residency only; production wind FFT/separation/native transients "
+            "have separate source-derived or declared reserves; full production peak is unqualified")
+        runner._construction_evidence["first_profile_caps"] = {
+            "classes": 1, "shape": [4, 4], "voxels": 6, "max_flat_cohorts": 4000,
+            "max_hop_bins": 8, "max_events": production_limits.max_events}
+        runner._construction_evidence["production"] = {
+            "scalar_and_structural_admission": production_admission,
+            "precopy_process": production_process,
+            "worker_identity": dict(worker_identity),
+            "full_production_peak": "unqualified_not_estimated",
+            "host_bed_retention": "metadata_only_context_and_case_identity_no_CPU_physical_bed"}
     runner._n_classes = nc
     runner._inventory_elements = g.ny * g.nx * (bed.case_record["n_voxels"] + 1)
     runner._inventory0 = own.accepted_inventory(ops, n).copy()
