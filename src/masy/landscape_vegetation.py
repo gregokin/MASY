@@ -79,6 +79,7 @@ __all__ = [
     "build_vegetation_plan",
     "candidate_peak_bytes",
     "prepare_vegetation",
+    "vegetation_plan_from_record",
 ]
 
 VEGETATION_PROFILE = "masy.dense_vegetation.dynamic_raster.v1"
@@ -1786,3 +1787,615 @@ def prepare_vegetation(
         out_resource,
         False,
     )
+
+
+# --------------------------------------------------------------------------- passive restore
+#
+# Bounded plain records only: OI/B own raw strict JSON decoding. `_json_admit`
+# runs before any typed builder, map, canonical buffer or native work. These
+# helpers return a plan or a component envelope only; no bed, runner, ticket
+# or soil, and they never call prepare/apply/initializer code.
+
+_PLAN_RECORD_KEYS = frozenset(
+    {
+        "schema",
+        "profile",
+        "shape",
+        "n_classes",
+        "n_voxels",
+        "event_kinds",
+        "schedule_sha256",
+        "limits",
+        "deltas",
+    }
+)
+_PLAN_DELTA_KEYS = frozenset({"payload", "payload_sha256"})
+_PAYLOAD_KEYS = frozenset(
+    {
+        "schema",
+        "proposer",
+        "sequence",
+        "payload_id",
+        "after_event_index",
+        "replacements",
+        "water_exchange",
+        "reason",
+    }
+)
+_CELL_KEYS = frozenset({"cell", *RASTER_FIELDS})
+_ENVELOPE_KEYS = frozenset(
+    {
+        "schema",
+        "profile",
+        "plan_sha256",
+        "version",
+        "version_sha256",
+        "native_content_sha256",
+        "initial_native_content_sha256",
+        "source",
+        "source_transition",
+        "receipts",
+        "cursor",
+        "bindings",
+        "last_boundary_binding",
+        "metadata_sha256",
+    }
+)
+_RECEIPT_KEYS = frozenset(
+    {
+        "schema",
+        "payload_id",
+        "proposer",
+        "sequence",
+        "reason",
+        "payload_sha256",
+        "event_index",
+        "event_kind",
+        "binding_sha256",
+        "ledger_index",
+        "base_version",
+        "base_version_sha256",
+        "delta_id",
+        "version",
+        "version_sha256",
+        "native_content_sha256",
+        "changed_fields",
+        "changed_cells",
+        "copied_bytes",
+        "source_transition",
+        "water_exchange",
+    }
+)
+_CURSOR_KEYS = frozenset({"next_event_index", "last_sequence", "copied_bytes"})
+_MAX_HEX_CHARS = 32  # canonical binary64 float.hex() is at most 24 characters
+
+
+def _closed(value: Any, keys: frozenset, code: str, name: str) -> dict[str, Any]:
+    if type(value) is not dict or value.keys() != keys:
+        raise VegetationError(code, f"{name} must have exactly its closed key set")
+    return value
+
+
+def _exact(actual: Any, expected: Any, code: str, detail: str) -> None:
+    """Type-exact plain-record equality through the existing canonical encoder."""
+    if _canonical_json(actual) != _canonical_json(expected):
+        raise VegetationError(code, detail)
+
+
+def _decode_hex_float(text: Any, name: str) -> float:
+    if type(text) is not str or len(text) > _MAX_HEX_CHARS:
+        raise VegetationError(
+            "noncanonical_value", f"{name} must be a bounded binary64 hex string"
+        )
+    try:
+        value = float.fromhex(text)
+    except (ValueError, OverflowError) as exc:
+        raise VegetationError(
+            "noncanonical_value", f"{name} is not binary64 hex"
+        ) from exc
+    _canonical_float(value, name)
+    if value.hex() != text:
+        raise VegetationError("noncanonical_value", f"{name} hex is not canonical")
+    return value
+
+
+def vegetation_plan_from_record(
+    record: Any,
+    *,
+    expected_plan_sha256: str,
+    shape: Any,
+    n_classes: int,
+    n_voxels: int,
+    event_kinds: Any,
+    schedule_sha256: str,
+    limits: VegetationLimits,
+) -> VegetationPlan:
+    """Rebuild the exact typed plan from its plain canonical record.
+
+    Every dimension, event kind, schedule digest, limit and the plan hash are
+    independently admitted caller values; the record must match them exactly.
+    Typed values go through CellReplacement/PlannedDelta/build_vegetation_plan
+    (including native per-cell validation) and the canonical record and hash
+    must roundtrip byte for byte."""
+    _digest(expected_plan_sha256, "expected_plan_sha256")
+    _admit_plan_parts(
+        (),
+        shape=shape,
+        n_classes=n_classes,
+        n_voxels=n_voxels,
+        event_kinds=event_kinds,
+        schedule_sha256=schedule_sha256,
+        limits=limits,
+    )
+    _json_admit(record, max_bytes=limits.max_plan_record_bytes)
+    _closed(record, _PLAN_RECORD_KEYS, "invalid_plan_record", "plan record")
+    if record["schema"] != PLAN_SCHEMA or record["profile"] != VEGETATION_PROFILE:
+        raise VegetationError("invalid_plan_record", "plan schema/profile differs")
+    for name, expected in (
+        ("shape", list(shape)),
+        ("n_classes", n_classes),
+        ("n_voxels", n_voxels),
+        ("event_kinds", list(event_kinds)),
+        ("schedule_sha256", schedule_sha256),
+        ("limits", limits.as_record()),
+    ):
+        _exact(
+            record[name],
+            expected,
+            "plan_record_mismatch",
+            f"plan {name} differs from the admitted value",
+        )
+    deltas = record["deltas"]
+    if type(deltas) is not list or len(deltas) > min(
+        limits.max_total_updates, limits.max_receipts
+    ):
+        raise VegetationError(
+            "update_cap_exceeded", "plan delta list exceeds its declared bound"
+        )
+    # Closed structure and scalar decoding for every delta BEFORE typed construction.
+    size = _PLAN_FIXED_BYTES
+    parts = []
+    for wrapper in deltas:
+        _closed(wrapper, _PLAN_DELTA_KEYS, "invalid_plan_record", "plan delta")
+        payload_sha = _digest(wrapper["payload_sha256"], "payload_sha256")
+        payload = _closed(
+            wrapper["payload"], _PAYLOAD_KEYS, "invalid_plan_record", "delta payload"
+        )
+        if payload["schema"] != DELTA_SCHEMA:
+            raise VegetationError("invalid_plan_record", "delta schema differs")
+        exchange = payload["water_exchange"]
+        if type(exchange) is not list:
+            raise VegetationError("invalid_plan_record", "water_exchange must be a list")
+        if exchange:
+            raise VegetationError(
+                "water_exchange_unsupported",
+                "no water-exchange channel is supported by this profile, even at zero",
+            )
+        if type(payload["proposer"]) is not str:
+            raise VegetationError("invalid_plan_record", "proposer must be a string")
+        _bounded_str(payload["payload_id"], "payload_id", limits.max_payload_id_chars)
+        _bounded_str(payload["reason"], "reason", limits.max_reason_chars)
+        _plain_int(payload["sequence"], "sequence", maximum=limits.max_total_updates - 1)
+        _plain_int(
+            payload["after_event_index"],
+            "after_event_index",
+            maximum=len(event_kinds) - 1,
+        )
+        replacements = payload["replacements"]
+        if type(replacements) is not list or not (
+            1 <= len(replacements) <= limits.max_cells_per_delta
+        ):
+            raise VegetationError(
+                "update_cap_exceeded", "replacement list exceeds its declared bound"
+            )
+        size += _DELTA_RECORD_BYTES + len(replacements) * _CELL_RECORD_BYTES
+        if size > limits.max_plan_record_bytes:
+            raise VegetationError(
+                "metadata_cap_exceeded",
+                "source plan byte bound exceeds max_plan_record_bytes",
+            )
+        cells = []
+        for item in replacements:
+            _closed(item, _CELL_KEYS, "invalid_plan_record", "cell replacement")
+            position = item["cell"]
+            if type(position) is not list or len(position) != 2:
+                raise VegetationError(
+                    "invalid_plan_record", "replacement cell must be a two-integer list"
+                )
+            for axis in position:
+                _plain_int(axis, "cell index", maximum=limits.max_cells - 1)
+            values = {name: _decode_hex_float(item[name], name) for name in RASTER_FIELDS}
+            cells.append((tuple(position), values))
+        parts.append((payload, payload_sha, cells))
+    text = _canonical_json(record)
+    if (
+        len(text) > limits.max_plan_record_bytes
+        or hashlib.sha256(text.encode("ascii")).hexdigest() != expected_plan_sha256
+    ):
+        raise VegetationError(
+            "plan_record_mismatch", "plan record differs from the expected plan hash"
+        )
+    typed = []
+    for payload, payload_sha, cells in parts:
+        delta = PlannedDelta(
+            proposer=payload["proposer"],
+            sequence=payload["sequence"],
+            payload_id=payload["payload_id"],
+            after_event_index=payload["after_event_index"],
+            replacements=tuple(
+                CellReplacement(cell=position, **values) for position, values in cells
+            ),
+            reason=payload["reason"],
+        )
+        if delta.payload_sha256 != payload_sha:
+            raise VegetationError(
+                "plan_record_mismatch", f"{delta.payload_id!r} payload hash differs"
+            )
+        typed.append(delta)
+    plan = build_vegetation_plan(
+        tuple(typed),
+        shape=shape,
+        n_classes=n_classes,
+        n_voxels=n_voxels,
+        event_kinds=event_kinds,
+        schedule_sha256=schedule_sha256,
+        limits=limits,
+    )
+    if plan._record_json != text or plan.plan_sha256 != expected_plan_sha256:
+        raise VegetationError(
+            "plan_record_mismatch", "typed plan does not roundtrip its record"
+        )
+    return plan
+
+
+def _check_native_reference(
+    n: SimpleNamespace, state: Any, shape: tuple[int, int], label: str
+) -> str:
+    """Genuine readonly loader reference: exact native layout, no extra instance
+    attributes, no writable array, native validation and content hash. Reads
+    only; no copy is made and no flag is changed."""
+    _check_native_layout(n, state, shape)
+    for holder, names in ((state, _STATE_FIELDS), (state.raster, RASTER_FIELDS)):
+        attrs = getattr(holder, "__dict__", None)
+        if type(attrs) is not dict or attrs.keys() != frozenset(names):
+            raise VegetationError(
+                "requalification_required", f"{label} native instance layout changed"
+            )
+    if any(getattr(state.raster, name).flags.writeable for name in RASTER_FIELDS):
+        raise VegetationError(
+            "writable_native_reference", f"{label} native arrays must be read-only"
+        )
+    return _validate_native(n, state, shape)
+
+
+def _scalar_last_write(
+    initial: Any, deltas: tuple[PlannedDelta, ...], cells: int
+) -> tuple[list[list[str]], dict[tuple[str, int, int], float]]:
+    """prepare_vegetation's per-field selection on Python scalars only.
+
+    A field is selected iff some replacement differs from the held value by
+    float.hex (so native -0 versus authored +0 differs); a selected field
+    writes ALL of the delta's replacements, an unselected one writes none.
+    At most one slot per (field, cell): <= 5*cells. Unwritten slots read the
+    genuine initial array. No array is copied or updated."""
+    written: dict[tuple[str, int, int], float] = {}
+
+    def held(name: str, position: tuple[int, int]) -> float:
+        value = written.get((name, *position))
+        if value is None:
+            value = getattr(initial.raster, name).item(*position)
+        return value
+
+    changed_by_delta = []
+    for delta in deltas:
+        changed = []
+        for name in RASTER_FIELDS:
+            if all(
+                held(name, item.cell).hex() == getattr(item, name).hex()
+                for item in delta.replacements
+            ):
+                continue
+            for item in delta.replacements:
+                written[(name, *item.cell)] = getattr(item, name)
+            changed.append(name)
+        if len(written) > _N_FIELDS * cells:  # pragma: no cover - plan cells are in-domain
+            raise VegetationError("restore_mismatch", "scalar slots exceed 5*cells")
+        changed_by_delta.append(changed)
+    return changed_by_delta, written
+
+
+def _check_scalar_endpoint(
+    initial: Any,
+    current: Any,
+    written: dict[tuple[str, int, int], float],
+    shape: tuple[int, int],
+) -> None:
+    """Every current scalar equals the last authored write, else the initial
+    value, bit for bit (float.hex preserves signed zero)."""
+    for name in RASTER_FIELDS:
+        start, end = getattr(initial.raster, name), getattr(current.raster, name)
+        for row in range(shape[0]):
+            for col in range(shape[1]):
+                expected = written.get((name, row, col))
+                if expected is None:
+                    expected = start.item(row, col)
+                if end.item(row, col).hex() != expected.hex():
+                    raise VegetationError(
+                        "restore_endpoint_mismatch",
+                        f"current {name}[{row}, {col}] differs from the authored prefix",
+                    )
+
+
+def _restore_vegetation_envelope(
+    plan: VegetationPlan,
+    record: Any,
+    *,
+    ledger_record: Any,
+    initial: Any,
+    current: Any,
+    expected_metadata_sha256: str,
+) -> LandscapeVegetation:
+    """Restore an accepted envelope around genuine readonly native references.
+
+    `plan` is the exact typed plan (vegetation_plan_from_record), `record` the
+    existing 14-key envelope record, `ledger_record` the COMPLETE ClockLedger
+    record of k accepted events, and `expected_metadata_sha256` an
+    independently identity-bound seal. The returned envelope borrows
+    `initial`/`current` by reference. Intermediate receipt native hashes are
+    bound hash-chain provenance only (their arrays are not saved); the initial
+    and final native endpoints, every authored value and every structural
+    relationship are checked. Integrity under the trusted-source contract, not
+    a Python security boundary. Nothing supplied is mutated on any path."""
+    if type(plan) is not VegetationPlan:
+        raise VegetationError("invalid_input", "plan must be a VegetationPlan")
+    plan.verify()
+    _digest(expected_metadata_sha256, "expected_metadata_sha256")
+    limits = plan.limits
+    _json_admit(record, max_bytes=limits.max_metadata_bytes)
+    _json_admit(ledger_record, max_bytes=_CLOCK_RECORD_BYTES, max_nodes=1024)
+
+    # 1. Closed envelope structure.
+    _closed(record, _ENVELOPE_KEYS, "invalid_restore_record", "envelope record")
+    if record["schema"] != ENVELOPE_SCHEMA or record["profile"] != VEGETATION_PROFILE:
+        raise VegetationError("invalid_restore_record", "envelope schema/profile differs")
+    if record["plan_sha256"] != plan.plan_sha256:
+        raise VegetationError("restore_mismatch", "envelope is bound to another plan")
+    if record["metadata_sha256"] != expected_metadata_sha256:
+        raise VegetationError(
+            "restore_seal_mismatch", "envelope seal differs from the expected identity"
+        )
+    _plain_int(record["version"], "version", maximum=limits.max_receipts)
+    for name in ("version_sha256", "native_content_sha256", "initial_native_content_sha256"):
+        _digest(record[name], name)
+    receipts, bindings = record["receipts"], record["bindings"]
+    if type(receipts) is not list or len(receipts) > limits.max_receipts:
+        raise VegetationError("invalid_restore_record", "receipts exceed their bound")
+    if type(bindings) is not list or len(bindings) > len(plan.event_kinds):
+        raise VegetationError("invalid_restore_record", "bindings exceed the schedule")
+    cursor = _closed(record["cursor"], _CURSOR_KEYS, "invalid_restore_record", "cursor")
+
+    # 2. k accepted events: complete native ledger, every boundary binding.
+    if type(ledger_record) is not dict or type(ledger_record.get("entries")) is not list:
+        raise VegetationError("invalid_binding", "a complete ClockLedger record is required")
+    k = len(ledger_record["entries"])
+    if (
+        k > len(plan.event_kinds)
+        or type(cursor["next_event_index"]) is not int
+        or cursor["next_event_index"] != k
+        or len(bindings) != k
+    ):
+        raise VegetationError(
+            "restore_mismatch", "ledger, cursor and binding event counts differ"
+        )
+    try:
+        canonical = ClockLedger.from_record(ledger_record).as_record()
+    except (ClockError, TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise VegetationError(
+            "invalid_binding", "native complete ClockLedger validation refused"
+        ) from exc
+    _exact(ledger_record, canonical, "invalid_binding", "ledger is not canonical")
+    binding = None
+    expected_bindings = []
+    for index in range(k):
+        binding = BoundaryBinding.from_ledger_record(
+            dict(ledger_record, entries=ledger_record["entries"][: index + 1]),
+            event_index=index,
+            event_kind=plan.event_kinds[index],
+            schedule_sha256=plan.schedule_sha256,
+        )
+        expected_bindings.append(
+            {
+                "event_index": index,
+                "event_kind": binding.event_kind,
+                "schedule_sha256": binding.schedule_sha256,
+                "binding_sha256": binding.binding_sha256,
+            }
+        )
+        _exact(
+            bindings[index],
+            expected_bindings[index],
+            "restore_mismatch",
+            f"boundary {index} binding differs from the complete ledger",
+        )
+    last = record["last_boundary_binding"]
+    last_json = None if binding is None else binding._json
+    if (None if last is None else _canonical_json(last)) != last_json:
+        raise VegetationError("restore_mismatch", "last boundary binding differs")
+
+    # 3. m applied deltas: exactly the plan prefix before k; future suffix absent.
+    prefix = tuple(delta for delta in plan.deltas if delta.after_event_index < k)
+    m = len(prefix)
+    if record["version"] != m or len(receipts) != m:
+        raise VegetationError(
+            "restore_mismatch", "receipts/version differ from the accepted plan prefix"
+        )
+    for receipt in receipts:
+        _closed(receipt, _RECEIPT_KEYS, "invalid_restore_record", "receipt")
+        _digest(receipt["native_content_sha256"], "receipt native_content_sha256")
+
+    # 4. Genuine native endpoints (read only; validated once each).
+    n = _native()
+    initial_sha = _check_native_reference(n, initial, plan.shape, "initial")
+    current_sha = (
+        initial_sha
+        if current is initial
+        else _check_native_reference(n, current, plan.shape, "current")
+    )
+    if (
+        initial_sha != record["initial_native_content_sha256"]
+        or current_sha != record["native_content_sha256"]
+    ):
+        raise VegetationError(
+            "restore_native_mismatch", "native endpoint content hash differs"
+        )
+
+    # 5. Authored values: bounded scalar last-write slots, then the endpoint.
+    changed_by_delta, written = _scalar_last_write(initial, prefix, plan.cells)
+    _check_scalar_endpoint(initial, current, written, plan.shape)
+
+    # 6. Receipt/version/source/counter chain with the existing definitions.
+    version_sha = _version_sha256(None, None, initial_sha)
+    native_sha = initial_sha
+    source = initial.source
+    transition = None
+    last_sequence: dict[str, int] = {}
+    copied = 0
+    expected_receipts = []
+    for position, (delta, changed) in enumerate(zip(prefix, changed_by_delta)):
+        index = delta.after_event_index
+        kind = plan.event_kinds[index]
+        if (
+            delta.proposer != "prescribed"
+            and delta.proposer != _PROPOSER_BY_EVENT[kind]
+        ) or delta.sequence != last_sequence.get(delta.proposer, -1) + 1:
+            raise VegetationError(  # pragma: no cover - plan-immutable
+                "restore_mismatch", f"{delta.payload_id!r} proposer order differs"
+            )
+        receipt_native = receipts[position]["native_content_sha256"]
+        step_transition = "none->raster" if source == "none" else None
+        if not changed and step_transition is None and receipt_native != native_sha:
+            raise VegetationError(
+                "restore_mismatch", f"{delta.payload_id!r} no-op changed native content"
+            )
+        binding_sha = expected_bindings[index]["binding_sha256"]
+        delta_id = _delta_id(delta.payload_sha256, binding_sha, version_sha)
+        new_version_sha = _version_sha256(version_sha, delta_id, receipt_native)
+        step_bytes = len(changed) * _F64 * plan.cells
+        expected = {
+            "schema": RECEIPT_SCHEMA,
+            "payload_id": delta.payload_id,
+            "proposer": delta.proposer,
+            "sequence": delta.sequence,
+            "reason": delta.reason,
+            "payload_sha256": delta.payload_sha256,
+            "event_index": index,
+            "event_kind": kind,
+            "binding_sha256": binding_sha,
+            "ledger_index": index,
+            "base_version": position,
+            "base_version_sha256": version_sha,
+            "delta_id": delta_id,
+            "version": position + 1,
+            "version_sha256": new_version_sha,
+            "native_content_sha256": receipt_native,
+            "changed_fields": changed,
+            "changed_cells": len(delta.replacements),
+            "copied_bytes": step_bytes,
+            "source_transition": step_transition,
+            "water_exchange": [],
+        }
+        _exact(
+            receipts[position],
+            expected,
+            "restore_mismatch",
+            f"receipt {position} differs from the accepted plan prefix",
+        )
+        expected_receipts.append(expected)
+        last_sequence[delta.proposer] = delta.sequence
+        copied += step_bytes
+        transition = step_transition or transition
+        source = "raster"
+        version_sha, native_sha = new_version_sha, receipt_native
+    if copied > limits.max_run_copy_bytes:  # pragma: no cover - plan admission
+        raise VegetationError("copy_cap_exceeded", "run copy budget")
+    expected_cursor = {
+        "next_event_index": k,
+        "last_sequence": last_sequence,
+        "copied_bytes": copied,
+    }
+    _exact(cursor, expected_cursor, "restore_mismatch", "cursor differs")
+    if (
+        current.source != source
+        or record["source"] != source
+        or record["source_transition"] != transition
+        or record["version_sha256"] != version_sha
+        or native_sha != current_sha
+    ):
+        raise VegetationError(
+            "restore_mismatch", "final source/version/native chain differs"
+        )
+
+    # 7. Existing envelope and seal definitions; a fresh arbitrary seal is refused.
+    receipts_json = _canonical_json(expected_receipts)
+    bindings_json = _canonical_json(expected_bindings)
+    _envelope_admit(
+        limits,
+        receipts_bytes=len(receipts_json),
+        bindings_bytes=len(bindings_json),
+        last_binding_bytes=0 if last_json is None else len(last_json),
+    )
+    env = LandscapeVegetation(
+        _ENV_TOKEN,
+        plan=plan,
+        initial=initial,
+        initial_native_sha256=initial_sha,
+        current=current,
+        version=m,
+        version_sha256=version_sha,
+        native_sha256=native_sha,
+        receipts_json=receipts_json,
+        cursor_json=_canonical_json(expected_cursor),
+        source_transition=transition,
+        bindings_json=bindings_json,
+        last_binding_json=last_json,
+    )
+    env._seal()
+    if env.metadata_sha256 != expected_metadata_sha256:
+        raise VegetationError(
+            "restore_seal_mismatch", "restored metadata does not reproduce the seal"
+        )
+    return env
+
+
+def _vegetation_initial_record(plan: VegetationPlan, initial: Any) -> dict[str, Any]:
+    """Deterministic version0 envelope record around the genuine initial native
+    reference (borrowed for initial and current; no copy, state constructor or
+    delta application). Uses the existing seal definition through a private
+    discarded envelope. The record alone grants no execution."""
+    if type(plan) is not VegetationPlan:
+        raise VegetationError("invalid_input", "plan must be a VegetationPlan")
+    plan.verify()
+    _envelope_admit(
+        plan.limits, receipts_bytes=2, bindings_bytes=2, last_binding_bytes=0
+    )
+    n = _native()
+    native_sha = _check_native_reference(n, initial, plan.shape, "initial")
+    env = LandscapeVegetation(
+        _ENV_TOKEN,
+        plan=plan,
+        initial=initial,
+        initial_native_sha256=native_sha,
+        current=initial,
+        version=0,
+        version_sha256=_version_sha256(None, None, native_sha),
+        native_sha256=native_sha,
+        receipts_json="[]",
+        cursor_json=_canonical_json(
+            {"next_event_index": 0, "last_sequence": {}, "copied_bytes": 0}
+        ),
+        source_transition=None,
+        bindings_json="[]",
+        last_binding_json=None,
+    )
+    env._seal()
+    return env.as_record()
