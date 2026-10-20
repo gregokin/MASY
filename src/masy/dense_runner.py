@@ -132,6 +132,7 @@ def _native() -> SimpleNamespace:
     )
     from maple_syrup.rainfall import RainfallField, RainfallProvenance, RainfallSchedule
     from maple_syrup.sediment_bed import (
+        BedContext,
         BedState,
         TerrainReference,
         bed_inventory,

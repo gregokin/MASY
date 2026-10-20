@@ -39,8 +39,9 @@ acknowledgement only. It does not mean CPU work is never repeated.
 
 **Limits.**
 
-- v1 has only the `source_manifest_prototype` runtime branch. There is no
-  committed-lock branch and no default CLI checkpoint API.
+- Runtime selection is explicit. The isolated task-91 candidate adds an opt-in
+  `committed_cpu_lock` branch; its new committed positive path is not qualified.
+  There is no default CLI checkpoint API.
 - Use is explicit, bounded and local to POSIX, with locked source manifests. The
   native incomplete guard stays in place.
 - Not qualified: active-event resume, power loss, GPU, windowed, dynamic
@@ -112,8 +113,7 @@ allowed; close/recover selected HEAD, never infer the latest directory. Missing
 or corrupt HEAD refuses. Failed evidence and exact allowed hardlink leftovers
 remain retained. Source/runtime/static/lease drift refuses without repair.
 
-Source-manifest prototype is the sole runtime kind in v1. Committed binding and
-public/new-run acceptance require separate qualification with new
+Committed binding and public/new-run acceptance require separate qualification with new
 originals/genesis. The actual four-event continuation/crash/exactly-once checks
 are reported in the status section above.
 No source upgrade, old artifact rebinding, active-event/production/GPU/windowed
@@ -127,3 +127,76 @@ with None routing and refusal of a fabricated held genesis. The actual held-rain
 re-save was later established by the task-78 run on the task-77 prototype (see
 the status section). No receipt
 history, physical fingerprint or native validator is forged to fill that gap.
+
+## Opt-in committed CPU binding (task-91 candidate)
+
+`committed_runtime_reference(cpu_store=..., cpu_lock_id=...,
+cpu_lock_file_sha256=..., lock=...)` is a pure metadata constructor. It validates
+the existing CPU lock, its id and canonical raw SHA, and derives the six-entry
+sealed import prefix, module roots and native bundle manifest. It performs no
+filesystem observation, hashing of files, latest lookup or lock publication.
+The returned reference retains exactly the ten v1 keys listed above, sets kind
+to `committed_cpu_lock`, fills all three CPU slots and sets both
+`source_manifest_*` slots to null. The reference must be retained unchanged.
+
+The new branch reads that exact immutable lock and reuses
+`runtime.load_lock_ref`, `runtime.verify_source_object`, the native
+`dependency_bundle.verify_bundle` / `check_runtime`, and the real selected
+distribution resolver. The four source summary fields and all three selected
+overlay maps/bytes are bound to the lock. Native source rows, package digest,
+tool SHA, archive SHA and both manifest SHAs are compared to their distinct lock
+slots. The current interpreter/venv, sealed bootstrap literal, import prefix,
+isolation flags and stable process record must match the lock. Accelerators
+must be explicitly hidden. The unchanged C environment observer additionally
+persists the current compiled-extension context; the lock's earlier verification
+extension list is not silently treated as the current process's complete list.
+
+The A/B `source_identity` kind remains the legacy `source_manifest_prototype`
+**digest format**, with exactly four fields. In the committed branch, provenance
+comes independently from the retained `committed_cpu_lock` reference. MASY and
+SYRUP tuple values still hash the complete `src/` plus `pyproject.toml` tables;
+MAPLE remains the exact native bundle id. The MASY launcher is verified as part
+of the complete source object but is excluded from the existing tuple table.
+No old original inputs, genesis, store or reference is relabelled or migrated.
+
+Admission precedes large file verification. Lock/native control files are at
+most min(the caller's runtime metadata budget, 4 MiB); each source manifest is
+at most 1 MiB. Each source has at most 2,000 files, depth 16, and 16 MiB per
+file. Generated source overlays have at most 64 files and 1 MiB per file;
+the three-source-plus-overlay total is 128 MiB. Native limits are explicitly
+4,000 files, 16 MiB per file, 64 MiB total and 64 KiB origin metadata, with the
+native archive ceiling derived by its owning helper. Its small distribution
+metadata supplies the owning helper's path-dependent editable overlay. Every
+referenced sealed file must be a read-only, single-link regular file of the
+exact declared size. The held inventory has fixed ceilings of 10,000 files,
+512 parent descriptors and 512 MiB of distinct referenced artifact bytes.
+Interpreter and compiled libraries retain their separate owning contracts,
+including the interpreter's allowed final symlink; they are not sealed sources.
+
+Binding creates no files, child processes, materializations, caches or pycache.
+Existing referenced storage is not new disk consumption. It does repeatedly
+read source, archive, materialized package, overlays and environment binaries:
+the native archive has separate hash/member passes, and materialized verification
+and the final native resolver repeat package reads. The unchanged environment
+observer can scan 4,000 compiled entries and 4 GiB, plus executable and NumPy
+observations. Completed create/recover/accepted-step paths each bind twice;
+duplicate acknowledgement, incomplete event and completed schedule paths bind
+once. These are IO costs, not peak-heap estimates. A separately admitted bounded
+controller must establish memory, read/wall, disk/inode and fresh headroom
+budgets before execution; the library does not raise process resource limits.
+
+Held no-follow parents, full file-stat identities, and closing control rereads
+detect ordinary persistent drift under the quiescent immutable-owner contract.
+Delegated walks/reads remain path-based. This is not whole-tree atomic security
+against a hostile concurrent writer, and closing six manifests alone does not
+prove that all source or overlay races were impossible. No repair or fallback
+is attempted after refusal.
+
+Task-91 protocol tests cover metadata construction, admission, refusals and
+explicitly labelled unit delegate wiring without a bed/model/child/device run.
+They cannot establish genuine positive provenance for the new C module against
+the old committed lock: its origin must refuse. Root source acceptance and
+bounded protocols precede publication; a new committed module/lock, fresh CPU
+qualification and fresh original/genesis/store identities are required before
+cold positive component and four-event durable-restart qualification. The
+historical task-78 result above remains evidence for its exact prototype only.

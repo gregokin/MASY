@@ -7,12 +7,15 @@ metadata and private orchestration; it never publishes a live runner.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import dataclasses
 import fcntl
 import hashlib
 import importlib.metadata
+import math
 import os
+import platform
 import re
 import stat
 import sys
@@ -26,6 +29,7 @@ from masy import dense_original_inputs as oi
 from masy import dense_runner as dr
 from masy import dense_runner_checkpoint as b
 from masy import runtime
+from masy import runtime_worker as rw
 
 SCHEMA = "masy.dense_boundary_store.v1"
 PROFILE = "default_dense_numpy_accepted_v1"
@@ -805,6 +809,746 @@ def _inventory(root, limits, *, expected_root=None):
     }
 
 
+_CL_KIND = "committed_cpu_lock"
+_CL_OBJECT_BYTES = 1 << 20
+_CL_LOCK_BYTES = min(_DEFAULT.max_runtime_metadata_bytes, 4 << 20)
+_CL_SOURCE_FILES = 2000
+_CL_PATH_DEPTH = 16
+_CL_SOURCE_FILE_BYTES = 16 << 20
+_CL_OVERLAY_FILES = 64
+_CL_OVERLAY_FILE_BYTES = 1 << 20
+_CL_AGGREGATE_BYTES = 128 << 20
+_CL_INTERPRETER_BYTES = 256 << 20
+_CL_NATIVE_MANIFEST = "bundle-manifest.json"
+# Outer source-object manifest layout; identity semantics stay runtime-owned.
+_CL_OBJECT_KEYS = ("schema", "object_id", "identity", "overlay_files")
+
+
+def _json_string_bound(text):
+    """Upper bound of one quoted JSON string under any escape/UTF-8 policy."""
+    if text.isascii() and text.isprintable():
+        return len(text) + text.count('"') + text.count("\\") + 2
+    total = 2
+    for char in text:
+        point = ord(char)
+        if point > 0xFFFF:
+            total += 12  # surrogate-pair escape; raw UTF-8 is at most 4
+        elif point < 0x20 or point >= 0x7F:
+            total += 6  # \uXXXX (also lone surrogates); raw UTF-8 is at most 3
+        elif char == '"' or char == "\\":
+            total += 2
+        else:
+            total += 1
+    return total
+
+
+def _plain_metadata(value, max_bytes, where, *, max_nodes=100000, max_depth=24):
+    """Type/size admission of caller objects before owning validators; not a parser."""
+    nodes, wire, active = 0, 0, set()
+
+    def visit(item, depth):
+        nonlocal nodes, wire
+        nodes += 1
+        if nodes > max_nodes or depth > max_depth:
+            _fail("metadata_cap", f"{where}: node/depth cap")
+        kind = type(item)
+        if kind is dict or kind is list:
+            if id(item) in active:
+                _fail("metadata_invalid", f"{where}: cyclic metadata")
+            active.add(id(item))
+            wire += 2
+            if kind is dict:
+                for key, child in item.items():
+                    if type(key) is not str or len(key) > 4096:
+                        _fail("metadata_invalid", f"{where}: invalid key")
+                    # key, ": " and ", " under either compact or default separators
+                    wire += _json_string_bound(key) + 4
+                    if wire > max_bytes:
+                        _fail("metadata_cap", f"{where}: aggregate wire size")
+                    visit(child, depth + 1)
+            else:
+                for child in item:
+                    wire += 2
+                    visit(child, depth + 1)
+            active.discard(id(item))
+        elif kind is str:
+            if len(item) > 4096:
+                _fail("metadata_cap", f"{where}: string cap")
+            wire += _json_string_bound(item)
+        elif kind is int:
+            if item.bit_length() > 4096:
+                _fail("metadata_cap", f"{where}: integer cap")
+            # decimal digits <= floor(bits * log10(2)) + 1, plus sign and slack
+            wire += item.bit_length() * 1233 // 4096 + 3
+        elif kind is float:
+            if not math.isfinite(item):
+                _fail("metadata_nonfinite", f"{where}: nonfinite number")
+            wire += 24  # longest float repr, e.g. -2.2250738585072014e-308
+        elif item is not None and kind is not bool:
+            _fail("metadata_invalid", f"{where}: non-JSON value")
+        else:
+            wire += 5
+        # Conservative upper wire bound (no indentation); exact canonical length
+        # is still checked afterwards by the owning serializer.
+        if wire > max_bytes:
+            _fail("metadata_cap", f"{where}: aggregate wire size")
+
+    visit(value, 0)
+    return value
+
+
+def _canonical_path(value, where):
+    if (
+        type(value) is not str
+        or not value
+        or len(value) > 4096
+        or "\x00" in value
+        or not os.path.isabs(value)
+        or os.path.normpath(value) != value
+    ):
+        _fail("runtime_reference", f"{where}: canonical absolute lexical path required")
+    return value
+
+
+def committed_runtime_reference(*, cpu_store, cpu_lock_id, cpu_lock_file_sha256, lock):
+    """Pure committed-lock runtime reference; performs no filesystem or native IO."""
+    _canonical_path(cpu_store, "cpu store")
+    _digest(cpu_lock_id, "cpu lock id")
+    _digest(cpu_lock_file_sha256, "cpu lock raw hash")
+    _plain_metadata(lock, _CL_LOCK_BYTES, "cpu lock")
+    try:
+        runtime.validate_lock(lock, store=cpu_store, lock_name=cpu_lock_id + ".json")
+        raw = runtime._canonical_bytes(lock)
+    except runtime.RuntimeRefusal as exc:
+        raise BoundaryStoreError(exc.code, exc.detail) from exc
+    if lock["lock_id"] != cpu_lock_id:
+        _fail("runtime_reference", "lock id differs from declared cpu lock id")
+    if len(raw) > _CL_LOCK_BYTES:
+        _fail("metadata_cap", "canonical cpu lock bytes")
+    if _sha(raw) != cpu_lock_file_sha256:
+        _fail("runtime_reference", "canonical cpu lock raw hash differs")
+    prefix = lock["runtime"]["sys_path_prefix"]
+    if type(prefix) is not list or len(prefix) < 6:
+        _fail("runtime_reference", "sealed sys.path prefix lacks module roots")
+    roots = {
+        "masy": _canonical_path(prefix[3], "masy module root"),
+        "maple_syrup": _canonical_path(prefix[4], "syrup module root"),
+        "maple": _canonical_path(prefix[5], "maple module root"),
+    }
+    if len(set(roots.values())) != 3:
+        _fail("runtime_reference", "module roots must be distinct")
+    bundle = lock["objects"]["maple_bundle"]
+    native_path = os.path.join(
+        _canonical_path(bundle["path"], "native bundle"), _CL_NATIVE_MANIFEST
+    )
+    reference = {
+        "schema": SCHEMA + ".runtime",
+        "kind": _CL_KIND,
+        "source_manifest_path": None,
+        "source_manifest_file_sha256": None,
+        "native_bundle_manifest_path": native_path,
+        "native_bundle_manifest_file_sha256": _digest(
+            bundle["manifest_sha256"], "native bundle manifest hash"
+        ),
+        "module_roots": roots,
+        "cpu_store": cpu_store,
+        "cpu_lock_id": cpu_lock_id,
+        "cpu_lock_file_sha256": cpu_lock_file_sha256,
+    }
+    _keys(reference, _RUNTIME, "runtime reference")
+    return reference
+
+
+def _overlay_path(path, dist_info):
+    if (
+        type(path) is not str
+        or not path
+        or "\\" in path
+        or path.startswith("/")
+        or any(ord(c) < 32 or ord(c) == 127 for c in path)
+        or any(0xD800 <= ord(c) <= 0xDFFF for c in path)
+        or len(path.encode("utf-8", "surrogateescape")) > 1024
+    ):
+        _fail("source_object", "unsafe overlay path")
+    parts = path.split("/")
+    if (
+        len(parts) < 2
+        or len(parts) > _CL_PATH_DEPTH
+        or parts[0] != dist_info
+        or any(p in ("", ".", "..") for p in parts)
+    ):
+        _fail("source_object", "overlay path escapes its dist-info namespace")
+    return path
+
+
+def _admit_source_object(raw, *, kind, object_id, max_bytes=_CL_OBJECT_BYTES):
+    """Bounded raw source-object manifest admission; no file walk/hash/read."""
+    _digest(object_id, "source object id")
+    if kind not in runtime.SOURCES:
+        _fail("source_object", "unknown source object kind")
+    cap = min(max_bytes, _CL_OBJECT_BYTES)
+    if type(raw) is not bytes or len(raw) > cap:
+        _fail("metadata_cap", "source object manifest raw cap")
+    try:
+        manifest = oi._strict_json(
+            raw, SimpleNamespace(max_metadata_bytes=cap, max_nodes=20000, max_depth=8)
+        )
+    except oi.OriginalInputsError as exc:
+        raise BoundaryStoreError(exc.code, exc.detail) from exc
+    try:
+        if raw != runtime._canonical_bytes(manifest):
+            _fail("metadata_noncanonical", "source object manifest bytes")
+        _keys(manifest, _CL_OBJECT_KEYS, "source object manifest")
+        if manifest["schema"] != runtime.SOURCE_OBJECT_SCHEMA:
+            _fail("source_object", "source object manifest schema")
+        identity = runtime._validate_identity(manifest["identity"])
+        if (
+            manifest["object_id"] != object_id
+            or runtime.identity_id(identity) != object_id
+        ):
+            _fail("source_object", "source object id differs")
+    except runtime.RuntimeRefusal as exc:
+        raise BoundaryStoreError(exc.code, exc.detail) from exc
+    if identity["kind"] != kind:
+        _fail("source_object", "source object kind differs")
+    files, declared = identity["files"], 0
+    if len(files) > _CL_SOURCE_FILES:
+        _fail("source_cap", "finite source object file count")
+    for rel, size, _sha256, _blob in files:
+        if len(rel.split("/")) > _CL_PATH_DEPTH:
+            _fail("source_cap", "source path depth")
+        _integer(size, _CL_SOURCE_FILE_BYTES, "source file bytes")
+        declared += size
+        if declared > _CL_AGGREGATE_BYTES:
+            _fail("source_cap", "source object declared bytes")
+    overlay = manifest["overlay_files"]
+    # Runtime authority: overlay_files is None exactly when identity.overlay is
+    # None (MAPLE); generated sources carry a genuine finite list. The manifest
+    # and raw bytes stay untouched; only the returned rows normalize to [].
+    if identity["overlay"] is None:
+        if overlay is not None:
+            _fail("source_object", "overlay files present without overlay identity")
+        overlay = []
+    elif type(overlay) is not list or len(overlay) > _CL_OVERLAY_FILES:
+        _fail("source_object", "finite overlay file list required")
+    elif not overlay:
+        _fail("source_object", "overlay files do not match overlay presence")
+    previous = None
+    for row in overlay:
+        if type(row) is not list or len(row) != 3:
+            _fail("source_object", "overlay row layout")
+        path = _overlay_path(row[0], identity["overlay"]["dist_info"])
+        if previous is not None and path <= previous:
+            _fail("source_object", "overlay rows must be strictly sorted/unique")
+        previous = path
+        _integer(row[1], _CL_OVERLAY_FILE_BYTES, "overlay file bytes")
+        _digest(row[2], "overlay file SHA")
+        declared += row[1]
+        if declared > _CL_AGGREGATE_BYTES:
+            _fail("source_cap", "source object declared bytes")
+    return manifest, files, overlay, declared
+
+
+_INV_PARENTS = 512
+_INV_FILES = 10000
+
+
+class _HeldInventory:
+    """Ephemeral held-parent inventory of owned source/native artifact files.
+
+    Quiescent owned-source protocol, not a descriptor-atomic hostile-writer
+    proof: parents are held no-follow, delegated reads stay path based, and
+    every admission is rechecked by full stat identity. Never writes or fsyncs.
+    Not for interpreter symlinks or compiled environment files.
+    """
+
+    def __init__(self, byte_budget, *, max_parents=_INV_PARENTS, max_files=_INV_FILES):
+        for value, cap, where in (
+            (byte_budget, None, "byte budget"),
+            (max_parents, _INV_PARENTS, "parent cap"),
+            (max_files, _INV_FILES, "file cap"),
+        ):
+            if type(value) is not int or value < 0 or (cap is not None and value > cap):
+                _fail("inventory_invalid", f"held inventory {where}")
+        self._budget, self._max_parents, self._max_files = (
+            byte_budget,
+            max_parents,
+            max_files,
+        )
+        self._parents = {}  # parent path -> (descriptor, directory identity)
+        self._files = {}  # path -> (parent, name, size, stat id, nlink, mode)
+        self._bytes = 0
+        self._closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+        return False
+
+    def close(self):
+        self._closed = True
+        parents, self._parents = self._parents, {}
+        self._files = {}
+        for descriptor, _identity_ in parents.values():
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+
+    def _live(self):
+        if self._closed:
+            _fail("inventory_closed", "held inventory is closed")
+
+    def _hold(self, parent):
+        held = self._parents.get(parent)
+        if held is not None:
+            return held[0]
+        if len(self._parents) >= self._max_parents:
+            _fail("inventory_cap", "held parent directory cap")
+        try:
+            descriptor = oi._open_dir(parent)
+        except oi.OriginalInputsError as exc:
+            raise BoundaryStoreError(exc.code, exc.detail) from exc
+        except OSError as exc:
+            raise BoundaryStoreError(
+                "inventory_parent", f"{parent}: {exc.strerror or exc}"
+            ) from exc
+        try:
+            self._parents[parent] = (descriptor, _identity(os.fstat(descriptor)))
+        except BaseException:
+            os.close(descriptor)
+            raise
+        return descriptor
+
+    def _lstat(self, parent, name, descriptor):
+        try:
+            return os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        except OSError as exc:
+            raise BoundaryStoreError(
+                "inventory_file", f"{os.path.join(parent, name)}: {exc.strerror or exc}"
+            ) from exc
+
+    def _check_parent(self, parent):
+        descriptor, identity = self._parents[parent]
+        if _identity(os.fstat(descriptor)) != identity:
+            _fail("identity_drift", "held parent descriptor changed")
+        _same_directory(parent, descriptor)
+        return descriptor
+
+    def _check_file(self, path):
+        parent, name, _size, ident, links, mode = self._files[path]
+        descriptor = self._check_parent(parent)
+        info = self._lstat(parent, name, descriptor)
+        if (
+            oi._stat_id(info) != ident
+            or info.st_nlink != links
+            or info.st_mode != mode
+        ):
+            _fail("identity_drift", f"{path}: admitted file changed")
+        _same_directory(parent, descriptor)
+
+    def admit(self, path, declared_size):
+        """Admit one read-only single-link regular file of exact declared size."""
+        self._live()
+        path = _canonical_path(path, "held inventory path")
+        if type(declared_size) is not int or declared_size < 0:
+            _fail("inventory_invalid", f"{path}: plain non-negative size required")
+        known = self._files.get(path)
+        if known is not None:
+            if known[2] != declared_size:
+                _fail("inventory_conflict", f"{path}: roles disagree on size")
+            self._check_file(path)
+            return
+        if len(self._files) >= self._max_files:
+            _fail("inventory_cap", "held inventory file cap")
+        if declared_size > self._budget - self._bytes:
+            _fail("inventory_cap", f"{path}: byte budget exceeded")
+        parent, name = os.path.split(path)
+        if not name:
+            _fail("runtime_reference", "held inventory path names root")
+        descriptor = self._hold(parent)
+        _same_directory(parent, descriptor)
+        info = self._lstat(parent, name, descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            _fail("inventory_file", f"{path}: regular file required")
+        if info.st_mode & 0o222:
+            _fail("inventory_file", f"{path}: read-only file required")
+        if info.st_nlink != 1:
+            _fail("inventory_file", f"{path}: single link required")
+        if info.st_size != declared_size:
+            _fail("inventory_file", f"{path}: size differs from declaration")
+        _same_directory(parent, descriptor)
+        self._files[path] = (
+            parent,
+            name,
+            declared_size,
+            oi._stat_id(info),
+            info.st_nlink,
+            info.st_mode,
+        )
+        self._bytes += declared_size
+
+    def check(self):
+        """Exact recheck of every held parent and admitted file stat."""
+        self._live()
+        for parent in self._parents:
+            self._check_parent(parent)
+        for path in self._files:
+            self._check_file(path)
+
+    def read(self, path, cap, declared_size=None):
+        """Bounded read of an admitted (or now admitted control) file."""
+        self._live()
+        path = _canonical_path(path, "held inventory path")
+        if type(cap) is not int or cap < 0:
+            _fail("inventory_invalid", f"{path}: plain read cap required")
+        if declared_size is not None and (
+            type(declared_size) is not int or declared_size < 0
+        ):
+            _fail("inventory_invalid", f"{path}: plain non-negative size required")
+        known = self._files.get(path)
+        if known is None:
+            if declared_size is None:
+                parent, name = os.path.split(path)
+                if not name:
+                    _fail("runtime_reference", "held inventory path names root")
+                descriptor = self._hold(parent)
+                declared_size = self._lstat(parent, name, descriptor).st_size
+            if declared_size > cap:
+                _fail("metadata_cap", f"{path}: raw cap before admission")
+            self.admit(path, declared_size)
+            known = self._files[path]
+        elif declared_size is not None and declared_size != known[2]:
+            _fail("inventory_conflict", f"{path}: roles disagree on size")
+        if known[2] > cap:
+            _fail("metadata_cap", f"{path}: raw cap before read")
+        descriptor = self._check_parent(known[0])
+        raw = _read(path, cap, links=1, _directory=descriptor)
+        self._check_file(path)
+        if len(raw) != known[2]:
+            _fail("identity_drift", f"{path}: read length differs from admission")
+        return raw
+
+
+def _committed_json(raw, cap, where):
+    """Reuse the bounded original-input decoder for control metadata only."""
+    try:
+        value = oi._strict_json(
+            raw,
+            SimpleNamespace(max_metadata_bytes=cap, max_nodes=100000, max_depth=24),
+        )
+    except oi.OriginalInputsError as exc:
+        raise BoundaryStoreError(exc.code, exc.detail) from exc
+    _plain_metadata(value, cap, where)
+    return value
+
+
+def _committed_cpu_flags():
+    # In particular refuse before importing a native delegate when -B is absent.
+    flags = {
+        "isolated": sys.flags.isolated,
+        "dont_write_bytecode": sys.flags.dont_write_bytecode,
+        "ignore_environment": sys.flags.ignore_environment,
+        "no_user_site": sys.flags.no_user_site,
+        "safe_path": getattr(sys.flags, "safe_path", None),
+        "utf8_mode": sys.flags.utf8_mode,
+    }
+    if any(flags[k] != 1 for k in (
+        "isolated", "dont_write_bytecode", "ignore_environment", "no_user_site"
+    )) or flags["safe_path"] is not True:
+        _fail("committed_runtime", "current process requires isolated -I -B flags")
+    expected = {"CUDA_VISIBLE_DEVICES": "", "NUMBA_DISABLE_CUDA": "1", "JAX_PLATFORMS": "cpu"}
+    if any(os.environ.get(k) != v for k, v in expected.items()):
+        _fail("committed_runtime", "current process must explicitly hide accelerators")
+    return flags
+
+
+def _committed_sources(lock, held, cap):
+    """Admit complete source/overlay inventories before any full-file delegate."""
+    admitted, controls, total = {}, {}, 0
+    for kind in ("maple", "syrup", "masy"):
+        spec = lock["objects"]["sources"][kind]
+        path = Path(spec["path"])
+        filename = str(path / "manifest.json")
+        raw = held.read(filename, min(cap, _CL_OBJECT_BYTES))
+        if _sha(raw) != spec.get("manifest_sha256"):
+            _fail("source_identity", f"{kind} source manifest differs from lock")
+        manifest, files, overlay, declared = _admit_source_object(
+            raw, kind=kind, object_id=spec["object_id"], max_bytes=cap
+        )
+        total += declared
+        if total > _CL_AGGREGATE_BYTES:
+            _fail("source_cap", "three-source plus overlay aggregate byte cap")
+        for rel, size, _digest_, _blob in files:
+            held.admit(str(path / "source" / rel), size)
+        for rel, size, _digest_ in overlay:
+            held.admit(str(path / "editable" / rel), size)
+        admitted[kind] = (manifest, files, overlay)
+        controls[filename] = raw
+    return admitted, controls
+
+
+def _committed_native(lock, reference, admitted, held, cap, native):
+    """Bounded native metadata admission; native owns every schema/overlay rule."""
+    bundle, materialized = (
+        lock["objects"]["maple_bundle"], lock["objects"]["maple_materialized"]
+    )
+    bundle_path, target = Path(bundle["path"]), Path(materialized["path"])
+    limits = native.Limits(
+        max_files=4000, max_file_bytes=16 << 20, max_total_bytes=64 << 20,
+        max_manifest_bytes=cap, max_origin_bytes=64 << 10,
+    )
+    filename = str(bundle_path / native.MANIFEST_NAME)
+    mfilename = str(target / native.MANIFEST_NAME)
+    raw, mraw = held.read(filename, cap), held.read(mfilename, cap)
+    if (
+        _sha(raw) != bundle["manifest_sha256"]
+        or _sha(raw) != reference["native_bundle_manifest_file_sha256"]
+        or _sha(mraw) != materialized.get("manifest_sha256")
+        or mraw != raw
+    ):
+        _fail("native_binding", "native bundle/materialized manifest pins differ")
+    record = _committed_json(raw, cap, "native bundle manifest")
+    table = native._validate_manifest(record, limits)
+    if native._canonical(record) + b"\n" != raw:
+        _fail("native_binding", "noncanonical native manifest")
+    archive = record["archive"]
+    held.admit(str(bundle_path / native.ARCHIVE_NAME), archive["size"])
+    for rel, row in table.items():
+        if len(rel.split("/")) - 1 > _CL_PATH_DEPTH:
+            _fail("source_cap", "native materialized path depth")
+        held.admit(str(target / rel), row["size"])
+    held.read(str(target / native.MATERIALIZATION_NAME), 64 << 10)
+    # Only the native's small distribution metadata is read here. Its owning
+    # pure generator supplies the actual path-dependent MAPLE overlay bytes.
+    dist = {}
+    for name in record["distribution"]["files"]:
+        row = table["distribution/" + name]
+        data = held.read(str(target / "distribution" / name), 1 << 20, row["size"])
+        if _sha(data) != row["sha256"]:
+            _fail("native_binding", "native distribution metadata bytes differ")
+        dist[name] = data
+    overlay = native._overlay_files(record, target, dist)
+    if type(overlay) is not dict or len(overlay) > _CL_OVERLAY_FILES:
+        _fail("source_cap", "native editable file cap")
+    overlay_map = {}
+    for rel, data in overlay.items():
+        # Names and bytes come only from the actual pure native generator.
+        if type(data) is not bytes or len(data) > _CL_OVERLAY_FILE_BYTES:
+            _fail("source_cap", "native editable byte cap")
+        held.admit(str(target / "editable" / rel), len(data))
+        overlay_map[rel] = _sha(data)
+    if overlay_map != lock["distributions"]["maple"]["files"]:
+        _fail("native_binding", "native generated MAPLE overlay differs from lock")
+    expected_source = [[p, s, h] for p, s, h, _blob in admitted["maple"][1]]
+    native_source = [
+        [p[len("source/"):], row["size"], row["sha256"]]
+        for p, row in table.items() if p.startswith("source/")
+    ]
+    tool_rows = {
+        p: digest for p, _s, digest, _b in admitted["syrup"][1]
+    }
+    tool_sha = tool_rows.get("src/maple_syrup/dependency_bundle.py")
+    if (
+        sorted(native_source) != sorted(expected_source)
+        or record["bundle_id"] != bundle["bundle_id"]
+        or record["project"]["exported_from"]
+        != str(Path(lock["objects"]["sources"]["maple"]["path"]) / "source")
+        or record["tool"]["module_sha256"] != bundle["tool_module_sha256"]
+        or tool_sha != bundle["tool_module_sha256"]
+        or archive["sha256"] != bundle["archive_sha256"]
+        or record["project"]["package_source_digest"]["digest_sha256"]
+        != bundle["package_digest"]
+        or bundle["package_digest"]
+        != lock["objects"]["sources"]["maple"]["package_digest"]
+    ):
+        _fail("native_binding", "native source/tool/archive/package cross-links differ")
+    return record, limits, {filename: raw, mfilename: mraw}
+
+
+def _committed_verify_sources(lock, admitted, held, cap):
+    summaries = {}
+    for kind in ("maple", "syrup", "masy"):
+        spec = lock["objects"]["sources"][kind]
+        held.check()
+        summary = runtime.verify_source_object(
+            spec["path"], spec["object_id"], runtime.RuntimeLimits(max_lock_bytes=cap)
+        )
+        if any(summary.get(key) != spec.get(key) for key in (
+            "file_count", "total_bytes", "manifest_sha256", "package_digest"
+        )):
+            _fail("source_identity", f"{kind}: four source summary fields differ")
+        manifest, _files, overlay = admitted[kind]
+        if summary["manifest_sha256"] != _sha(runtime._canonical_bytes(manifest)):
+            _fail("source_identity", f"{kind}: source raw SHA differs")
+        expected_overlay = {p: sha for p, _s, sha in overlay} if kind != "maple" else None
+        if summary.get("overlay_files") != expected_overlay:
+            _fail("source_identity", f"{kind}: verified overlay map differs")
+        if kind != "maple":
+            dist_name = "maple-syrup" if kind == "syrup" else "masy"
+            if expected_overlay != lock["distributions"][dist_name]["files"]:
+                _fail("source_identity", f"{kind}: selected overlay map differs")
+        summaries[kind] = summary
+        held.check()
+    return summaries
+
+
+def _committed_process(lock, flags):
+    """The stable record's exact field set is runtime_worker.check_process's."""
+    prefix = lock["runtime"]["sys_path_prefix"]
+    if sys.path[:len(prefix)] != prefix:
+        _fail("committed_runtime", "current sys.path lacks the sealed prefix")
+    value = {
+        "flags": flags, "sys_path_prefix": list(prefix), "executable": sys.executable,
+        "executable_realpath": os.path.realpath(sys.executable), "prefix": sys.prefix,
+        "base_prefix": sys.base_prefix, "version": sys.version,
+        "implementation": sys.implementation.name, "machine": platform.machine(),
+        "sys_platform": sys.platform,
+        "environment": {key: os.environ.get(key) for key in rw.STABLE_ENV_KEYS},
+    }
+    if (
+        value != lock["verification"]["process"]
+        or value["environment"] != lock["runtime"].get("stable_environment")
+    ):
+        _fail("committed_runtime", "current stable process record differs from lock")
+    return value
+
+
+def _committed_identity(lock, admitted, roots, flags):
+    """Current interpreter/bootstrap/resolver and C environment; no child/write."""
+    _committed_process(lock, flags)
+    python = runtime.interpreter_identity(
+        sys.executable, runtime.RuntimeLimits(max_compiled_bytes=_CL_INTERPRETER_BYTES)
+    )
+    if (
+        runtime._python_stable(python) != lock["runtime"]["python"]
+        or python["venv"] is not None
+        and os.path.realpath(sys.prefix) != python["venv"]["dir"]
+    ):
+        _fail("committed_runtime", "actual interpreter/venv differs from lock")
+    bootstrap = runtime.sealed_bootstrap(lock["objects"]["sources"]["masy"]["path"])
+    if _sha(bootstrap.encode("utf-8")) != lock["runtime"]["bootstrap_sha256"]:
+        _fail("committed_runtime", "sealed bootstrap SHA differs from lock")
+    runtime.check_import_roots(lock["runtime"]["sys_path_prefix"])
+    rw.selected_distributions([
+        {"name": name, "dir": lock["distributions"][name]["overlay_dir"],
+         "files": lock["distributions"][name]["files"]}
+        for name in ("maple", "maple-syrup", "masy")
+    ], path=None)
+    environment = _environment_identity()
+    executable = environment["interpreter_identity"]
+    if (
+        executable["path"] != python["realpath"]
+        or executable["size"] != python["size"]
+        or executable["sha256"] != python["sha256"]
+    ):
+        _fail("environment_identity", "C executable observer differs from actual interpreter")
+    tables = {}
+    for package, kind in (("masy", "masy"), ("maple_syrup", "syrup"), ("maple", "maple")):
+        tables[package] = {
+            rel: {"size_bytes": size, "sha256": digest}
+            for rel, size, digest, _blob in admitted[kind][1]
+            if rel == "pyproject.toml" or rel.startswith("src/")
+        }
+    # Observers and native delegates may have imported additional modules.
+    for name, module in tuple(sys.modules.items()):
+        package = name.split(".")[0]
+        filename = getattr(module, "__file__", None)
+        if package in roots and filename:
+            path, expected = Path(filename), Path(roots[package])
+            if not path.is_absolute() or not path.is_relative_to(expected):
+                _fail("module_origin", name)
+            if str(path.relative_to(expected.parent)) not in tables[package]:
+                _fail("module_origin", "loaded module absent from committed source table")
+    ids = {
+        "kind": "source_manifest_prototype",
+        "masy": _sha(oi._json(tables["masy"])),
+        "syrup": _sha(oi._json(tables["maple_syrup"])),
+        "maple": lock["objects"]["maple_bundle"]["bundle_id"],
+    }
+    oi._source_identity(ids)
+    return ids, _sha(oi._json(environment))
+
+
+def _committed_binding(reference, limits):
+    """Read-only opt-in committed provenance for the existing v1 digest tuple."""
+    cap = min(limits.max_runtime_metadata_bytes, _CL_LOCK_BYTES)
+    for key in ("source_manifest_path", "source_manifest_file_sha256"):
+        if reference[key] is not None:
+            _fail("runtime_reference", "committed source-manifest slots must be null")
+    store = _canonical_path(reference["cpu_store"], "cpu store")
+    lock_id = _digest(reference["cpu_lock_id"], "cpu lock id")
+    _digest(reference["cpu_lock_file_sha256"], "cpu lock raw hash")
+    _keys(reference["module_roots"], ("masy", "maple", "maple_syrup"), "module roots")
+    for value in reference["module_roots"].values():
+        _canonical_path(value, "module root")
+    _canonical_path(reference["native_bundle_manifest_path"], "native manifest")
+    _digest(reference["native_bundle_manifest_file_sha256"], "native manifest SHA")
+    flags = _committed_cpu_flags()
+    # This fixed cap covers referenced sealed artifacts, not a new allocation or
+    # materialization. The unchanged environment observer has its separate caps.
+    with _HeldInventory(512 << 20) as held:
+        lock_path = os.path.join(store, "locks", lock_id + ".json")
+        raw = held.read(lock_path, cap)
+        if _sha(raw) != reference["cpu_lock_file_sha256"]:
+            _fail("committed_lock", "retained CPU lock raw SHA differs")
+        _committed_json(raw, cap, "cpu lock")
+        try:
+            lock, loaded_path = runtime.load_lock_ref(store, lock_id, cap)
+            if str(loaded_path) != lock_path or runtime._canonical_bytes(lock) != raw:
+                _fail("committed_lock", "actual strict lock loader returned different bytes")
+            if committed_runtime_reference(
+                cpu_store=store, cpu_lock_id=lock_id,
+                cpu_lock_file_sha256=reference["cpu_lock_file_sha256"], lock=lock,
+            ) != reference:
+                _fail("runtime_reference", "reference does not derive exactly from committed lock")
+            _committed_process(lock, flags)
+            admitted, controls = _committed_sources(lock, held, cap)
+            from maple_syrup import dependency_bundle as native
+
+            record, native_limits, native_controls = _committed_native(
+                lock, reference, admitted, held, cap, native
+            )
+            controls.update(native_controls)
+            controls[lock_path] = raw
+            held.check()
+            _committed_verify_sources(lock, admitted, held, min(cap, _CL_OBJECT_BYTES))
+            checked = native.verify_bundle(
+                lock["objects"]["maple_bundle"]["path"], limits=native_limits
+            )
+            if native._canonical(checked) + b"\n" != native_controls[
+                reference["native_bundle_manifest_path"]
+            ]:
+                _fail("native_binding", "actual verified native manifest differs")
+            held.check()
+            binding = native.check_runtime(
+                lock["objects"]["maple_materialized"]["path"], limits=native_limits
+            )
+            if (
+                binding["bundle_id"] != record["bundle_id"]
+                or binding["package_source_digest"]
+                != lock["objects"]["maple_bundle"]["package_digest"]
+            ):
+                _fail("native_binding", "actual native in-process binding differs")
+            held.check()
+            result = _committed_identity(lock, admitted, reference["module_roots"], flags)
+            for filename, original in controls.items():
+                if held.read(filename, cap) != original:
+                    _fail("identity_drift", "closing control metadata differs")
+            held.check()
+            return copy.deepcopy(result[0]), result[1]
+        except (runtime.RuntimeRefusal, rw.WorkerRefusal) as exc:
+            raise BoundaryStoreError(exc.code, exc.detail) from exc
+        except oi.OriginalInputsError as exc:
+            raise BoundaryStoreError(exc.code, exc.detail) from exc
+        except (KeyError, TypeError, ValueError) as exc:
+            # Native BundleError is a ValueError with no code/detail attributes.
+            # Keep our already bounded component refusals intact.
+            if isinstance(exc, BoundaryStoreError):
+                raise
+            raise BoundaryStoreError("committed_binding", str(exc)) from exc
+
+
 def _environment_identity():
     """Reuse operational/compiled observers; do not select or change a runtime."""
     from masy.importcheck import environment_record
@@ -834,6 +1578,8 @@ def _runtime_binding(reference, limits):
     _keys(reference, _RUNTIME, "runtime reference")
     if reference["schema"] != SCHEMA + ".runtime":
         _fail("runtime_reference", "schema")
+    if reference["kind"] == _CL_KIND:
+        return _committed_binding(reference, limits)
     if reference["kind"] != "source_manifest_prototype":
         _fail("runtime_kind_unsupported_v1", "v1 has no committed-lock success branch")
     if any(

@@ -366,6 +366,19 @@ class DeviceContextBridge(unittest.TestCase):
                 metadata.verify(n)
             self.assertEqual(caught.exception.code, "case_input_mutated")
 
+    def test_runner_native_namespace_serves_the_build_metadata_verify(self):
+        # `_build` passes `dense_runner._native()` (not `dense_bed._native()`) to `metadata.verify`.
+        n = dense_runner._native()
+        env = owners()
+        _, metadata = ownership(env)
+        metadata.verify(n)
+        self.assertIs(n.BedContext, dense_bed._native().BedContext)
+        self.assertIs(type(metadata.context), n.BedContext)
+        object.__setattr__(metadata.context, "depth_update_rule", "other")
+        with self.assertRaises(dense_bed.DenseBedError) as caught:
+            metadata.verify(n)
+        self.assertEqual(caught.exception.code, "case_input_mutated")
+
     def test_host_context_object_replacement_is_refused(self):
         env = owners()
         _, metadata = ownership(env)
