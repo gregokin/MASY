@@ -413,6 +413,13 @@ class DenseBed:
         return _restore_dense_bed(cls, loaded, config, inputs=inputs, expected_identity=expected_identity,
                                   cap=max_bytes)
 
+    @classmethod
+    def _from_native_boundary_load_v2(cls, loaded: Any, config: Any, *, inputs: Any,
+                                      expected_identity: dict[str, Any], max_bytes: int) -> DenseBed:
+        from masy.dense_checkpoint import _restore_dense_bed_v2
+        return _restore_dense_bed_v2(cls, loaded, config, inputs=inputs,
+                                   expected_identity=expected_identity, cap=max_bytes)
+
     def __init__(self, token: object, *, case_record: dict[str, Any], held_inputs: dict[str, Any], context: Any,
                  state: Any, vegetation: Any, threshold_modifier_state: Any, time_s: float, limits: DenseBedLimits,
                  initialization_receipt: dict[str, Any], prescribed_digests: dict[str, str]) -> None:

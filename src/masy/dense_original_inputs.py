@@ -2528,3 +2528,1097 @@ def load_original_inputs(
         for fd in opened:
             os.close(fd)
         os.close(directory)
+
+
+# Named dynamic original-input artifacts. V1 functions and registry stay exact.
+SCHEMA_V2 = "masy.dense_original_inputs.v2"
+PROFILE_V2 = "dynamic_manual_dense_numpy_accepted_v1"
+_ROOT_FIELDS_V2 = (*_ROOT_FIELDS[:-1], "vegetation_limits", "content_sha256")
+_RUNNER_FIELDS_V2 = _RUNNER_FIELDS | {"_vegetation_plan", "_vegetation_copied_bytes"}
+_DECODED_V2_TOKEN = object()
+
+
+@dataclasses.dataclass(frozen=True)
+class OriginalInputsV2:
+    capsule: Any
+    schedule: Any
+    wind: Any
+    water: Any
+    control: Any
+    runner_limits: Any
+    initial_inventory_kg: Any
+    static_parts: dict
+    static_parts_sha256: str
+    static_record: dict
+    static_sha256: str
+    source_identity: dict
+    recipes: dict
+    vegetation_limits: dict
+    content_sha256: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _DecodedOriginalInputsV2:
+    originals: OriginalInputsV2
+    plan: Any
+    _authority: object
+
+
+def _registry_v2():
+    # Same owning native schema table; only the exact capsule tag changes.
+    registry = _registry()
+    registry.pop("masy.dense_checkpoint:DenseBoundaryInputs")
+    from masy.dense_checkpoint import DenseBoundaryInputsV2, _INPUTS
+    fields = tuple(f.name for f in dataclasses.fields(DenseBoundaryInputsV2))
+    if fields != _INPUTS:
+        _fail("native_schema_changed", "dynamic capsule fields differ")
+    registry["masy.dense_checkpoint:DenseBoundaryInputsV2"] = (DenseBoundaryInputsV2, fields, False)
+    return registry
+
+
+def _material_v2(pack):
+    _layout(pack, OriginalInputsV2, _ROOT_FIELDS_V2)
+    material = {name: getattr(pack, name) for name in _ROOT_FIELDS_V2 if name != "content_sha256"}
+    material["schedule"] = pack.schedule.as_record()
+    return material
+
+
+def _raw_dynamic_controls_v2(table, body, limits):
+    """Peek only plain controls BEFORE payload reads or native class factories."""
+    from masy import landscape_vegetation as lv
+    rows = body["v"]
+    if type(rows) is not list or any(
+        type(row) is not list or len(row) != 2 or type(row[0]) is not str
+        for row in rows
+    ):
+        _fail("wire_invalid", "closed dynamic original-body rows")
+    if len(rows) != len(_ROOT_FIELDS_V2) - 1:
+        _fail("wire_invalid", "closed dynamic original-body field count")
+    indices = {name: index for name, index in rows}
+    if len(indices) != len(rows) or set(indices) != set(_ROOT_FIELDS_V2) - {"content_sha256"}:
+        _fail("wire_invalid", "closed dynamic original-body fields")
+    plain = _Decoder([], {}, limits, table)
+    admitted = plain.node(indices["vegetation_limits"])
+    _keys(admitted, tuple(lv._CEILINGS), "independent raw vegetation limits")
+    try:
+        admitted = lv.VegetationLimits(**admitted)
+        static = plain.node(indices["static_parts"])
+        if type(static) is not dict or "vegetation_profile" not in static:
+            _fail("vegetation_profile_mismatch", "full original plan required")
+        profile = static["vegetation_profile"]
+        _keys(profile, ("profile", "plan", "initial_native_content_sha256"), "raw full vegetation plan")
+        lv._json_admit(profile["plan"], max_bytes=admitted.max_plan_record_bytes)
+        if (type(profile["plan"]) is not dict
+                or profile["plan"].get("limits") != admitted.as_record()):
+            _fail("vegetation_profile_mismatch", "raw plan limits differ from independent controls")
+    except lv.VegetationError as exc:
+        raise OriginalInputsError(exc.code, exc.detail) from exc
+
+
+def _typed_plan_v2(pack, limits, admitted_plan=None):
+    from masy import landscape_vegetation as lv
+    # This role is independent of the plan record, captured from its genuine
+    # original typed source and sealed as separate original-input control.
+    _keys(pack.vegetation_limits, tuple(lv._CEILINGS), "independently admitted vegetation limits")
+    try:
+        admitted_limits = lv.VegetationLimits(**pack.vegetation_limits)
+        case = pack.capsule.case_record["vegetation_profile"]
+        profile = pack.static_parts["vegetation_profile"]
+        _keys(profile, ("profile", "plan", "initial_native_content_sha256"), "original full vegetation plan")
+        if (profile["profile"] != lv.VEGETATION_PROFILE
+                or profile["initial_native_content_sha256"] != case["initial_native_content_sha256"]):
+            _fail("vegetation_profile_mismatch", "original native vegetation source differs")
+        g = pack.capsule.context.geometry
+        expected = {"shape": (g.ny, g.nx),
+            "n_classes": len(pack.capsule.context.grain_classes.classes),
+            "n_voxels": pack.capsule.case_record["n_voxels"],
+            "event_kinds": tuple(event.kind for event in pack.schedule.events),
+            "schedule_sha256": pack.schedule.digest, "limits": admitted_limits}
+        if admitted_plan is None:
+            return lv.vegetation_plan_from_record(profile["plan"],
+                expected_plan_sha256=case["plan_sha256"], **expected)
+        if type(admitted_plan) is not lv.VegetationPlan:
+            _fail("vegetation_profile_mismatch", "exact admitted plan required")
+        admitted_plan.verify()
+        if (admitted_plan.plan_sha256 != case["plan_sha256"]
+                or any(getattr(admitted_plan, name) != value for name, value in expected.items())
+                or _json(admitted_plan.plan_record()) != _json(profile["plan"])):
+            _fail("vegetation_profile_mismatch", "original plan or future suffix differs")
+        return admitted_plan
+    except lv.VegetationError as exc:
+        raise OriginalInputsError(exc.code, exc.detail) from exc
+
+
+def _validated_original_inputs_v2(pack, limits, admitted_plan=None):
+    OriginalPackLimits.__post_init__(limits)
+    _encoded_v2(pack, limits, hashed=False)
+    d = _native()
+    d.bridge._validate_inputs_v2(pack.capsule, d.n, d.cp, max(limits.max_numeric_bytes, 1 << 20))
+    plan = _typed_plan_v2(pack, limits, admitted_plan)
+    _validate_v2(pack, limits, plan)
+    encoded, _ = _encoded_v2(pack, limits, hashed=True)
+    if pack.content_sha256 != hashlib.sha256(_json(encoded)).hexdigest():
+        _fail("content_mismatch", "dynamic original aliases/content changed")
+    return _DecodedOriginalInputsV2(pack, plan, _DECODED_V2_TOKEN)
+
+
+def validate_original_inputs_v2(pack, *, limits=_DEFAULT_LIMITS, admitted_plan=None):
+    return _validated_original_inputs_v2(pack, limits, admitted_plan).originals.content_sha256
+
+
+class _EncoderV2(_Encoder):
+    def encode(self, pack):
+        context = pack.capsule.context
+        anchors = {name: getattr(context, name) for name in _ANCHORS[:-1]}
+        anchors["context"] = context
+        if any(
+            not dataclasses.is_dataclass(v) and type(v) is not self.np.ndarray
+            for v in anchors.values()
+        ):
+            _fail(
+                "anchor_layout",
+                "named anchors are native objects/arrays, never scalar singletons",
+            )
+        if len({id(v) for v in anchors.values()}) != len(anchors):
+            _fail("anchor_layout", "shared anchors must have distinct roles")
+        self.anchor_ids = {id(v): name for name, v in anchors.items()}
+        definitions = [
+            [name, self.node(value, defining=name)] for name, value in anchors.items()
+        ]
+        body = self.node(_material_v2(pack))
+        arrays = []
+        for index, a in enumerate(self.arrays):
+            arrays.append(
+                {
+                    "name": f"a_{index:04d}.npy",
+                    "dtype": a.dtype.str,
+                    "shape": list(a.shape),
+                    "data_bytes": a.nbytes,
+                    "data_sha256": hashlib.sha256(
+                        memoryview(a).cast("B") if a.size else b""
+                    ).hexdigest()
+                    if self.hash_arrays
+                    else "0" * 64,
+                }
+            )
+        return {"anchors": definitions, "body": body, "arrays": arrays}
+
+def _encoded_v2(pack, limits, *, hashed):
+    import numpy as np
+
+    from masy.dense_schedule import DenseSchedule, RainEvent, RainInterval, WindEvent
+
+    _layout(pack, OriginalInputsV2, _ROOT_FIELDS_V2)
+    registry, budget = _registry_v2(), [limits.max_nodes]
+    _source_identity(pack.source_identity)
+    roots = {
+        "capsule": "masy.dense_checkpoint:DenseBoundaryInputsV2",
+        "wind": "masy.dense_runner:DenseWindInputs",
+        "water": "masy.dense_runner:DenseWaterInputs",
+        "control": "masy.dense_runner:DenseRunnerControl",
+        "runner_limits": "masy.dense_runner:DenseRunnerLimits",
+    }
+    for name, tag in roots.items():
+        _check_class(getattr(pack, name), registry[tag], budget=budget)
+    for name, cls in (
+        ("initial_inventory_kg", np.ndarray),
+        ("static_parts", dict),
+        ("static_parts_sha256", str),
+        ("static_record", dict),
+        ("static_sha256", str),
+        ("source_identity", dict),
+        ("recipes", dict),
+        ("vegetation_limits", dict),
+        ("content_sha256", str),
+    ):
+        if type(getattr(pack, name)) is not cls:
+            _fail("root_type", f"exact original root type required: {name}")
+    _check_class(
+        pack.capsule.context,
+        registry["maple_syrup.sediment_bed:BedContext"],
+        budget=budget,
+    )
+    _check_class(
+        pack.wind.config,
+        registry["maple.aeolian.scheduler.state:SchedulerPhysicsConfig"],
+        budget=budget,
+    )
+    _check_class(
+        pack.wind.initial_mobile_state,
+        registry["maple.core.types.cohort:MobileCohortState"],
+        budget=budget,
+    )
+    for name, tag in (
+        ("terrain", "maple_syrup.sediment_bed:TerrainReference"),
+        ("column", "maple_syrup.infiltration:ColumnParameters"),
+        ("field", "maple_syrup.rainfall:RainfallField"),
+        ("sediment", "maple_syrup.sediment_physics:SedimentPhysicsParameters"),
+    ):
+        _check_class(getattr(pack.water, name), registry[tag], budget=budget)
+    _check_class(
+        pack.control.sediment_control,
+        registry["maple_syrup.sediment_event:SedimentEventControl"],
+        budget=budget,
+    )
+    _check_class(
+        pack.control.completion_policy,
+        registry["maple_syrup.complete_event:CompletionPolicy"],
+        budget=budget,
+    )
+    cfg, ctx = pack.wind.config, pack.capsule.context
+    for name in _ANCHORS[:-1]:
+        if getattr(cfg, name) is not getattr(ctx, name):
+            _fail(
+                "anchor_layout",
+                f"first pack profile requires one shared anchor: {name}",
+            )
+    _layout(pack.schedule, DenseSchedule, ("events",))
+    if (
+        type(pack.schedule.events) is not tuple
+        or not 1 <= len(pack.schedule.events) <= limits.max_events
+    ):
+        _fail("schedule_invalid", "bounded event tuple required")
+    for event in pack.schedule.events:
+        if type(event) is WindEvent:
+            _layout(
+                event,
+                WindEvent,
+                ("duration_s", "shear_velocity_m_s", "direction_deg_cw_from_north"),
+            )
+            if any(type(v) is not float for v in vars(event).values()):
+                _fail("schedule_invalid", "exact native wind floats required")
+        elif type(event) is RainEvent:
+            _layout(event, RainEvent, ("intervals", "recession_guard_s"))
+            if type(event.recession_guard_s) is not float:
+                _fail("schedule_invalid", "exact native rain guard float required")
+            if (
+                type(event.intervals) is not tuple
+                or not 1 <= len(event.intervals) <= 64
+            ):
+                _fail(
+                    "profile_cap",
+                    "first pack profile permits at most64 rainfall intervals/event",
+                )
+            for interval in event.intervals:
+                _layout(interval, RainInterval, ("duration_s", "intensity_mm_h"))
+                if any(type(v) is not float for v in vars(interval).values()):
+                    _fail("schedule_invalid", "exact native rain floats required")
+        else:
+            _fail("schedule_invalid", "unsupported schedule event type")
+    encoder = _EncoderV2(limits, registry, hash_arrays=hashed, hint_budget=budget)
+    result = encoder.encode(pack)
+    if len(_json(result)) > limits.max_metadata_bytes:
+        _fail("metadata_cap", "encoded metadata cap")
+    return result, encoder.arrays
+
+def _validate_v2(pack, limits, plan):
+    from masy.clock import decode_time
+    from masy.dense_schedule import case_schedule_digest
+
+    d = _native()
+    np, ctx, cfg, water = d.n.np, pack.capsule.context, pack.wind.config, pack.water
+    d.bridge._validate_inputs_v2(
+        pack.capsule, d.n, d.cp, max(limits.max_numeric_bytes, 1 << 20)
+    )
+    g, nc = ctx.geometry, len(ctx.grain_classes.classes)
+    nv = pack.capsule.case_record["n_voxels"]
+    if (
+        g.ny * g.nx > limits.max_cells
+        or nc > limits.max_classes
+        or type(nv) is not int
+        or not 1 <= nv <= limits.max_voxels
+        or len(pack.schedule.events) > limits.max_events
+    ):
+        _fail("profile_cap", "default Dense dimension/event cap")
+    if (
+        type(pack.schedule) is not d.schedule
+        or not _same(
+            pack.schedule, d.schedule.from_record(pack.schedule.as_record()), limits
+        )
+        or _json(pack.schedule.as_record())
+        != _json(d.schedule.from_record(pack.schedule.as_record()).as_record())
+    ):
+        _fail("schedule_invalid", "schedule is not exact supported record")
+    _keys(pack.recipes, _RECIPES, "recipes")
+    if pack.recipes != _RECIPES:
+        _fail(
+            "recipe_unsupported",
+            "only fixed_ksat/nativePlot1defaults/resolved rainfall/native bins",
+        )
+    _source_identity(pack.source_identity)
+    d.runner.DenseRunner._check_wind(d.n, SimpleNamespace(context=ctx), pack.wind)
+    d.pool_validate(pack.wind.initial_mobile_state)
+    pool = pack.wind.initial_mobile_state
+    if pool.mass_kg.size > limits.max_cohorts:
+        _fail("profile_cap", "flat cohort cap")
+    for name in d.cp._MOBILE:
+        value = getattr(pool, name)
+        if value is None:
+            continue
+        dtype = (
+            np.dtype("int32")
+            if name in d.cp._MOBILE_INTS
+            else np.dtype(
+                "bool" if name in ("active_mask", "live_has_turned") else "float64"
+            )
+        )
+        if (
+            type(value) is not np.ndarray
+            or value.dtype != dtype
+            or value.shape != pool.mass_kg.shape
+        ):
+            _fail("pool_layout", f"original pool {name} dtype/shape")
+    if any(getattr(pool, name) is not None for name in d.cp._MOBILE[-4:]):
+        _fail(
+            "profile_unsupported", "active trajectory/live continuation is unsupported"
+        )
+    bins = cfg.particle_transport.quantile_bins
+    if (
+        type(bins) is not int
+        or not 1 <= bins <= 64
+        or cfg.hop_bins.hop_distance_m.shape != (nc, bins)
+        or cfg.hop_bins.weight.shape != (nc, bins)
+    ):
+        _fail(
+            "profile_cap",
+            "bounded declared/resolved native hop bins must agree before factory allocation",
+        )
+    if not _same(
+        cfg.hop_bins, d.bins(cfg.particle_transport, ctx.grain_classes), limits
+    ):
+        _fail("recipe_mismatch", "all native hop-bin fields must be exact")
+    column = water.column
+    if column.model != "fixed_ksat":
+        _fail("recipe_unsupported", "only native fixed_ksat column")
+    for name in (
+        "ksat_m_per_s",
+        "suction_m",
+        "drainage_parameter",
+        "theta_sat",
+        "soil_thickness_m",
+        "active_mask",
+    ):
+        array = getattr(column, name)
+        if (
+            type(array) is not np.ndarray
+            or array.shape != (g.ny, g.nx)
+            or array.dtype != (np.bool_ if name == "active_mask" else np.float64)
+        ):
+            _fail(
+                "column_layout",
+                "native column inputs must match the bounded original grid",
+            )
+    made = d.column(
+        model="fixed_ksat",
+        **{
+            name: getattr(column, name)
+            for name in (
+                "ksat_m_per_s",
+                "suction_m",
+                "drainage_parameter",
+                "theta_sat",
+                "soil_thickness_m",
+                "active_mask",
+            )
+        },
+    )
+    if not _same(column, made, limits) or not _same(
+        water.sediment, d.sediment(xp=np), limits
+    ):
+        _fail("recipe_mismatch", "all column/Plot1 resolved fields must be exact")
+    if water.sediment.n_classes != nc:
+        _fail(
+            "profile_unsupported", "native Plot1 class count differs from original bed"
+        )
+    if not _same(
+        water.field,
+        d.rainfall(g.ny, g.nx, scale=water.field.multiplier, active_mask=None, xp=np),
+        limits,
+    ):
+        _fail("recipe_mismatch", "all resolved rainfall fields must be exact")
+    terrain = water.terrain
+    for name in (
+        "initial_full_elevation_m",
+        "initial_committed_elevation_m",
+        "export_receiver_full",
+        "active_mask",
+        "friction_factor",
+    ):
+        a = getattr(terrain, name)
+        shape = (
+            (g.ny + 2, g.nx + 2)
+            if name in ("initial_full_elevation_m", "export_receiver_full")
+            else (g.ny, g.nx)
+        )
+        dtype = (
+            np.bool_ if name in ("export_receiver_full", "active_mask") else np.float64
+        )
+        if type(a) is not np.ndarray or a.shape != shape or a.dtype != dtype:
+            _fail("terrain_layout", name)
+    if terrain.dx_m != g.dx_m:
+        _fail("terrain_layout", "terrain spacing differs")
+    # Native static graph validation only; no bed, storm, commit or routing receipt.
+    d.n.routing_graph_from_elevation(
+        terrain, terrain.initial_committed_elevation_m, xp=np
+    )
+    cover = water.vegetation_cover_fraction
+    if (
+        d.bed._array_digest(cover)
+        != pack.capsule.case_record["vegetation"]["fields"]["raster"]["fields"][
+            "cover_fraction"
+        ]
+    ):
+        _fail(
+            "prescribed_mismatch", "original water cover differs from prescribed case"
+        )
+    soil = water.initial_soil_water_m
+    if (
+        type(soil) is not np.ndarray
+        or soil.dtype != np.float64
+        or soil.shape != (g.ny, g.nx)
+        or not bool(np.isfinite(soil).all())
+        or bool((soil < 0).any())
+        or bool(np.signbit(soil).any())
+    ):
+        _fail("soil_layout", "original native soil must be finite float64 >=+0")
+    sc, policy = pack.control.sediment_control, pack.control.completion_policy
+    sc.validated()
+    policy.validated()
+    if (
+        sc.transport_scheme != "upwind"
+        or sc.storm.implementation != "array"
+        or sc.commit is not True
+        or sc.record_exchange_history is not False
+        or sc.deep_publication != "step"
+    ):
+        _fail("profile_unsupported", "native water profile differs")
+    pack.runner_limits.__post_init__()
+    if (
+        len(pack.schedule.events) > pack.runner_limits.max_events
+        or sc.storm.max_steps > pack.runner_limits.max_storm_steps
+        or type(pack.control.report_every_s) is not float
+        or not math.isfinite(pack.control.report_every_s)
+        or pack.control.report_every_s <= 0
+    ):
+        _fail("control_invalid", "original limits/cadence differ")
+    inv = pack.initial_inventory_kg
+    if (
+        type(inv) is not np.ndarray
+        or inv.dtype != np.float64
+        or inv.shape != (nc,)
+        or not bool(np.isfinite(inv).all())
+        or bool((inv < 0).any())
+    ):
+        _fail("inventory_layout", "original inventory audit vector layout")
+    view = SimpleNamespace(
+        _wind=pack.wind,
+        _water=water,
+        _control=pack.control,
+        _schedule=pack.schedule,
+        _production=None,
+        _vegetation_plan=plan,
+        _bed=SimpleNamespace(_dynamic=SimpleNamespace(
+            initial_native_content_sha256=pack.capsule.case_record["vegetation_profile"]["initial_native_content_sha256"])),
+    )
+    parts = d.runner.DenseRunner._static_parts_record(view, d.n)
+    if (
+        not _same(parts, pack.static_parts, limits)
+        or d.bed._sha256(parts) != pack.static_parts_sha256
+    ):
+        _fail("static_mismatch", "original controlling fields differ")
+    from masy.landscape_vegetation import STATIC_SCHEMA_V2, VEGETATION_PROFILE
+    expected = {
+        "schema": STATIC_SCHEMA_V2,
+        "profile": {**dict(d.runner.PROFILE), "vegetation": VEGETATION_PROFILE,
+                    "shared_resources": "vegetation_only_empty_water_exchange"},
+        "case_sha256": pack.capsule.case_sha256,
+        "schedule_sha256": pack.schedule.digest,
+        "case_schedule_sha256": case_schedule_digest(
+            pack.capsule.case_sha256, pack.schedule
+        ),
+        "controlling_inputs_sha256": pack.static_parts_sha256,
+        "limits": pack.runner_limits.as_record(),
+        "initial_evolving": {
+            "mobile_state_sha256": d.bed._sha256(
+                d.runner._canonical_input(np, pool, "mobile")
+            ),
+            "soil_water_m": d.bed._array_digest(soil),
+        },
+    }
+    if (
+        not _same(expected, pack.static_record, limits)
+        or d.bed._sha256(expected) != pack.static_sha256
+    ):
+        _fail("static_mismatch", "original static/initial-evolving record differs")
+    decode_time(pack.capsule.case_record["initial_time_s"])
+
+def capture_original_inputs_v2(
+    runner, *, source_identity, recipes=None, limits=_DEFAULT_LIMITS
+):
+    """Capture a quiescent NEW default runner by reference; never initialize one."""
+    d = _native()
+    from masy.clock import ClockLedger, decode_time
+
+    if type(runner) is not d.runner.DenseRunner or set(vars(runner)) != _RUNNER_FIELDS_V2:
+        _fail("runner_layout", "only exact default constructor fields")
+    if type(runner._ledger) is not ClockLedger or set(vars(runner._ledger)) != {
+        "epoch",
+        "_entries",
+    }:
+        _fail("not_genesis", "exact initial clock ledger required")
+    if (
+        runner._production is not None
+        or type(runner._next) is not int
+        or runner._next != 0
+        or type(runner._n_accepted) is not int
+        or runner._n_accepted != 0
+        or type(runner._receipts) is not list
+        or runner._receipts != []
+        or runner._routing is not None
+        or runner._active_evidence is not None
+        or runner._stop_receipt is not None
+        or type(runner._ledger._entries) is not list
+        or runner._ledger._entries != []
+        or type(runner._ledger.epoch) is not float
+        or runner._ledger.records() != []
+        or runner._pool is not runner._wind.initial_mobile_state
+    ):
+        _fail("not_genesis", "original pack capture requires a NEW runner")
+    OriginalPackLimits.__post_init__(limits)
+    from masy.landscape_vegetation import VegetationPlan
+    plan = runner._vegetation_plan
+    if (type(plan) is not VegetationPlan or runner._bed._dynamic.plan is not plan
+            or runner._bed._dynamic.version != 0
+            or runner._bed._dynamic.cursor["next_event_index"] != 0
+            or type(runner._vegetation_copied_bytes) is not int
+            or runner._vegetation_copied_bytes != 48 * plan.cells):
+        _fail("not_genesis", "dynamic original capture requires the original plan/version/counter")
+    bed = runner._bed
+    # Build only a reference carrier for a COMPLETE cap/layout pass. No deep copy,
+    # source hash, native inventory scan or native capsule capture precedes it.
+    capsule = d.bridge.DenseBoundaryInputsV2(
+        bed._case_record,
+        bed._held_inputs,
+        bed.context,
+        bed.limits,
+        bed._initialization_receipt,
+        bed._prescribed_digests,
+        bed.case_sha256,
+        "",
+    )
+    pack = OriginalInputsV2(
+        capsule,
+        runner._schedule,
+        runner._wind,
+        runner._water,
+        runner._control,
+        runner._limits,
+        runner._inventory0,
+        runner._static_parts,
+        runner._static_parts_sha256,
+        runner._static_record,
+        runner._static_sha256,
+        source_identity,
+        dict(_RECIPES) if recipes is None else recipes,
+        runner._vegetation_plan.limits.as_record(),
+        "",
+    )
+    _encoded_v2(pack, limits, hashed=False)
+    expected_totals = {
+        "export",
+        "input",
+        "bound",
+        "internal_terminal_deposition",
+        "water",
+        "n_entry_reroutes",
+        "n_event_reroutes",
+    }
+    _keys(runner._totals, expected_totals, "genesis totals")
+    nc = len(bed.context.grain_classes.classes)
+    if (
+        type(runner._n_classes) is not int
+        or runner._n_classes != nc
+        or type(runner._inventory_elements) is not int
+        or runner._inventory_elements
+        != bed.context.geometry.ny
+        * bed.context.geometry.nx
+        * (bed.case_record["n_voxels"] + 1)
+        or type(bed.time_s) is not float
+        or bed.time_s.hex()
+        != decode_time(pack.capsule.case_record["initial_time_s"]).hex()
+    ):
+        _fail("not_genesis", "original dimensions/epoch differ")
+    for name in ("export", "input", "bound", "internal_terminal_deposition"):
+        a = runner._totals[name]
+        if (
+            type(a) is not d.n.np.ndarray
+            or a.dtype != d.n.np.float64
+            or a.shape != (nc,)
+            or bool(d.n.np.any(a.view(d.n.np.uint64) != 0))
+        ):
+            _fail("not_genesis", "initial cumulative class totals must be exact +0")
+    _keys(
+        runner._totals["water"],
+        (
+            "rain_m3",
+            "drainage_m3",
+            "storm_export_m3",
+            "dry_surface_removed_m3",
+            "dry_soil_removed_m3",
+        ),
+        "genesis water totals",
+    )
+    if any(
+        type(v) is not float or v.hex() != (0.0).hex()
+        for v in runner._totals["water"].values()
+    ) or any(
+        type(runner._totals[k]) is not int or runner._totals[k] != 0
+        for k in ("n_entry_reroutes", "n_event_reroutes")
+    ):
+        _fail("not_genesis", "initial cumulative water/reroute totals differ")
+    bed.verify_case_inputs()
+    if (
+        bed.time_s.hex() != runner._ledger.epoch.hex()
+        or bed.identity_sha256() != runner._accepted_bed
+        or runner._private_identity(d.n.np, runner._pool, runner._soil)
+        != runner._accepted_private
+    ):
+        _fail("not_genesis", "initial boundary changed")
+    if not _same(runner._soil, runner._water.initial_soil_water_m, limits):
+        _fail("not_genesis", "initial soil changed")
+    pack = dataclasses.replace(
+        pack,
+        capsule=d.bridge.DenseBoundaryInputsV2.capture(bed),
+        static_parts=copy.deepcopy(pack.static_parts),
+        static_record=copy.deepcopy(pack.static_record),
+        source_identity=copy.deepcopy(source_identity),
+        recipes=copy.deepcopy(pack.recipes),
+    )
+    _encoded_v2(pack, limits, hashed=False)
+    _validate_v2(pack, limits, _typed_plan_v2(pack, limits, runner._vegetation_plan))
+    if not _same(
+        pack.water.terrain.initial_committed_elevation_m,
+        d.n.committed_elevation_m(bed.state.committed_topography),
+        limits,
+    ):
+        _fail(
+            "not_genesis",
+            "terrain reference differs from actual initial native committed state",
+        )
+    if not _same(
+        pack.initial_inventory_kg,
+        d.n.np.asarray(d.n.bed_inventory(bed.state), dtype=d.n.np.float64),
+        limits,
+    ):
+        _fail("not_genesis", "original inventory differs from actual source bed")
+    encoded, _ = _encoded_v2(pack, limits, hashed=True)
+    pack = dataclasses.replace(
+        pack, content_sha256=hashlib.sha256(_json(encoded)).hexdigest()
+    )
+    validate_original_inputs_v2(pack, limits=limits, admitted_plan=runner._vegetation_plan)
+    return pack
+
+def save_original_inputs_v2(path, pack, *, limits=_DEFAULT_LIMITS):
+    """Write a new exclusive sealed pack. No HEAD or acceptance publication."""
+    OriginalPackLimits.__post_init__(limits)
+    decoded = _validated_original_inputs_v2(pack, limits)
+    digest = decoded.originals.content_sha256
+    encoded, arrays = _encoded_v2(pack, limits, hashed=True)
+    target = Path(path)
+    if target.name in ("", ".", ".."):
+        _fail("path_refused", "new pack name required")
+    estimate = (
+        sum(a.nbytes + limits.max_header_bytes for a in arrays)
+        + limits.max_metadata_bytes
+    )
+    if estimate > limits.max_serialized_bytes:
+        _fail("serialized_cap", "conservative serialized preflight exceeds cap")
+    parent = _open_dir(target.parent)
+    directory = None
+    try:
+        space = os.fstatvfs(parent)
+        if (
+            space.f_bavail * space.f_frsize < estimate + (1 << 20)
+            or space.f_favail < len(arrays) + 2
+        ):
+            _fail("storage_cap", "insufficient free space/inodes with bounded headroom")
+        os.mkdir(
+            target.name, mode=0o700, dir_fd=parent
+        )  # Exclusive; never replaces an existing entry.
+        created = os.stat(target.name, dir_fd=parent, follow_symlinks=False)
+        directory = os.open(
+            target.name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            dir_fd=parent,
+        )
+        actual = os.fstat(directory)
+        if (actual.st_dev, actual.st_ino) != (created.st_dev, created.st_ino) or _names(
+            directory, limits
+        ):
+            _fail("file_changed", "new pack directory replaced/nonempty")
+    except BaseException:
+        if directory is not None:
+            os.close(directory)
+        os.close(parent)
+        raise
+    linked = False
+    try:
+        files = []
+        used = 0
+        for description, a in zip(encoded["arrays"], arrays, strict=True):
+            fd = os.open(
+                description["name"],
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                0o600,
+                dir_fd=directory,
+            )
+            with os.fdopen(fd, "wb") as stream:
+                import numpy as np
+
+                np.lib.format.write_array(stream, a, allow_pickle=False)
+                os.fchmod(stream.fileno(), 0o400)
+                stream.flush()
+                os.fsync(stream.fileno())
+            fd, s = _open_file(directory, description["name"])
+            try:
+                used += s.st_size
+                if used > limits.max_serialized_bytes:
+                    _fail("serialized_cap", "serialized bytes exceed cap")
+                files.append(
+                    {
+                        **description,
+                        "file_bytes": s.st_size,
+                        "sha256": _hash_fd(fd, s.st_size),
+                    }
+                )
+            finally:
+                os.close(fd)
+        # A source write during I/O must refuse before the manifest can be sealed.
+        if validate_original_inputs_v2(pack, limits=limits, admitted_plan=decoded.plan) != digest:
+            _fail("content_mismatch", "original identity changed during writing")
+        for row in files:
+            _verify_written(directory, row, limits)
+        manifest = {
+            "schema": SCHEMA_V2,
+            "profile": PROFILE_V2,
+            "content_sha256": digest,
+            "wire": _flat_wire(encoded),
+            "files": files,
+        }
+        manifest["manifest_sha256"] = hashlib.sha256(_json(manifest)).hexdigest()
+        raw = _json(manifest)
+        if (
+            len(raw) > limits.max_metadata_bytes
+            or used + len(raw) > limits.max_serialized_bytes
+        ):
+            _fail("serialized_cap", "aggregate pack/metadata cap")
+        fd = os.open(
+            "manifest.tmp",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600,
+            dir_fd=directory,
+        )
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(raw)
+            os.fchmod(stream.fileno(), 0o400)
+            stream.flush()
+            os.fsync(stream.fileno())
+        fd, ms = _open_file(directory, "manifest.tmp")
+        try:
+            if (
+                ms.st_nlink != 1
+                or ms.st_size != len(raw)
+                or os.read(fd, len(raw) + 1) != raw
+                or _stat_id(os.fstat(fd)) != _stat_id(ms)
+            ):
+                _fail(
+                    "manifest_identity", "actual written manifest differs before seal"
+                )
+        finally:
+            os.close(fd)
+        os.fsync(directory)
+        linked = True  # Publication may happen from this syscall onward.
+        os.link(
+            "manifest.tmp",
+            "manifest.json",
+            src_dir_fd=directory,
+            dst_dir_fd=directory,
+            follow_symlinks=False,
+        )
+        os.unlink("manifest.tmp", dir_fd=directory)
+        os.fsync(directory)
+        os.fsync(parent)
+        return manifest["manifest_sha256"]
+    except BaseException as exc:
+        if linked:
+            message = f"original pack seal may have been published at {target}; durability uncertain"
+            if not isinstance(exc, Exception):
+                exc.add_note(message)
+                raise
+            raise OriginalPackPublicationUncertain(message) from exc
+        raise
+    finally:
+        os.close(directory)
+        os.close(parent)
+
+def load_original_inputs_v2(
+    path, *, expected_manifest_sha256, expected_source_identity, limits=_DEFAULT_LIMITS
+):
+    """Load only original typed inputs; native physical genesis validation is later."""
+    OriginalPackLimits.__post_init__(limits)
+    _source_identity(expected_source_identity)
+    expected_source_identity = dict(expected_source_identity)
+    if type(expected_manifest_sha256) is not str or not _SHA.fullmatch(
+        expected_manifest_sha256
+    ):
+        _fail("manifest_identity", "expected immutable pack identity is required")
+    directory = _open_dir(path)
+    opened = []
+    try:
+        names = _names(directory, limits)
+        if len(names) > limits.max_files + 2 or "manifest.json" not in names:
+            _fail("file_cap", "artifact entry count/unsealed pack")
+        # Bound ALL raw file sizes/count/aggregate BEFORE hashing or NPY parsing.
+        total = 0
+        descriptors = {}
+        for name in sorted(names):
+            fd, s = _open_file(directory, name)
+            opened.append(fd)
+            descriptors[name] = (fd, s)
+            if name not in ("manifest.json", "manifest.tmp") and s.st_nlink != 1:
+                _fail("file_type", "foreign numeric hardlink refused")
+            if name == "manifest.tmp":
+                prior = descriptors["manifest.json"][1]
+                if _stat_id(s) != _stat_id(prior) or s.st_nlink != 2:
+                    _fail(
+                        "unlisted_file",
+                        "only exact leftover seal hardlink is recoverable",
+                    )
+            else:
+                total += s.st_size
+            if total > limits.max_serialized_bytes:
+                _fail(
+                    "serialized_cap", "raw aggregate serialized cap before hash/header"
+                )
+            if (
+                name in ("manifest.json", "manifest.tmp")
+                and s.st_size > limits.max_metadata_bytes
+            ):
+                _fail("metadata_cap", "raw metadata cap")
+        mfd, ms = descriptors["manifest.json"]
+        raw = os.read(mfd, ms.st_size + 1)
+        manifest = _strict_json(raw, limits)
+        _keys(
+            manifest,
+            ("schema", "profile", "content_sha256", "wire", "files", "manifest_sha256"),
+            "manifest",
+        )
+        seal = manifest["manifest_sha256"]
+        unsigned = {k: v for k, v in manifest.items() if k != "manifest_sha256"}
+        if (
+            manifest["schema"] != SCHEMA_V2
+            or manifest["profile"] != PROFILE_V2
+            or seal != expected_manifest_sha256
+            or hashlib.sha256(_json(unsigned)).hexdigest() != seal
+            or _json(manifest) != raw
+        ):
+            _fail("manifest_identity", "schema/profile/canonical seal mismatch")
+        _keys(manifest["wire"], ("anchors", "body", "nodes"), "wire")
+        if (
+            type(manifest["wire"]["nodes"]) is not list
+            or len(manifest["wire"]["nodes"]) > limits.max_nodes
+        ):
+            _fail("metadata_cap", "flat typed node count")
+        # Check the caller's independently verified source reference BEFORE native
+        # class construction, payload hashing, factory invocation or expansion.
+        table = manifest["wire"]["nodes"]
+        body_index = manifest["wire"]["body"]
+        if type(body_index) is not int or not 0 <= body_index < len(table):
+            _fail("wire_invalid", "body index")
+        root = table[body_index]
+        if (
+            type(root) is not dict
+            or root.get("t") != "dict"
+            or type(root.get("v")) is not list
+            or any(
+                type(r) is not list or len(r) != 2 or type(r[0]) is not str
+                for r in root["v"]
+            )
+        ):
+            _fail("wire_invalid", "original body rows")
+        source_rows = [r[1] for r in root["v"] if r[0] == "source_identity"]
+        if len(source_rows) != 1:
+            _fail("source_identity", "missing/duplicate source identity")
+        recorded_source = _Decoder([], {}, limits, table).node(source_rows[0])
+        _source_identity(recorded_source)
+        _source_identity(expected_source_identity)
+        if recorded_source != expected_source_identity:
+            _fail(
+                "source_identity",
+                "original pack belongs to a different expected source identity",
+            )
+        _raw_dynamic_controls_v2(table, root, limits)
+        rows = manifest["files"]
+        if type(rows) is not list or len(rows) > limits.max_files:
+            _fail("file_cap", "manifest numerical file count")
+        required = {"manifest.json"}
+        if "manifest.tmp" in descriptors:
+            _tfd, ts = descriptors["manifest.tmp"]
+            if _stat_id(ts) != _stat_id(ms) or ts.st_nlink != 2:
+                _fail(
+                    "unlisted_file", "only exact leftover seal hardlink is recoverable"
+                )
+            required.add("manifest.tmp")
+        elif ms.st_nlink != 1:
+            _fail("file_type", "foreign manifest hardlink refused")
+        import numpy as np
+
+        numeric, arrays = 0, []
+        for index, row in enumerate(rows):
+            _keys(
+                row,
+                (
+                    "name",
+                    "dtype",
+                    "shape",
+                    "data_bytes",
+                    "data_sha256",
+                    "file_bytes",
+                    "sha256",
+                ),
+                "array description",
+            )
+            if (
+                row["name"] != f"a_{index:04d}.npy"
+                or type(row["dtype"]) is not str
+                or row["dtype"] not in _DTYPES
+            ):
+                _fail("array_layout", "closed array name/dtype")
+            shape = row["shape"]
+            dimension_cap = max(
+                limits.max_cohorts,
+                limits.max_cells + 2,
+                limits.max_classes,
+                limits.max_voxels,
+            )
+            if (
+                type(shape) is not list
+                or len(shape) > 4
+                or any(type(v) is not int or not 0 <= v <= dimension_cap for v in shape)
+            ):
+                _fail("array_layout", "shape")
+            size = np.dtype(row["dtype"]).itemsize
+            for dim in shape:
+                size *= dim
+                if size > limits.max_numeric_bytes:
+                    _fail("array_cap", "shape product cap before expansion")
+            if type(row["data_bytes"]) is not int or size != row["data_bytes"]:
+                _fail("array_layout", "data byte count")
+            numeric += size
+            if numeric > limits.max_numeric_bytes:
+                _fail("array_cap", "aggregate expansion cap")
+            if row["name"] not in descriptors:
+                _fail("missing_file", "numerical file missing")
+            fd, s = descriptors[row["name"]]
+            if type(row["file_bytes"]) is not int or s.st_size != row["file_bytes"]:
+                _fail("array_layout", "raw file size differs")
+            if (
+                type(row["sha256"]) is not str
+                or not _SHA.fullmatch(row["sha256"])
+                or type(row["data_sha256"]) is not str
+                or not _SHA.fullmatch(row["data_sha256"])
+            ):
+                _fail("array_layout", "exact data/file SHA256 fields required")
+            required.add(row["name"])
+        if set(names) != required:
+            _fail("unlisted_file", "unknown entries")
+        # Every raw/expanded aggregate and shape has passed before first payload
+        # hash, NPY header parse or numerical allocation.
+        for row in rows:
+            fd, s = descriptors[row["name"]]
+            shape, size = row["shape"], row["data_bytes"]
+            if _stat_id(os.fstat(fd)) != _stat_id(s):
+                _fail("file_changed", "changed before payload read")
+            if _hash_fd(fd, s.st_size) != row["sha256"]:
+                _fail("file_hash", "numerical hash mismatch")
+            os.lseek(fd, 0, os.SEEK_SET)
+            with os.fdopen(os.dup(fd), "rb") as stream:
+                actual_shape, fortran, dtype = _read_npy_header(stream, limits)
+                if (
+                    list(actual_shape) != shape
+                    or fortran is not False
+                    or dtype.str != row["dtype"]
+                    or dtype.hasobject
+                    or dtype.fields is not None
+                    or stream.tell() + size != s.st_size
+                ):
+                    _fail("array_layout", "raw NPY header contract")
+                a = np.fromfile(stream, dtype=dtype, count=size // dtype.itemsize)
+            if a.size != size // dtype.itemsize:
+                _fail("file_changed", "truncated numerical data")
+            a = a.reshape(tuple(shape))
+            a.base.flags.writeable = False
+            if (
+                hashlib.sha256(memoryview(a).cast("B") if a.size else b"").hexdigest()
+                != row["data_sha256"]
+            ):
+                _fail("array_hash", "expanded raw bytes differ")
+            a.flags.writeable = False
+            arrays.append(a)
+        decoder = _Decoder(arrays, _registry_v2(), limits, manifest["wire"]["nodes"])
+        anchors = manifest["wire"]["anchors"]
+        if (
+            type(anchors) is not list
+            or any(type(r) is not list or len(r) != 2 for r in anchors)
+            or [r[0] for r in anchors] != list(_ANCHORS)
+        ):
+            _fail("anchor_invalid", "closed ordered anchors")
+        for name, node in anchors:
+            decoder.anchors[name] = decoder.node(node)
+        body = decoder.node(manifest["wire"]["body"])
+        if decoder.used != set(range(len(decoder.table))):
+            _fail("wire_invalid", "unreferenced typed nodes")
+        if decoder.used_arrays != set(range(len(arrays))):
+            _fail("wire_invalid", "unreferenced numerical files")
+        _keys(
+            body,
+            tuple(n for n in _ROOT_FIELDS_V2 if n != "content_sha256"),
+            "original body",
+        )
+        d = _native()
+        schedule_record = body["schedule"]
+        if (
+            type(schedule_record) is not dict
+            or type(schedule_record.get("events")) is not list
+            or not 1 <= len(schedule_record["events"]) <= limits.max_events
+        ):
+            _fail("profile_cap", "bounded raw schedule before native construction")
+        for event in schedule_record["events"]:
+            if (
+                type(event) is not dict
+                or event.get("kind") == "rain"
+                and (
+                    type(event.get("intervals")) is not list
+                    or not 1 <= len(event["intervals"]) <= 64
+                )
+            ):
+                _fail(
+                    "profile_cap",
+                    "bounded raw rainfall intervals before native construction",
+                )
+        body["schedule"] = d.schedule.from_record(body["schedule"])
+        pack = OriginalInputsV2(**body, content_sha256=manifest["content_sha256"])
+        decoded = _validated_original_inputs_v2(pack, limits)
+        for name, (fd, before) in descriptors.items():
+            if _stat_id(os.fstat(fd)) != _stat_id(before):
+                _fail("file_changed", "opened file changed during read")
+            live = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            if _stat_id(live) != _stat_id(before):
+                _fail("file_changed", "artifact name changed during read")
+        if set(_names(directory, limits)) != set(names):
+            _fail("file_changed", "artifact entries changed")
+        return decoded
+    finally:
+        for fd in opened:
+            os.close(fd)
+        os.close(directory)

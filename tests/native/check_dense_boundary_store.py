@@ -515,7 +515,7 @@ module['_child_main'](sys.argv[1],Path(sys.argv[2]),sys.argv[3])
 
     def test_13_unsupported_runtime_kind_before_native(self):
         reference = copy.deepcopy(self.reference)
-        reference["kind"] = "committed_cpu_lock"
+        reference["kind"] = "unsupported_runtime_kind"
         with (
             mock.patch.object(
                 c,

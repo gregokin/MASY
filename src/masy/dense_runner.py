@@ -625,6 +625,12 @@ class DenseRunner:
         from masy.dense_runner_checkpoint import _construct_passive_runner
         return _construct_passive_runner(cls, loaded)
 
+    @classmethod
+    def _from_passive_boundary_load_v2(cls, loaded):
+        """Private immediate checked dynamic-loader handoff only."""
+        from masy.dense_runner_checkpoint import _construct_passive_runner_v2
+        return _construct_passive_runner_v2(cls, loaded)
+
     # preflight -------------------------------------------------------------------------------------------------
     @staticmethod
     def _check_wind(n: SimpleNamespace, bed: DenseBed, wind: DenseWindInputs) -> None:

@@ -3271,3 +3271,1842 @@ def _write_passive_boundary(
         if directory is not None:
             os.close(directory)
         os.close(parent)
+
+
+
+
+# Explicit passive dynamic artifacts. C/v1 entrypoints never select these APIs.
+SCHEMA_V2 = "masy.dense_runner_boundary.v2"
+PROFILE_V2 = "dynamic_manual_dense_numpy_accepted_v1"
+_ORIGINAL_FORMAT_V2 = oi.SCHEMA_V2
+_NATIVE_CALLER_SCHEMA_V2 = "masy.dense_runner_boundary_native.v2"
+RUNNER_FIELDS_V2 = (*RUNNER_FIELDS, "_vegetation_plan", "_vegetation_copied_bytes")
+_VEGETATION_BODY_KEYS_V2 = ("input_version", "input_version_sha256",
+    "input_native_content_sha256", "output_version", "output_version_sha256",
+    "output_native_content_sha256", "binding_sha256", "delta_receipts",
+    "water_input_mapping", "water_exchange", "required_snapshot_bytes",
+    "delta_copy_bytes", "accepted_run_copy_bytes")
+_WATER_MAPPING_V2 = "owned_current_cover_fraction_only;all_five_fields_retained_in_shared_envelope"
+_PASSIVE_V2_TOKEN = object()
+
+
+@dataclasses.dataclass(frozen=True, eq=False, slots=True)
+class _PassiveLoadV2:
+    fields: dict
+    evidence: dict
+    _authority: object
+
+
+class _PreparedBoundaryV2:
+    """Inert v2 owner; intentionally distinct from C's accepted v1 carrier."""
+    __slots__ = ("__evidence", "__owner")
+
+    def __init__(self, owner, evidence):
+        self.__owner, self.__evidence = owner, copy.deepcopy(evidence)
+
+    def diagnostics(self):
+        return copy.deepcopy(self.__evidence)
+
+
+def _vegetation_body_v2(body, limits):
+    from masy import landscape_vegetation as lv
+    value = body["vegetation"]
+    _keys(value, _VEGETATION_BODY_KEYS_V2, "dynamic receipt vegetation")
+    lv._json_admit(value, max_bytes=limits.max_receipt_bytes, max_nodes=3551)
+    for name in ("input_version", "output_version"):
+        _int(value[name], lv._CEILINGS["max_total_updates"], name)
+    for name in ("input_version_sha256", "input_native_content_sha256",
+            "output_version_sha256", "output_native_content_sha256", "binding_sha256"):
+        _digest(value[name], name)
+    for name in ("required_snapshot_bytes", "delta_copy_bytes", "accepted_run_copy_bytes"):
+        _int(value[name], lv._CEILINGS["max_run_copy_bytes"], name)
+    rows = value["delta_receipts"]
+    if (type(rows) is not list or len(rows) > lv._CEILINGS["max_total_updates"]
+            or value["water_input_mapping"] != _WATER_MAPPING_V2
+            or type(value["water_exchange"]) is not list or value["water_exchange"] != []):
+        _fail("resource_profile", "closed manual empty-exchange receipt required")
+    for row in rows:
+        _keys(row, lv._RECEIPT_KEYS, "dynamic delta receipt")
+
+
+def _preflight_resources_v2(value, limits):
+    from masy import landscape_vegetation as lv
+    _keys(value, bridge._RESOURCE_KEYS_V2, "dynamic shared resources")
+    lv._json_admit(value, max_bytes=limits.max_metadata_bytes, max_nodes=3600)
+    if (value["schema"] != bridge.RESOURCE_SCHEMA_V2
+            or value["profile"] != PROFILE_V2
+            or value["soil_array"] != "current_soil"
+            or type(value["water_exchange"]) is not list or value["water_exchange"] != []):
+        _fail("resource_profile", "only dynamic manual empty-exchange resources")
+    _int(value["version"], lv._CEILINGS["max_total_updates"], "resource version")
+    _int(value["accepted_run_copy_bytes"], lv._CEILINGS["max_run_copy_bytes"], "run copies")
+    for key in ("prescribed_identity_sha256", "vegetation_metadata_sha256"):
+        _digest(value[key], key)
+    env = value["vegetation"]
+    _keys(env, lv._ENVELOPE_KEYS, "dynamic vegetation envelope")
+    lv._json_admit(env, max_bytes=lv._CEILINGS["max_metadata_bytes"], max_nodes=3551)
+    if (env["metadata_sha256"] != value["vegetation_metadata_sha256"]
+            or type(env["version"]) is not int or env["version"] != value["version"]):
+        _fail("resource_identity", "independent metadata/version seals differ")
+    soil = value["soil_identity"]
+    _keys(soil, ("array",), "soil identity")
+    _keys(soil["array"], ("dtype", "shape", "order", "nbytes", "sha256"), "soil array")
+    shape = soil["array"]["shape"]
+    if (type(shape) is not list or len(shape) != 2
+            or any(type(v) is not int or v < 1 for v in shape)
+            or math.prod(shape) > limits.max_cells):
+        _fail("resource_identity", "bounded current soil dimensions required")
+    bridge._soil_identity_v2(soil, tuple(shape))
+
+
+def _reference_v2(value, expected_format):
+    _keys(value, ARTIFACT_REF_FIELDS, "artifact reference")
+    path = value["relative_path"]
+    try:
+        path_bytes = path.encode() if type(path) is str else b""
+    except UnicodeEncodeError:
+        _fail("artifact_reference", "artifact path must be valid UTF-8")
+    if (
+        type(value["format"]) is not str
+        or value["format"] != expected_format
+        or type(path) is not str
+        or not path
+        or len(path_bytes) > 4096
+        or path.startswith("/")
+        or any(x in ("", ".", "..") for x in path.split("/"))
+        or len(path.split("/")) > 24
+        or any(ord(character) < 32 or ord(character) == 127 for character in path)
+        or any(len(component.encode()) > 255 for component in path.split("/"))
+    ):
+        _fail("artifact_reference", "closed relative artifact path/format required")
+    _digest(value["manifest_file_sha256"], "artifact manifest")
+    if expected_format == _ORIGINAL_FORMAT_V2:
+        _digest(value["identity"], "original content")
+    else:
+        identity = value["identity"]
+        _keys(identity, bridge._IDENTITY_V2, "native22 identity")
+        if type(identity["schema"]) is not str or identity["schema"] != bridge.SCHEMA_V2:
+            _fail("artifact_reference", "existing native22 schema required")
+        for key in ("original_inputs_sha256", "case_sha256", "bed_identity_sha256", "plan_sha256", "vegetation_metadata_sha256"):
+            _digest(identity[key], key)
+        caller = identity["caller"]
+        _keys(
+            caller,
+            ("schema", "source_identity", "environment_sha256", "static_sha256", "shared_resource_record_sha256"),
+            "native caller",
+        )
+        if (
+            type(caller["schema"]) is not str
+            or caller["schema"] != _NATIVE_CALLER_SCHEMA_V2
+        ):
+            _fail("artifact_reference", "native caller schema required")
+        oi._source_identity(caller["source_identity"])
+        _digest(caller["environment_sha256"], "native environment")
+        _digest(caller["static_sha256"], "native static")
+        _digest(caller["shared_resource_record_sha256"], "native resources")
+    return path
+
+
+class _ArtifactsV2(_Artifacts):
+    def __init__(self, root, originals, genesis, current, limits, wrapper_raw=0):
+        BoundaryImageLimits.__post_init__(limits)
+        for reference, fmt in zip(
+            (originals, genesis, current),
+            (_ORIGINAL_FORMAT_V2, _NATIVE_FORMAT, _NATIVE_FORMAT),
+            strict=True,
+        ):
+            _reference_v2(reference, fmt)
+        self.root, self.refs, self.limits = (
+            Path(root).absolute(),
+            tuple(copy.deepcopy(value) for value in (originals, genesis, current)),
+            limits,
+        )
+        self.wrapper_raw = _int(
+            wrapper_raw, limits.max_serialized_bytes, "admitted wrapper raw bytes"
+        )
+        self.fds, self.dirs, self.files = [], {}, {}
+        self.raw = wrapper_raw
+        try:
+            for ref, fmt in zip(
+                self.refs,
+                (_ORIGINAL_FORMAT_V2, _NATIVE_FORMAT, _NATIVE_FORMAT),
+                strict=True,
+            ):
+                relative = _reference_v2(ref, fmt)
+                if relative in self.files:
+                    if self.files[relative][3] != fmt:
+                        _fail(
+                            "artifact_reference",
+                            "one child path cannot name two formats",
+                        )
+                    continue
+                parent_path = self.root
+                for part in (None, *relative.split("/")):
+                    if part is not None:
+                        parent_path /= part
+                    if parent_path not in self.dirs:
+                        fd = oi._open_dir(parent_path)
+                        self.fds.append(fd)
+                        self.dirs[parent_path] = (fd, os.fstat(fd))
+                directory = self.dirs[parent_path][0]
+                names = []
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        names.append(entry.name)
+                        if len(names) > (258 if fmt == _ORIGINAL_FORMAT_V2 else 4):
+                            _fail("file_cap", "bounded child entry count")
+                expected = {"checkpoint.json", "native_state.npz", "pending_state.npz"}
+                if fmt == _NATIVE_FORMAT:
+                    extra = set(names) - expected
+                    if not expected <= set(names) or len(extra) > 1:
+                        _fail("unlisted_file", "native literal file inventory")
+                    for name in extra:
+                        if re.fullmatch(r"\.manifest-[0-9a-f]{32}", name) is None:
+                            _fail("unlisted_file", "unknown native entry")
+                else:
+                    if "manifest.json" not in names or any(
+                        name not in ("manifest.json", "manifest.tmp")
+                        and re.fullmatch(r"a_[0-9]{4}\.npy", name) is None
+                        for name in names
+                    ):
+                        _fail("unlisted_file", "original fixed file inventory")
+                sizes, total, rows = {}, 0, {}
+                for name in names:
+                    s = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                    if not stat.S_ISREG(s.st_mode):
+                        _fail("file_type", "child is not regular/no-follow")
+                    manifest_name = (
+                        "manifest.json"
+                        if fmt == _ORIGINAL_FORMAT_V2
+                        else "checkpoint.json"
+                    )
+                    metadata = (
+                        name == manifest_name
+                        or name == "manifest.tmp"
+                        or name.startswith(".manifest-")
+                    )
+                    file_cap = (
+                        (4 << 20)
+                        if fmt == _ORIGINAL_FORMAT_V2 and metadata
+                        else (
+                            72 << 20
+                            if fmt == _ORIGINAL_FORMAT_V2
+                            else (
+                                1 << 20
+                                if metadata
+                                else limits.native_max_bytes + 327680
+                            )
+                        )
+                    )
+                    if s.st_size > file_cap:
+                        _fail("serialized_cap", "raw child per-file cap before hash")
+                    if name == "manifest.tmp" or name.startswith(".manifest-"):
+                        ms = os.stat(
+                            manifest_name, dir_fd=directory, follow_symlinks=False
+                        )
+                        if oi._stat_id(s) != oi._stat_id(ms) or s.st_nlink != 2:
+                            _fail(
+                                "unlisted_file",
+                                "only exact native/34 leftover seal hardlink permitted",
+                            )
+                    else:
+                        if s.st_nlink != (
+                            2
+                            if any(
+                                x == "manifest.tmp" or x.startswith(".manifest-")
+                                for x in names
+                            )
+                            and name == manifest_name
+                            else 1
+                        ):
+                            _fail("file_type", "foreign hard link refused")
+                        total += s.st_size
+                        sizes[name] = s.st_size
+                    rows[name] = oi._stat_id(s)
+                if fmt == _NATIVE_FORMAT:
+                    if (
+                        sum(sizes[n] for n in ("native_state.npz", "pending_state.npz"))
+                        > limits.native_max_bytes + 655360
+                    ):
+                        _fail(
+                            "serialized_cap", "native raw aggregate before hash/archive"
+                        )
+                elif total > 72 << 20:
+                    _fail("serialized_cap", "original raw aggregate before hash/header")
+                self.raw += total
+                if self.raw > limits.max_global_raw_bytes:
+                    _fail(
+                        "serialized_cap",
+                        "combined raw-input admission before child hash/expansion",
+                    )
+                self.files[relative] = (parent_path, directory, rows, fmt, sizes)
+            # Conservative data/readback reservation bound, no eager allocation.
+            self.reservation_bytes = self.raw + 2 * (
+                (64 << 20)
+                + 2 * limits.native_max_bytes
+                + limits.max_numeric_bytes
+                + limits.max_cache_bytes
+            )
+            # Total three-C-float64 current-cover/native-soil probe charge.
+            self.reservation_bytes += 24 * limits.max_cells
+            if self.reservation_bytes > 2 << 30:
+                _fail("memory_cap", "bounded component data/readback reservation")
+            self.check()
+        except BaseException:
+            self.close()
+            raise
+
+
+def _read_wrapper_v2(
+    path,
+    expected_manifest_sha256,
+    limits,
+    *,
+    metadata_only=False,
+    _manifest_name="manifest.json",
+    _admitted_raw=None,
+):
+    """Fixed5/7 raw NPY decoder reusing34's bounded prefix/FD primitives."""
+    _digest(expected_manifest_sha256, "expected boundary seal")
+    directory, opened = oi._open_dir(path), []
+    try:
+        names = oi._names(directory, limits)
+        descriptors, total = {}, 0
+        private_readback = _manifest_name == "manifest.tmp"
+        if _manifest_name not in names or (
+            private_readback and "manifest.json" in names
+        ):
+            _fail(
+                "unsealed",
+                "expected boundary manifest absent or invalid private readback",
+            )
+        for name in sorted(names):
+            fd, s = oi._open_file(directory, name)
+            opened.append(fd)
+            descriptors[name] = (fd, s)
+            if name == "manifest.tmp" and not private_readback:
+                prior = descriptors["manifest.json"][1]
+                if oi._stat_id(prior) != oi._stat_id(s) or s.st_nlink != 2:
+                    _fail(
+                        "unlisted_file",
+                        "only exact leftover own seal hardlink permitted",
+                    )
+            else:
+                total += s.st_size
+                cap = (
+                    limits.max_metadata_bytes
+                    if name == _manifest_name
+                    else limits.max_numeric_bytes + limits.max_header_bytes
+                )
+                if s.st_size > cap or total > limits.max_serialized_bytes:
+                    _fail(
+                        "serialized_cap",
+                        "wrapper raw file/aggregate cap before hash/header",
+                    )
+                if s.st_nlink != (
+                    2
+                    if not private_readback
+                    and name == "manifest.json"
+                    and "manifest.tmp" in names
+                    else 1
+                ):
+                    _fail("file_type", "foreign wrapper hardlink refused")
+        if _admitted_raw is not None and total != _admitted_raw:
+            _fail(
+                "file_changed", "wrapper raw bytes changed before second numerical read"
+            )
+        fd, ms = descriptors[_manifest_name]
+        raw = os.read(fd, ms.st_size + 1)
+        manifest = oi._strict_json(raw, limits)
+        _keys(manifest, ROOT_FIELDS, "boundary manifest")
+        seal = manifest["manifest_sha256"]
+        if (
+            manifest["schema"] != SCHEMA_V2
+            or manifest["profile"] != PROFILE_V2
+            or seal != expected_manifest_sha256
+            or _sha({k: v for k, v in manifest.items() if k != "manifest_sha256"})
+            != seal
+            or oi._json(manifest) != raw
+        ):
+            _fail("manifest_identity", "canonical boundary seal/schema/profile differs")
+        rows = manifest["arrays"]
+        if (
+            type(rows) is not list
+            or len(rows) not in (5, 7)
+            or len(rows) > limits.max_files
+        ):
+            _fail("array_layout", "exact5/7 wrapper arrays required")
+        required = {_manifest_name} | (
+            {"manifest.tmp"}
+            if not private_readback and "manifest.tmp" in names
+            else set()
+        )
+        numeric = 0
+        # All declarations and aggregate caps admitted BEFORE payload hash/header/expansion.
+        for i, row in enumerate(rows):
+            _keys(row, _ARRAY_KEYS, "wrapper array")
+            shape = row["shape"]
+            if (
+                row["name"] != f"a_{i:04d}.npy"
+                or row["dtype"] != "<f8"
+                or type(shape) is not list
+                or len(shape) not in (1, 2, 3)
+                or any(type(d) is not int or not 0 < d <= 64 for d in shape)
+            ):
+                _fail("array_layout", "fixed numeric dtype/name/shape")
+            size = math.prod(shape) * 8
+            if type(row["data_bytes"]) is not int or row["data_bytes"] != size:
+                _fail("array_layout", "raw numeric byte count")
+            numeric += size
+            if numeric > limits.max_numeric_bytes or row["name"] not in descriptors:
+                _fail(
+                    "array_cap", "wrapper aggregate numeric/file cap before expansion"
+                )
+            _digest(row["sha256"], "numeric file hash")
+            _digest(row["data_sha256"], "numeric data hash")
+            if (
+                type(row["file_bytes"]) is not int
+                or descriptors[row["name"]][1].st_size != row["file_bytes"]
+            ):
+                _fail("array_layout", "raw file size differs")
+            required.add(row["name"])
+        if set(names) != required:
+            _fail("unlisted_file", "unknown boundary artifact entry")
+        if metadata_only:
+            for name, (handle, before) in descriptors.items():
+                if oi._stat_id(os.fstat(handle)) != oi._stat_id(before) or oi._stat_id(
+                    os.stat(name, dir_fd=directory, follow_symlinks=False)
+                ) != oi._stat_id(before):
+                    _fail(
+                        "file_changed", "wrapper metadata admission changed during read"
+                    )
+            return manifest, [], total
+        arrays = _decode_wrapper_arrays(directory, descriptors, rows, limits)
+        for name, (fd, before) in descriptors.items():
+            if oi._stat_id(os.fstat(fd)) != oi._stat_id(before) or oi._stat_id(
+                os.stat(name, dir_fd=directory, follow_symlinks=False)
+            ) != oi._stat_id(before):
+                _fail("file_changed", "wrapper file changed during read")
+        return manifest, arrays, total
+    finally:
+        for fd in opened:
+            os.close(fd)
+        os.close(directory)
+
+
+def _receipt_shape_v2(body, nc, limits):
+    if type(body) is not dict:
+        _fail("receipt_layout", "plain receipt body required")
+    kind = body.get("kind")
+    if type(kind) is not str or kind not in RECEIPT_BODIES:
+        _fail("receipt_layout", "unknown receipt kind")
+    spec = RECEIPT_BODIES[kind]
+    _keys(body, (*RECEIPT_COMMON, "vegetation", *spec), "receipt")
+    for section, names in spec.items():
+        if type(names) is tuple:
+            _keys(body[section], names, f"receipt.{section}")
+    _keys(
+        body["aggregate"],
+        ("joint_residual_kg", "joint_bound_kg", "n_summation_terms"),
+        "aggregate",
+    )
+    for key in ("joint_residual_kg", "joint_bound_kg"):
+        _vector(body["aggregate"][key], nc, key)
+    _int(body["aggregate"]["n_summation_terms"], 1 << 30, "sum terms")
+    for key in ("static_sha256", "bed_identity_before", "bed_identity_after"):
+        _digest(body[key], key)
+    _int(body["index"], limits.max_events - 1, "receipt index")
+    if (
+        body["schema"] != "masy.dense_runner_event.v2"
+        or body["status"] != "accepted"
+        or body["code"] != "accepted"
+    ):
+        _fail("receipt_layout", "only accepted default receipt schema")
+    _vegetation_body_v2(body, limits)
+    for key, value in body["classes"].items():
+        if value is None and key in (
+            "detachment_kg",
+            "flow_end_mobile_before_settlement_kg",
+        ):
+            continue
+        if kind == "rain" and key == "terminal_sediment_tolerance_kg":
+            # Native reservoir_bound_kg returns one scalar; unchanged DenseRunner
+            # encodes it as a one-element list, independent of class count.
+            _vector(value, 1, key)
+        elif key in (
+            "native_bound_kg",
+            "event_bound_kg",
+            "event_arithmetic_scale_kg",
+        ) or (kind == "wind" and key == "inventory_bound_kg"):
+            _float(value, key)
+        elif key == "event_summation_terms":
+            if type(value) is not int or value != 6:
+                _fail("receipt_layout", "wind event terms")
+        else:
+            _vector(value, nc, key)
+    if kind == "wind":
+        if body["wind_end_pool"] != "genuinely_empty":
+            _fail("receipt_layout", "wind mobile completion missing")
+        _keys(
+            body["native"]["block"],
+            ("start_time_s", "end_time_s", "duration_s"),
+            "native block",
+        )
+        for value in body["native"]["block"].values():
+            decode_time(value)
+        for name, value in body["native"].items():
+            if name == "block":
+                continue
+            if name in (
+                "advanced_end_time_s",
+                "advanced_duration_s",
+                "physical_time_s",
+            ):
+                decode_time(value)
+            elif name in ("process_mode", "integration_path"):
+                if type(value) is not str or len(value.encode()) > 128:
+                    _fail("receipt_layout", "native mode/path")
+            elif name == "conservation_residual_kg":
+                _float(value, name)
+            else:
+                _int(value, 1 << 30, name)
+        for key, value in body["coverage"].items():
+            if key == "requested_s":
+                decode_time(value)
+            elif key == "native_plan_steps":
+                _int(value, 1 << 30, key)
+            else:
+                if (
+                    type(value) is not str
+                    or len(value) > 4096
+                    or _FRACTION.fullmatch(value) is None
+                ):
+                    _fail(
+                        "receipt_layout",
+                        "coverage requires bounded canonical rational syntax",
+                    )
+                numerator, denominator = (int(part) for part in value.split("/"))
+                if math.gcd(numerator, denominator) != 1:
+                    _fail("receipt_layout", "noncanonical coverage fraction")
+        final = body["finalization"]
+        for key, value in final.items():
+            if key in ("record_origin_s", "physical_time_s"):
+                decode_time(value)
+            elif key in ("record",):
+                pass  # compared to the complete actual native scalar producer below
+            elif key == "record_sha256":
+                _digest(value, key)
+            elif key in ("completed_block_index", "n_settled", "n_exported"):
+                _int(value, 1 << 30, key)
+            elif key in (
+                "status",
+                "algorithm_version",
+                "representation",
+                "placement_rule",
+            ):
+                if type(value) is not str or len(value.encode()) > 4096:
+                    _fail("receipt_layout", "finalization string")
+            elif key.endswith("by_class_kg"):
+                _vector(value, nc, key)
+            else:
+                _float(value, key)
+    else:
+        if type(body["native"]["rainfall_edges_s"]) is not list:
+            _fail("receipt_layout", "plain bounded rainfall edge list required")
+        for key, value in body["native"].items():
+            if key == "rainfall_edges_s":
+                if type(value) is not list or not 2 <= len(value) <= 65:
+                    _fail("receipt_layout", "bounded rainfall edges")
+                for item in value:
+                    decode_time(item)
+            elif key == "intensity_mm_h":
+                if (
+                    type(value) is not list
+                    or len(value) != len(body["native"]["rainfall_edges_s"]) - 1
+                ):
+                    _fail("receipt_layout", "rainfall intensity count")
+                for item in value:
+                    _float(item, key)
+            elif key.endswith("_s"):
+                decode_time(value)
+            elif key == "transport_scheme":
+                if value != "upwind":
+                    _fail("receipt_layout", "only upwind receipt")
+            elif key == "phase":
+                if value is not None:
+                    _fail("receipt_layout", "rain phase must be None")
+            else:
+                _int(value, 1 << 30, key)
+        for key, value in body["routing"].items():
+            if key == "entry_net_displacement_m":
+                if value is not None:
+                    _float(value, key)
+            elif key == "n_reroutes_in_event":
+                _int(value, 1 << 30, key)
+            elif type(value) is not bool:
+                _fail("receipt_layout", "routing boolean kind")
+        for key, value in body["water"].items():
+            if key == "dry_reset":
+                if (
+                    value
+                    != "external dry-again removal (native); soil water is zero after the reset"
+                ):
+                    _fail("receipt_layout", "native dry-reset profile changed")
+            else:
+                _float(value, key)
+
+
+def _preflight_metadata_v2(
+    manifest, expected_source_identity, expected_environment_sha256, limits
+):
+    oi._source_identity(expected_source_identity)
+    _digest(expected_environment_sha256, "expected environment")
+    if (
+        oi._json(manifest["source_identity"]) != oi._json(expected_source_identity)
+        or manifest["environment_sha256"] != expected_environment_sha256
+    ):
+        _fail("source_identity", "boundary source/environment cannot be rebound")
+    _reference_v2(manifest["originals"], _ORIGINAL_FORMAT_V2)
+    for name in ("genesis", "physical"):
+        _reference_v2(manifest[name], _NATIVE_FORMAT)
+        identity = manifest[name]["identity"]
+        _keys(
+            identity,
+            (
+                "schema",
+                "original_inputs_sha256",
+                "case_sha256",
+                "bed_identity_sha256",
+                "caller",
+                "plan_sha256",
+                "vegetation_metadata_sha256",
+            ),
+            "native22 identity",
+        )
+        caller = identity["caller"]
+        _keys(
+            caller,
+            ("schema", "source_identity", "environment_sha256", "static_sha256", "shared_resource_record_sha256"),
+            "native caller",
+        )
+        if (
+            caller["schema"] != _NATIVE_CALLER_SCHEMA_V2
+            or oi._json(caller["source_identity"]) != oi._json(expected_source_identity)
+            or caller["environment_sha256"] != expected_environment_sha256
+        ):
+            _fail("source_identity", "native child source/environment differs")
+        _digest(caller["static_sha256"], "native caller static")
+    if manifest["originals"]["relative_path"] in (
+        manifest["genesis"]["relative_path"],
+        manifest["physical"]["relative_path"],
+    ):
+        _fail("artifact_reference", "original and native child paths must be disjoint")
+    if manifest["genesis"]["relative_path"] == manifest["physical"][
+        "relative_path"
+    ] and oi._json(manifest["genesis"]) != oi._json(manifest["physical"]):
+        _fail(
+            "artifact_reference",
+            "one native child path requires one identical closed reference",
+        )
+    state = manifest["state"]
+    _keys(state, STATE_FIELDS, "state")
+    k = _int(state["next_index"], limits.max_events, "next")
+    if type(state["n_accepted"]) is not int or state["n_accepted"] != k:
+        _fail("cursor", "next/count differ")
+    nc = _int(state["n_classes"], limits.max_classes, "classes")
+    if nc == 0:
+        _fail("profile_cap", "classes must be positive")
+    _int(
+        state["inventory_elements"],
+        limits.max_cells * (limits.max_voxels + 1),
+        "inventory elements",
+    )
+    decode_time(state["native_time"])
+    for key in (
+        "accepted_bed_sha256",
+        "accepted_private_sha256",
+        "receipt_chain_sha256",
+    ):
+        _digest(state[key], key)
+    rows = manifest["receipts"]
+    if type(rows) is not list or len(rows) != k:
+        _fail("cursor", "receipt count differs")
+    used = 0
+    for row in rows:
+        _keys(row, ("body", "bytes", "sha256"), "receipt row")
+        if type(row["body"]) is not dict:
+            _fail("receipt_layout", "plain receipt body")
+        _receipt_shape_v2(row["body"], nc, limits)
+        raw = dr._canonical_json(row["body"]).encode()
+        used += len(raw)
+        if (
+            type(row["bytes"]) is not int
+            or row["bytes"] != len(raw)
+            or len(raw) > limits.max_receipt_bytes
+            or used > limits.max_receipts_bytes
+            or row["sha256"] != hashlib.sha256(raw).hexdigest()
+        ):
+            _fail(
+                "receipt_identity", "canonical receipt hash/size/cap before child load"
+            )
+    if (
+        type(manifest["ledger"]) is not dict
+        or type(manifest["ledger"].get("entries")) is not list
+        or len(manifest["ledger"]["entries"]) != k
+    ):
+        _fail("clock_layout", "bounded ledger count before decode")
+    ClockLedger.from_record(manifest["ledger"])
+    rain_seen = any(row["body"]["kind"] == "rain" for row in rows)
+    routing = manifest["routing"]
+    if (routing is not None) != rain_seen:
+        _fail("routing_history", "retained source exists iff accepted rain")
+    if routing is not None:
+        _keys(routing, ROUTING_FIELDS, "routing")
+        if (
+            routing["source_array"] != "routing_source"
+            or routing["velocity_array"] != "routing_velocity"
+            or routing["phase"] is not None
+        ):
+            _fail("routing_layout", "fixed saved routing roles and None phase")
+        for key in ROUTING_FIELDS:
+            if key not in ("source_array", "velocity_array", "phase"):
+                _digest(routing[key], key)
+    _preflight_resources_v2(manifest["shared_resources"], limits)
+    if (manifest["physical"]["identity"]["vegetation_metadata_sha256"]
+            != manifest["shared_resources"]["vegetation_metadata_sha256"]
+            or manifest["physical"]["identity"]["caller"]["shared_resource_record_sha256"]
+            != _sha(manifest["shared_resources"])):
+        _fail("resource_identity", "native current header does not seal complete resources")
+    descriptions = manifest["arrays"]
+    # Only internal in-memory authoring has []; persisted images have already
+    # passed the SAME fixed5/7 reader before this control-record crosscheck.
+    if type(descriptions) is not list:
+        _fail("array_layout", "plain wrapper descriptions required")
+    if descriptions:
+        for index, row in enumerate(descriptions):
+            _keys(row, _ARRAY_KEYS, "wrapper array description")
+            if (
+                row["name"] != f"a_{index:04d}.npy"
+                or type(row["shape"]) is not list
+                or any(type(v) is not int for v in row["shape"])
+            ):
+                _fail(
+                    "array_layout",
+                    "fixed positional file names and exact dimension kinds",
+                )
+        if type(descriptions) is not list or len(descriptions) != (
+            7 if rain_seen else 5
+        ):
+            _fail("array_layout", "closed5/7 role declarations before child expansion")
+        shape = descriptions[0]["shape"]
+        if (
+            type(shape) is not list
+            or len(shape) != 2
+            or any(type(v) is not int or v < 1 for v in shape)
+            or math.prod(shape) > limits.max_cells
+        ):
+            _fail("array_layout", "bounded soil dimensions before child expansion")
+        shapes = [shape, *([[nc]] * 4)] + ([shape, [*shape, nc]] if rain_seen else [])
+        for row, expected in zip(descriptions, shapes, strict=True):
+            if row["shape"] != expected:
+                _fail("array_layout", "exact raw role shapes before child expansion")
+    totals = manifest["totals"]
+    _keys(totals, TOTALS_FIELDS, "totals")
+    _keys(totals["water"], WATER_FIELDS, "water totals")
+    for value in totals["water"].values():
+        decode_time(value)
+    for key in ("n_entry_reroutes", "n_event_reroutes"):
+        _int(totals[key], 1 << 30, key)
+    if k == 0 and oi._json(manifest["genesis"]) != oi._json(manifest["physical"]):
+        _fail("genesis_identity", "cursor0 requires identical closed native references")
+
+
+def _validate_history_v2(manifest, originals, genesis, current, arrays, limits):
+    import numpy as np
+
+    state = manifest["state"]
+    _keys(state, STATE_FIELDS, "state")
+    ctx, bed = originals.capsule.context, current.bed
+    g, nc = ctx.geometry, len(ctx.grain_classes.classes)
+    shape = (g.ny, g.nx)
+    k = _int(
+        state["next_index"],
+        min(limits.max_events, len(originals.schedule.events)),
+        "next index",
+    )
+    for key, expected in (
+        ("n_accepted", k),
+        ("n_classes", nc),
+        (
+            "inventory_elements",
+            g.ny * g.nx * (originals.capsule.case_record["n_voxels"] + 1),
+        ),
+    ):
+        if type(state[key]) is not int or state[key] != expected:
+            _fail("state_identity", f"{key} differs from original/cursor")
+    if len(arrays) != (5 if manifest["routing"] is None else 7):
+        _fail("array_layout", "routing presence requires exact5/7 arrays")
+    soil = _array(arrays[0], shape, "current soil")
+    totals_record = manifest["totals"]
+    _keys(totals_record, TOTALS_FIELDS, "totals")
+    totals = {}
+    for i, name in enumerate(
+        ("export", "input", "bound", "internal_terminal_deposition"), 1
+    ):
+        if totals_record[name] != _ROLES[i]:
+            _fail("array_layout", "fixed total array roles")
+        totals[name] = _array(arrays[i], (nc,), name)
+    _keys(totals_record["water"], WATER_FIELDS, "water totals")
+    totals["water"] = {
+        key: decode_time(totals_record["water"][key]) for key in WATER_FIELDS
+    }
+    for key in ("n_entry_reroutes", "n_event_reroutes"):
+        totals[key] = _int(totals_record[key], 1 << 30, key)
+    ledger = ClockLedger.from_record(manifest["ledger"])
+    if type(ledger) is not ClockLedger or set(vars(ledger)) != {"epoch", "_entries"}:
+        _fail("clock_layout", "exact native clock ledger layout")
+    records = ledger.records()
+    rows = manifest["receipts"]
+    if type(rows) is not list or len(rows) != k or len(records) != k:
+        _fail("cursor", "cursor/accepted/ledger/receipt counts differ")
+    if (
+        encode_time(ledger.epoch) != encode_time(genesis.bed.time_s)
+        or encode_time(ledger.epoch) != originals.capsule.case_record["initial_time_s"]
+    ):
+        _fail("clock_identity", "original/genesis epoch differs")
+    if state["native_time"] != encode_time(bed.time_s):
+        _fail("clock_identity", "current native time differs")
+    _same(
+        np.asarray(
+            dr._native().bed_inventory(genesis.bed.state), dtype=np.float64
+        ).reshape(-1),
+        originals.initial_inventory_kg,
+        limits,
+    )
+    _same(genesis.mobile_state, originals.wind.initial_mobile_state, limits)
+    _same(
+        genesis.bed.state.water.depth_m,
+        originals.capsule.held_inputs["initial_water_depth_m"],
+        limits,
+    )
+    n = dr._native()
+    _same(
+        n.committed_elevation_m(genesis.bed.state.committed_topography),
+        originals.water.terrain.initial_committed_elevation_m,
+        limits,
+    )
+    before = genesis.bed.identity_sha256()
+    used, receipts, rain_seen = 0, [], False
+    zeros = np.zeros(nc, dtype=np.float64)
+    fold = {
+        key: zeros.copy()
+        for key in ("export", "input", "bound", "internal_terminal_deposition")
+    }
+    fold["water"] = {key: 0.0 for key in WATER_FIELDS}
+    fold["n_entry_reroutes"], fold["n_event_reroutes"] = 0, 0
+    for index, (row, clock) in enumerate(zip(rows, records, strict=True)):
+        _keys(row, ("body", "bytes", "sha256"), "receipt row")
+        body = row["body"]
+        raw = dr._canonical_json(body).encode()
+        used += len(raw)
+        if (
+            type(row["bytes"]) is not int
+            or row["bytes"] != len(raw)
+            or len(raw)
+            > min(limits.max_receipt_bytes, originals.runner_limits.max_receipt_bytes)
+            or used > limits.max_receipts_bytes
+            or row["sha256"] != hashlib.sha256(raw).hexdigest()
+        ):
+            _fail("receipt_identity", "canonical receipt bytes/hash/cap")
+        _receipt_shape_v2(body, nc, limits)
+        event = originals.schedule.events[index]
+        start, end = (
+            decode_time(clock["native_start"]),
+            decode_time(clock["native_end"]),
+        )
+        if (
+            clock["kind"] != "event"
+            or body["index"] != index
+            or body["kind"] != event.kind
+            or body["static_sha256"] != originals.static_sha256
+            or oi._json(body["clock"]) != oi._json(clock)
+            or body["bed_identity_before"] != before
+        ):
+            _fail("receipt_chain", "source/event/clock/bed chain differs")
+        expected_returned = (
+            body["native"]["advanced_duration_s"] if event.kind == "wind" else None
+        )
+        if clock["returned_elapsed"] != expected_returned:
+            _fail(
+                "receipt_clock",
+                "native returned duration differs from owning _finish caller",
+            )
+        if body["aggregate"]["n_summation_terms"] != 2 * state[
+            "inventory_elements"
+        ] + 2 * (index + 1):
+            _fail("aggregate_identity", "historical aggregate arithmetic count differs")
+        check_resolved_event(body["resolved"], originals.schedule)
+        if oi._json(body["resolved"]) != oi._json(
+            resolve_event(originals.schedule, index, start)
+        ):
+            _fail(
+                "receipt_clock",
+                "forcing resolution origin differs from original receipt start",
+            )
+        if index == 0 and clock["commit_before"] != encode_time(
+            float(genesis.bed.state.committed_topography.last_commit_time_s)
+        ):
+            _fail("clock_identity", "genesis committed stamp differs")
+        before = body["bed_identity_after"]
+        c = body["classes"]
+        if event.kind == "wind":
+            record = n.resolve_wind_forcing_record(
+                {
+                    "blocks": [
+                        {
+                            "shear_velocity_m_s": event.shear_velocity_m_s,
+                            "direction_deg": event.direction_deg_cw_from_north,
+                            "duration_s": event.duration_s,
+                        }
+                    ]
+                }
+            )
+            canonical = dr._canonical_input(np, record, "completed_record")
+            final = body["finalization"]
+            if (
+                oi._json(final["record"]) != oi._json(canonical)
+                or final["record_sha256"] != db._sha256(canonical)
+                or final["record_origin_s"] != encode_time(start)
+                or final["physical_time_s"] != encode_time(end)
+                or body["native"]["physical_time_s"] != encode_time(end)
+            ):
+                _fail("receipt_identity", "completed native record/clock differs")
+            additions = (
+                c["boundary_export_kg"],
+                c["boundary_input_kg"],
+                np.full(nc, c["inventory_bound_kg"]),
+                final["deposited_mass_by_class_kg"],
+            )
+        else:
+            rain_seen = True
+            if body["native"]["dry_time_s"] != encode_time(end):
+                _fail("receipt_clock", "native dry endpoint differs")
+            additions = (
+                c["export_kg"],
+                c["import_kg"],
+                c["inventory_bound_kg"],
+                c["internal_terminal_deposition_kg"],
+            )
+            w = body["water"]
+            delta = {
+                "rain_m3": w["rain_m3"],
+                "drainage_m3": w["drainage_m3"],
+                "storm_export_m3": w["export_m3"],
+                "dry_surface_removed_m3": w["dry_surface_removed_m3"],
+                "dry_soil_removed_m3": w["dry_soil_removed_m3"],
+            }
+            fold["water"] = {
+                key: fold["water"][key] + value for key, value in delta.items()
+            }
+            fold["n_entry_reroutes"] += int(body["routing"]["entry_rerouted"])
+            fold["n_event_reroutes"] += body["routing"]["n_reroutes_in_event"]
+        for key, addition in zip(
+            ("export", "input", "bound", "internal_terminal_deposition"),
+            additions,
+            strict=True,
+        ):
+            fold[key] = fold[key] + np.asarray(addition, dtype=np.float64)
+        receipts.append(body)
+    _same(fold, totals, limits)
+    if not any(body["kind"] == "wind" for body in receipts):
+        # Rain passes the same native wind pool through; no first wind has replaced it.
+        _same(current.mobile_state, genesis.mobile_state, limits)
+    if (
+        _chain(manifest["originals"], manifest["genesis"], rows)
+        != state["receipt_chain_sha256"]
+    ):
+        _fail("receipt_chain", "ordered canonical receipt chain differs")
+    if rain_seen:
+        if bool(np.any(soil != 0.0)):
+            _fail(
+                "soil_profile",
+                "accepted native dry-reset soil must be numerically zero",
+            )
+    else:
+        _same(soil, originals.water.initial_soil_water_m, limits)
+    if (manifest["routing"] is not None) != rain_seen:
+        _fail("routing_history", "retained routing exists iff rain has been accepted")
+    if k:
+        if (
+            before != bed.identity_sha256()
+            or records[-1]["native_end"] != encode_time(bed.time_s)
+            or records[-1]["commit_after"]
+            != encode_time(float(bed.state.committed_topography.last_commit_time_s))
+        ):
+            _fail("clock_identity", "last receipt/current bed endpoint differs")
+        inventory = dr._vec(np, n.bed_inventory(bed.state))
+        joint = (
+            inventory
+            + totals["export"]
+            - totals["input"]
+            - originals.initial_inventory_kg
+        )
+        terms = 2 * state["inventory_elements"] + 2 * k
+        scale = max(
+            float(np.abs(originals.initial_inventory_kg).sum()),
+            float(np.abs(inventory).sum()),
+            float(totals["export"].sum()),
+            float(totals["input"].sum()),
+        )
+        allowed = totals["bound"] + n.summation_error_bound_kg(terms, scale)
+        if not bool(np.all(np.abs(joint) <= allowed)):
+            _fail("aggregate_budget_open", "actual native aggregate bound exceeded")
+        _same(
+            joint,
+            np.asarray(
+                receipts[-1]["aggregate"]["joint_residual_kg"], dtype=np.float64
+            ),
+            limits,
+        )
+        _same(
+            allowed,
+            np.asarray(receipts[-1]["aggregate"]["joint_bound_kg"], dtype=np.float64),
+            limits,
+        )
+        if receipts[-1]["aggregate"]["n_summation_terms"] != terms:
+            _fail("aggregate_identity", "last aggregate arithmetic count differs")
+    elif (
+        manifest["genesis"] != manifest["physical"]
+        or encode_time(bed.time_s) != encode_time(ledger.epoch)
+        or before != bed.identity_sha256()
+    ):
+        _fail(
+            "genesis_identity",
+            "cursor0 requires identical closed genesis/current references",
+        )
+    _dynamic_history_v2(manifest, originals, genesis, current, soil, receipts, limits)
+    return soil, totals, ledger, receipts, state
+
+
+
+def _dynamic_history_v2(manifest, originals, genesis, current, soil, receipts, limits):
+    """Cross-bind genuine restored envelopes to every actual accepted body."""
+    env, initial = current.bed._dynamic, genesis.bed._dynamic
+    if (env.plan is not initial.plan or env.plan.plan_sha256
+            != originals.capsule.case_record["vegetation_profile"]["plan_sha256"]):
+        _fail("vegetation_identity", "one original plan must own both loaded endpoints")
+    plan, k = env.plan, manifest["state"]["next_index"]
+    record, bindings, delta_rows = env.as_record(), env.bindings, env.receipts
+    if (record["cursor"]["next_event_index"] != k or len(bindings) != k
+            or len(receipts) != k or initial.version != 0
+            or initial.cursor["next_event_index"] != 0):
+        _fail("vegetation_cursor", "accepted bodies/ledger/envelope cursor differ")
+    resources = bridge.shared_resources_v2(originals.capsule, plan, record,
+        metadata_sha256=record["metadata_sha256"], soil_identity=db._array_digest(soil),
+        accepted_run_copy_bytes=manifest["shared_resources"]["accepted_run_copy_bytes"],
+        max_bytes=limits.native_max_bytes)
+    if oi._json(resources) != oi._json(manifest["shared_resources"]):
+        _fail("resource_identity", "loaded native vegetation/soil differ from resources")
+    version, version_sha, native_sha = 0, initial.version_sha256, initial.native_content_sha256
+    counter, all_deltas = 48 * plan.cells, []
+    for index, body in enumerate(receipts):
+        value = body["vegetation"]
+        rows = [r for r in delta_rows if r["event_index"] == index]
+        if (value["input_version"] != version
+                or value["input_version_sha256"] != version_sha
+                or value["input_native_content_sha256"] != native_sha
+                or value["binding_sha256"] != bindings[index]["binding_sha256"]
+                or bindings[index]["event_index"] != index
+                or bindings[index]["event_kind"] != body["kind"]
+                or oi._json(value["delta_receipts"]) != oi._json(rows)):
+            _fail("vegetation_receipt_chain", "accepted input/binding/delta chain differs")
+        for row in rows:
+            if row["base_version"] != version or row["base_version_sha256"] != version_sha:
+                _fail("vegetation_receipt_chain", "delta base version differs")
+            version, version_sha, native_sha = row["version"], row["version_sha256"], row["native_content_sha256"]
+        handoff = 8 * plan.cells if body["kind"] == "rain" else 0
+        delta_bytes = sum(row["copied_bytes"] for row in rows)
+        counter += handoff + delta_bytes
+        if (value["output_version"] != version or value["output_version_sha256"] != version_sha
+                or value["output_native_content_sha256"] != native_sha
+                or value["required_snapshot_bytes"] != handoff
+                or value["delta_copy_bytes"] != delta_bytes
+                or value["accepted_run_copy_bytes"] != counter
+                or counter > plan.limits.max_run_copy_bytes):
+            _fail("vegetation_copy_chain", "accepted endpoint/copy counter differs")
+        all_deltas.extend(rows)
+    if (oi._json(all_deltas) != oi._json(list(delta_rows))
+            or record["cursor"]["copied_bytes"] != sum(row["copied_bytes"] for row in all_deltas)
+            or env.version != version or env.version_sha256 != version_sha
+            or env.native_content_sha256 != native_sha
+            or resources["accepted_run_copy_bytes"] != counter
+            or 8 * plan.cells > originals.runner_limits.max_work_bytes):
+        _fail("vegetation_copy_chain", "envelope/full receipt/counter endpoint differs")
+
+
+def _construct_passive_runner_v2(cls, ticket):
+    """Install only a prepared dynamic accepted boundary; no constructor replay."""
+    if (cls is not dr.DenseRunner or type(ticket) is not _PassiveLoadV2
+            or ticket._authority is not _PASSIVE_V2_TOKEN):
+        _fail("restore_ticket", "immediate checked dynamic-loader ticket required")
+    fields = ticket.fields
+    _keys(fields, RUNNER_FIELDS_V2, "private dynamic runner fields")
+    decoded = ticket.evidence["decoded"]
+    if (type(decoded) is not oi._DecodedOriginalInputsV2
+            or decoded._authority is not oi._DECODED_V2_TOKEN
+            or fields["_vegetation_plan"] is not decoded.plan):
+        _fail("restore_ticket", "same owning original decode and plan required")
+    originals, bed, plan = decoded.originals, fields["_bed"], decoded.plan
+    if (fields["_production"] is not None or fields["_stop_receipt"] is not None
+            or fields["_active_evidence"] is not None or bed._dynamic.plan is not plan
+            or bed.context is not originals.capsule.context):
+        _fail("not_quiescent", "closed default-flat accepted resources required")
+    n = dr._native()
+    bed.verify_case_inputs()
+    if "record_origin_s" not in inspect.signature(n.finalize_wind_event).parameters:
+        _fail("unsupported_native_finalizer", "MAPLE explicit record_origin_s required")
+    dr.DenseRunner._check_wind(n, bed, fields["_wind"])
+    if 8 * plan.cells > fields["_limits"].max_work_bytes:
+        _fail("vegetation_copy_cap", "current-cover validation exceeds actual work cap")
+    # Three float64 C-cell temporaries can coexist: this owned current cover,
+    # the actual _check_water cover copy and its returned original-soil copy.
+    # Original water and current soil remain distinct accepted resources.
+    probe_water = dataclasses.replace(fields["_water"],
+        vegetation_cover_fraction=bed.vegetation_cover_fraction())
+    initial_soil = dr.DenseRunner._check_water(n, bed, probe_water,
+        fields["_control"], fields["_limits"])
+    _same(initial_soil, originals.water.initial_soil_water_m, ticket.evidence["limits"])
+    del initial_soil, probe_water
+    if oi.validate_original_inputs_v2(originals, limits=ticket.evidence["oi_limits"],
+            admitted_plan=plan) != ticket.evidence["original_content"]:
+        _fail("original_identity", "original inputs changed during preparation")
+    probe = SimpleNamespace(**fields)
+    parts = dr.DenseRunner._static_parts_record(probe, n)
+    if db._sha256(parts) != fields["_static_parts_sha256"]:
+        _fail("static_identity", "actual loaded dynamic controlling parts differ")
+    _same(parts, fields["_static_parts"], ticket.evidence["limits"])
+    if db._sha256(fields["_static_record"]) != fields["_static_sha256"]:
+        _fail("static_identity", "original dynamic static record differs")
+    owner = object.__new__(cls)
+    for name in RUNNER_FIELDS_V2:
+        setattr(owner, name, fields[name])
+    if set(vars(owner)) != set(RUNNER_FIELDS_V2):
+        _fail("runner_layout", "closed28-field dynamic installation required")
+    owner._precheck()
+    return owner
+
+
+def _prepare_material_v2(manifest, arrays, artifact_root, expected_source_identity,
+        expected_environment_sha256, limits, *, wrapper_raw=0, artifacts=None):
+    _preflight_metadata_v2(manifest, expected_source_identity, expected_environment_sha256, limits)
+    if type(artifacts) is not _ArtifactsV2:
+        _fail("restore_ticket", "explicit admitted v2 child resources required")
+    BoundaryImageLimits.__post_init__(limits)
+    refs = (manifest["originals"], manifest["genesis"], manifest["physical"])
+    if (artifacts.limits is not limits or Path(artifact_root) != artifacts.root
+            or oi._json(list(artifacts.refs)) != oi._json(list(refs))
+            or type(wrapper_raw) is not int or not 0 <= wrapper_raw <= artifacts.wrapper_raw):
+        _fail("restore_ticket", "manifest/root/limits/raw admission differs")
+    hashes = {ref["relative_path"]: artifacts.hashed(ref) for ref in refs}
+    oi_limits = oi.OriginalPackLimits(max_cells=limits.max_cells, max_classes=limits.max_classes,
+        max_voxels=limits.max_voxels, max_cohorts=limits.max_cohorts, max_events=limits.max_events)
+    decoded = oi.load_original_inputs_v2(artifacts.root / refs[0]["relative_path"],
+        expected_manifest_sha256=_original_manifest_seal(artifacts, refs[0], limits),
+        expected_source_identity=expected_source_identity,
+        limits=oi_limits)
+    if (type(decoded) is not oi._DecodedOriginalInputsV2
+            or decoded._authority is not oi._DECODED_V2_TOKEN):
+        _fail("restore_ticket", "actual owning original-input decoder required")
+    pack, plan = decoded.originals, decoded.plan
+    if pack.content_sha256 != refs[0]["identity"]:
+        _fail("original_identity", "loaded original content identity differs")
+    for ref in refs[1:]:
+        if ref["identity"]["caller"]["static_sha256"] != pack.static_sha256:
+            _fail("static_identity", "native child belongs to other controlling inputs")
+    for ref in {ref["relative_path"]: ref for ref in refs[1:]}.values():
+        _native_dimensions(artifacts, ref, pack, limits)
+    scope = bridge._new_dynamic_decode_scope(plan, pack.capsule, max_bytes=limits.native_max_bytes)
+    genesis_ledger = ClockLedger(decode_time(pack.capsule.case_record["initial_time_s"])).as_record()
+    genesis_request = bridge._make_dynamic_restore_request(scope, role="genesis",
+        ledger_record=genesis_ledger,
+        expected_metadata_sha256=refs[1]["identity"]["vegetation_metadata_sha256"],
+        max_bytes=limits.native_max_bytes)
+    genesis = bridge.load_boundary_physical_v2(artifacts.root / refs[1]["relative_path"],
+        pack.wind.config, refs[1]["identity"], inputs=pack.capsule, request=genesis_request,
+        genesis_soil_identity=db._array_digest(pack.water.initial_soil_water_m),
+        max_bytes=limits.native_max_bytes)
+    if oi._json(refs[1]) == oi._json(refs[2]):
+        current = genesis
+    else:
+        request = bridge._make_dynamic_restore_request(scope, role="current",
+            ledger_record=manifest["ledger"], envelope_record=manifest["shared_resources"]["vegetation"],
+            expected_metadata_sha256=manifest["shared_resources"]["vegetation_metadata_sha256"],
+            initial_ticket=genesis.initial_ticket, max_bytes=limits.native_max_bytes)
+        current = bridge.load_boundary_physical_v2(artifacts.root / refs[2]["relative_path"],
+            pack.wind.config, refs[2]["identity"], inputs=pack.capsule, request=request,
+            shared_resources=manifest["shared_resources"], max_bytes=limits.native_max_bytes)
+    n = dr._native()
+    if (type(current.mobile_state) is not n.MobileCohortState
+            or current.mobile_state.mass_kg.size > limits.max_cohorts):
+        _fail("pool_layout", "actual bounded flat native mobile state required")
+    if not n.mobile_state_is_genuinely_empty(current.mobile_state):
+        _fail("mobile_state_not_empty", "current native pool is not genuinely empty")
+    soil, totals, ledger, receipts, state = _validate_history_v2(
+        manifest, pack, genesis, current, arrays, limits)
+    if (manifest["shared_resources"]["prescribed_identity_sha256"]
+            != db._sha256(pack.capsule.prescribed_digests)
+            or current.bed.context is not pack.capsule.context):
+        _fail("resource_identity", "original prescribed/context binding differs")
+    routing = _load_routing(manifest["routing"], pack, arrays, limits)
+    if current.bed.identity_sha256() != state["accepted_bed_sha256"]:
+        _fail("physical_identity", "current accepted bed identity differs")
+    if dr.DenseRunner._private_identity(n.np, current.mobile_state, soil) != state["accepted_private_sha256"]:
+        _fail("private_identity", "current loaded native pool/soil differs")
+    inventory0 = n.np.array(pack.initial_inventory_kg, copy=True)
+    fields = {"_accepted_bed": state["accepted_bed_sha256"],
+        "_accepted_private": state["accepted_private_sha256"], "_active_evidence": None,
+        "_bed": current.bed, "_control": pack.control, "_inventory0": inventory0,
+        "_inventory_elements": state["inventory_elements"], "_ledger": ledger,
+        "_limits": pack.runner_limits, "_n_accepted": state["n_accepted"],
+        "_n_classes": state["n_classes"], "_next": state["next_index"],
+        "_pool": current.mobile_state, "_production": None, "_receipts": receipts,
+        "_routing": routing, "_schedule": pack.schedule, "_soil": soil,
+        "_static_parts": pack.static_parts, "_static_parts_sha256": pack.static_parts_sha256,
+        "_static_record": pack.static_record, "_static_sha256": pack.static_sha256,
+        "_stop_receipt": None, "_totals": totals, "_water": pack.water, "_wind": pack.wind,
+        "_vegetation_plan": plan,
+        "_vegetation_copied_bytes": manifest["shared_resources"]["accepted_run_copy_bytes"]}
+    ticket = _PassiveLoadV2(fields,
+        {"decoded": decoded, "limits": limits, "oi_limits": oi_limits,
+         "original_content": pack.content_sha256}, _PASSIVE_V2_TOKEN)
+    owner = dr.DenseRunner._from_passive_boundary_load_v2(ticket)
+    artifacts.check()
+    for ref in refs:
+        if artifacts.hashed(ref) != hashes[ref["relative_path"]]:
+            _fail("file_changed", "referenced bytes changed during preparation")
+    diagnostics = {"schema": SCHEMA_V2, "profile": PROFILE_V2,
+        "source_identity": copy.deepcopy(expected_source_identity),
+        "environment_sha256": expected_environment_sha256,
+        "accepted": owner.accepted.as_record(), "static_sha256": owner.static_sha256,
+        "clock_ledger": owner.ledger_record(), "receipt_chain_sha256": state["receipt_chain_sha256"],
+        "vegetation_metadata_sha256": manifest["shared_resources"]["vegetation_metadata_sha256"],
+        "accepted_run_copy_bytes": owner._vegetation_copied_bytes,
+        "n_wrapper_arrays": len(arrays), "reservation_bytes": artifacts.reservation_bytes,
+        "scope": "inert passive dynamic source prototype; no C/store/adoption/event authorization"}
+    return _PreparedBoundaryV2(owner, diagnostics)
+
+
+def _resources_from_runner_v2(runner, limits):
+    capsule = bridge.DenseBoundaryInputsV2.capture(runner._bed)
+    record = runner._bed._dynamic.as_record()
+    return bridge.shared_resources_v2(capsule, runner._vegetation_plan, record,
+        metadata_sha256=record["metadata_sha256"], soil_identity=db._array_digest(runner._soil),
+        accepted_run_copy_bytes=runner._vegetation_copied_bytes, max_bytes=limits.native_max_bytes)
+
+
+def prepare_passive_boundary_v2(
+    path,
+    *,
+    artifact_root,
+    expected_manifest_sha256,
+    expected_source_identity,
+    expected_environment_sha256,
+    limits=_DEFAULT,
+):
+    """Prepare and validate a private inert owner; caller receives no live runner."""
+    BoundaryImageLimits.__post_init__(limits)
+    artifact_root = Path(artifact_root).absolute()
+    # Read bounded metadata first, admit ALL child raw sizes before ANY array expansion.
+    manifest, _none, raw = _read_wrapper_v2(
+        path, expected_manifest_sha256, limits, metadata_only=True
+    )
+    _preflight_metadata_v2(
+        manifest, expected_source_identity, expected_environment_sha256, limits
+    )
+    artifacts = _ArtifactsV2(
+        artifact_root,
+        manifest["originals"],
+        manifest["genesis"],
+        manifest["physical"],
+        limits,
+        raw,
+    )
+    try:
+        actual, arrays, actual_raw = _read_wrapper_v2(
+            path, expected_manifest_sha256, limits, _admitted_raw=raw
+        )
+        if actual_raw != raw or oi._json(actual) != oi._json(manifest):
+            _fail(
+                "file_changed",
+                "full wrapper read differs from metadata/raw admission basis",
+            )
+        return _prepare_material_v2(
+            actual,
+            arrays,
+            artifact_root,
+            expected_source_identity,
+            expected_environment_sha256,
+            limits,
+            wrapper_raw=raw,
+            artifacts=artifacts,
+        )
+    finally:
+        artifacts.close()
+
+
+def _runner_admission_v2(runner, limits):
+    if type(runner) is not dr.DenseRunner or set(vars(runner)) != set(RUNNER_FIELDS_V2):
+        _fail("runner_layout", "only closed26-field default DenseRunner")
+    if (
+        runner._production is not None
+        or runner._stop_receipt is not None
+        or runner._active_evidence is not None
+    ):
+        _fail(
+            "not_quiescent",
+            "only unstopped accepted boundaries without active evidence",
+        )
+    if type(runner._ledger) is not ClockLedger or set(vars(runner._ledger)) != {
+        "epoch",
+        "_entries",
+    }:
+        _fail("clock_layout", "exact ledger layout")
+    g, nc = runner._bed.context.geometry, len(runner._bed.context.grain_classes.classes)
+    if (
+        type(g.ny) is not int
+        or type(g.nx) is not int
+        or min(g.ny, g.nx) < 1
+        or g.ny * g.nx > limits.max_cells
+        or not 1 <= nc <= limits.max_classes
+        or runner._bed.case_record["n_voxels"] > limits.max_voxels
+    ):
+        _fail("profile_cap", "bounded Dense dimensions required before traversal")
+    for value in (runner._next, runner._n_accepted):
+        _int(value, limits.max_events, "accepted counter")
+    if (
+        runner._next != runner._n_accepted
+        or type(runner._receipts) is not list
+        or len(runner._receipts) != runner._next
+    ):
+        _fail("cursor", "closed accepted counters/receipts")
+    from maple.aeolian.scheduler import physical_checkpoint as cp
+
+    bridge._check_bed_v2(runner._bed)
+    # Reuse34's finite registry for native controlling inputs (including actual NumPy namespace).
+    original_limits = oi.OriginalPackLimits(
+        max_cells=limits.max_cells,
+        max_classes=limits.max_classes,
+        max_voxels=limits.max_voxels,
+        max_cohorts=limits.max_cohorts,
+        max_events=limits.max_events,
+    )
+    encoder = oi._Encoder(original_limits, oi._registry_v2(), hash_arrays=False)
+    encoder.node(
+        (
+            runner._bed.context,
+            runner._wind,
+            runner._water,
+            runner._control,
+            runner._limits,
+            runner._inventory0,
+            runner._soil,
+            runner._static_parts,
+            runner._static_record,
+            runner._receipts,
+        )
+    )
+    from masy.dense_schedule import DenseSchedule, RainEvent, RainInterval, WindEvent
+
+    _layout(runner._schedule, DenseSchedule, ("events",))
+    if (
+        type(runner._schedule.events) is not tuple
+        or not 1 <= len(runner._schedule.events) <= limits.max_events
+    ):
+        _fail("profile_cap", "bounded schedule before canonical traversal")
+    for event in runner._schedule.events:
+        if type(event) is WindEvent:
+            _layout(
+                event,
+                WindEvent,
+                ("duration_s", "shear_velocity_m_s", "direction_deg_cw_from_north"),
+            )
+            encoder.node(vars(event))
+        elif type(event) is RainEvent:
+            _layout(event, RainEvent, ("intervals", "recession_guard_s"))
+            if (
+                type(event.intervals) is not tuple
+                or not 1 <= len(event.intervals) <= 64
+            ):
+                _fail("profile_cap", "bounded rainfall intervals before traversal")
+            encoder.node(event.recession_guard_s)
+            for interval in event.intervals:
+                _layout(interval, RainInterval, ("duration_s", "intensity_mm_h"))
+                encoder.node(vars(interval))
+        else:
+            _fail("profile_cap", "unsupported event type")
+    bridge._budget(
+        cp,
+        limits.native_max_bytes,
+        runner._bed.context,
+        runner._pool,
+        runner._bed._held_inputs,
+        *(getattr(runner._bed.state, name) for name in db.SHARED_FIELDS),
+    )
+    if runner._pool.mass_kg.size > limits.max_cohorts:
+        _fail("profile_cap", "bounded cohort capacity")
+    _array(runner._soil, (g.ny, g.nx), "accepted soil")
+    _keys(runner._totals, TOTALS_FIELDS, "accepted totals")
+    for name in ("export", "input", "bound", "internal_terminal_deposition"):
+        _array(runner._totals[name], (nc,), name)
+    if runner._routing is not None:
+        _routing_record(runner._routing, runner._water, (g.ny, g.nx), nc, limits)
+    for receipt in runner._receipts:
+        _receipt_shape_v2(receipt, nc, limits)
+    plan = runner._vegetation_plan
+    from masy import landscape_vegetation as lv
+    if type(plan) is not lv.VegetationPlan or runner._bed._dynamic.plan is not plan:
+        _fail("vegetation_identity", "one exact admitted native plan required")
+    plan.verify()
+    if (plan.schedule_sha256 != runner._schedule.digest
+            or plan.event_kinds != tuple(event.kind for event in runner._schedule.events)
+            or runner._bed._dynamic.cursor["next_event_index"] != runner._next
+            or type(runner._vegetation_copied_bytes) is not int
+            or not 48 * plan.cells <= runner._vegetation_copied_bytes <= plan.limits.max_run_copy_bytes):
+        _fail("vegetation_cursor", "actual accepted dynamic counters differ")
+    runner._precheck()
+    if not dr._native().mobile_state_is_genuinely_empty(runner._pool):
+        _fail("mobile_state_not_empty", "accepted native pool not genuinely empty")
+
+
+def _capture_wrapper_arrays_v2(runner, limits):
+    """Only fixed ndarray metadata; wrapper byte/count admission precedes all hashes."""
+    import numpy as np
+
+    if type(runner) is not dr.DenseRunner or set(vars(runner)) != set(RUNNER_FIELDS_V2):
+        _fail("runner_layout", "closed26-field default DenseRunner required")
+    _keys(runner._totals, TOTALS_FIELDS, "accepted totals")
+    arrays = [
+        runner._soil,
+        *(
+            runner._totals[name]
+            for name in ("export", "input", "bound", "internal_terminal_deposition")
+        ),
+    ]
+    held = runner._routing
+    if held is not None:
+        if type(held) is _RestoredRouting:
+            if any(not hasattr(held, name) for name in _RestoredRouting.__slots__):
+                _fail(
+                    "restored_routing_layout_changed", "private projection slot absent"
+                )
+            velocity = held.velocity
+        elif type(held) is SimpleNamespace and set(vars(held)) == {
+            "graph",
+            "terrain",
+            "network",
+            "grid",
+            "source",
+            "template",
+        }:
+            _layout(
+                held.template,
+                _native_types()[-1],
+                ROUTING_CONTRACT["SedimentEventState"]["fields"],
+            )
+            velocity = held.template.sediment_velocity_m_s
+        else:
+            _fail("restored_routing_layout_changed", "closed held routing required")
+        arrays.extend((held.source, velocity))
+    if len(arrays) > limits.max_files or any(
+        type(array) is not np.ndarray for array in arrays
+    ):
+        _fail("array_cap", "fixed host wrapper file inventory before traversal")
+    if sum(array.nbytes for array in arrays) > limits.max_numeric_bytes:
+        _fail("array_cap", "wrapper numeric budget before content scan/hash")
+    return arrays
+
+
+def _snapshot_v2(
+    runner, originals, genesis, physical, source_identity, environment_sha256, limits
+):
+    for ref, fmt in zip(
+        (originals, genesis, physical),
+        (_ORIGINAL_FORMAT_V2, _NATIVE_FORMAT, _NATIVE_FORMAT),
+        strict=True,
+    ):
+        _reference_v2(ref, fmt)
+    arrays = _capture_wrapper_arrays_v2(runner, limits)
+    _runner_admission_v2(runner, limits)
+    routing = None
+    if runner._routing is not None:
+        g = runner._bed.context.geometry
+        routing = _routing_record(
+            runner._routing, runner._water, (g.ny, g.nx), runner._n_classes, limits
+        )
+        # Compare native factory output once on capture; do not refresh accepted caches.
+        n = dr._native()
+        expected_graph = n.routing_graph_from_elevation(
+            runner._water.terrain, runner._routing.source, xp=n.np
+        )
+        expected_network, expected_grid = (
+            n.transport_network(expected_graph),
+            n.physics_grid_from_graph(expected_graph),
+        )
+        _cache_admission(
+            expected_graph,
+            expected_network,
+            expected_grid,
+            runner._water.terrain,
+            (g.ny, g.nx),
+            runner._n_classes,
+            limits,
+        )
+        from maple_syrup.sediment_bed import check_graph_evidence_matches
+
+        check_graph_evidence_matches(expected_graph, runner._routing.graph)
+        for actual, expected in zip(
+            (runner._routing.graph, runner._routing.network, runner._routing.grid),
+            (expected_graph, expected_network, expected_grid),
+            strict=True,
+        ):
+            if _cache_fingerprint(actual) != _cache_fingerprint(expected):
+                _fail(
+                    "routing_identity",
+                    "accepted cache differs from native retained-source factory",
+                )
+    if len(arrays) not in (5, 7) or len(arrays) > limits.max_files:
+        _fail("array_cap", "wrapper5/7 file count and configured cap before capture")
+    if sum(a.nbytes for a in arrays) > limits.max_numeric_bytes:
+        _fail("array_cap", "wrapper final numeric inventory cap")
+    rows = _receipt_rows(runner._receipts, limits)
+    manifest = {
+        "schema": SCHEMA_V2,
+        "profile": PROFILE_V2,
+        "source_identity": copy.deepcopy(source_identity),
+        "environment_sha256": environment_sha256,
+        "originals": copy.deepcopy(originals),
+        "genesis": copy.deepcopy(genesis),
+        "physical": copy.deepcopy(physical),
+        "state": {
+            "next_index": runner._next,
+            "n_accepted": runner._n_accepted,
+            "n_classes": runner._n_classes,
+            "inventory_elements": runner._inventory_elements,
+            "native_time": encode_time(runner._bed.time_s),
+            "accepted_bed_sha256": runner._accepted_bed,
+            "accepted_private_sha256": runner._accepted_private,
+            "receipt_chain_sha256": _chain(originals, genesis, rows),
+        },
+        "totals": _totals_wire(runner._totals),
+        "ledger": runner._ledger.as_record(),
+        "receipts": rows,
+        "routing": routing,
+        "shared_resources": _resources_from_runner_v2(runner, limits),
+        "arrays": [],
+    }
+    _preflight_metadata_v2(manifest, source_identity, environment_sha256, limits)
+    return manifest, arrays
+
+
+def save_passive_boundary_v2(
+    path,
+    runner,
+    *,
+    artifact_root,
+    originals,
+    genesis,
+    physical,
+    source_identity,
+    environment_sha256,
+    limits=_DEFAULT,
+):
+    """Seal a NEW immutable wrapper image. No HEAD, adoption or overwrite.
+
+    All referenced originals/native children must already be sealed and retained.
+    A post-link exception reports uncertainty and preserves all files for inspection.
+    """
+    BoundaryImageLimits.__post_init__(limits)
+    artifact_root = Path(artifact_root).absolute()
+    oi._source_identity(source_identity)
+    _digest(environment_sha256, "environment")
+    manifest, arrays = _snapshot_v2(
+        runner,
+        originals,
+        genesis,
+        physical,
+        source_identity,
+        environment_sha256,
+        limits,
+    )
+    estimate = (
+        sum(a.nbytes + limits.max_header_bytes for a in arrays)
+        + limits.max_metadata_bytes
+    )
+    if estimate > limits.max_serialized_bytes:
+        _fail("serialized_cap", "conservative wrapper serialized preflight")
+    artifacts = _ArtifactsV2(
+        artifact_root,
+        manifest["originals"],
+        manifest["genesis"],
+        manifest["physical"],
+        limits,
+        estimate,
+    )
+    try:
+        return _write_passive_boundary_v2(
+            path,
+            runner,
+            artifact_root,
+            originals,
+            genesis,
+            physical,
+            source_identity,
+            environment_sha256,
+            limits,
+            manifest,
+            arrays,
+            artifacts,
+        )
+    finally:
+        artifacts.close()
+
+
+def _write_passive_boundary_v2(
+    path,
+    runner,
+    artifact_root,
+    originals,
+    genesis,
+    physical,
+    source_identity,
+    environment_sha256,
+    limits,
+    manifest,
+    arrays,
+    artifacts,
+):
+    # _snapshot already admitted the closed5/7 native array layouts and numeric
+    # cap. Live native routing is writable; reader preparation requires private
+    # readonly carriers. Pre-check the combined reservation before allocation;
+    # _Artifacts holds a static bound, with no mutable allocation/charge ledger.
+    # leave the owner references/flags and actual serialized capture untouched.
+    routing_copy_bytes = sum(array.nbytes for array in arrays[5:])
+    writer_reservation_bytes = artifacts.reservation_bytes + routing_copy_bytes
+    if writer_reservation_bytes > 2 << 30:
+        _fail("memory_cap", "writer routing copies exceed bounded readback reservation")
+    validation_arrays = list(arrays)
+    staged = None
+    for index in range(5, len(arrays)):
+        staged = arrays[index].copy(order="C")
+        staged.flags.writeable = False
+        validation_arrays[index] = staged
+    # Actual child readback validates original/genesis/current anchors BEFORE creating this image.
+    checked = _prepare_material_v2(
+        manifest,
+        validation_arrays,
+        artifact_root,
+        source_identity,
+        environment_sha256,
+        limits,
+        artifacts=artifacts,
+    )
+    checked_owner = checked._PreparedBoundaryV2__owner
+    _same(checked_owner._pool, runner._pool, limits)
+    _same(checked_owner._inventory0, runner._inventory0, limits)
+    _same(checked_owner._soil, runner._soil, limits)
+    if checked_owner._bed.identity_sha256() != runner._bed.identity_sha256():
+        _fail(
+            "physical_identity",
+            "native reference does not represent the current accepted owner",
+        )
+    del checked_owner, checked, validation_arrays, staged
+    target = Path(path)
+    if target.name in ("", ".", ".."):
+        _fail("path_refused", "new boundary image name required")
+    estimate = (
+        sum(a.nbytes + limits.max_header_bytes for a in arrays)
+        + limits.max_metadata_bytes
+    )
+    if estimate > limits.max_serialized_bytes:
+        _fail("serialized_cap", "conservative wrapper serialized preflight")
+    parent, directory = oi._open_dir(target.parent), None
+    linked = False
+    created = False
+    image_identity = None
+    try:
+        space = os.fstatvfs(parent)
+        if (
+            space.f_bavail * space.f_frsize < estimate + (1 << 20)
+            or space.f_favail < len(arrays) + 3
+        ):
+            _fail("storage_cap", "insufficient disk/inodes with bounded headroom")
+        os.mkdir(target.name, mode=0o700, dir_fd=parent)
+        created = True
+        before = os.stat(target.name, dir_fd=parent, follow_symlinks=False)
+        directory = os.open(
+            target.name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            dir_fd=parent,
+        )
+        if (os.fstat(directory).st_dev, os.fstat(directory).st_ino) != (
+            before.st_dev,
+            before.st_ino,
+        ) or oi._names(directory, limits):
+            _fail("file_changed", "exclusive image directory replaced/nonempty")
+        image_identity = (before.st_dev, before.st_ino)
+        rows, used = [], 0
+        import numpy as np
+
+        for index, array in enumerate(arrays):
+            name = f"a_{index:04d}.npy"
+            fd = os.open(
+                name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                0o600,
+                dir_fd=directory,
+            )
+            with os.fdopen(fd, "wb") as stream:
+                np.lib.format.write_array(stream, array, allow_pickle=False)
+                os.fchmod(stream.fileno(), 0o400)
+                stream.flush()
+                os.fsync(stream.fileno())
+            fd, s = oi._open_file(directory, name)
+            try:
+                used += s.st_size
+                if (
+                    used > limits.max_serialized_bytes
+                    or s.st_size > limits.max_numeric_bytes + limits.max_header_bytes
+                ):
+                    _fail(
+                        "serialized_cap",
+                        "actual written raw per-file/aggregate cap before hash",
+                    )
+                rows.append(
+                    {
+                        "name": name,
+                        "dtype": array.dtype.str,
+                        "shape": list(array.shape),
+                        "data_bytes": array.nbytes,
+                        "data_sha256": hashlib.sha256(
+                            memoryview(array).cast("B")
+                        ).hexdigest(),
+                        "file_bytes": s.st_size,
+                        "sha256": oi._hash_fd(fd, s.st_size),
+                    }
+                )
+            finally:
+                os.close(fd)
+        manifest["arrays"] = rows
+        for row in rows:
+            oi._verify_written(directory, row, limits)
+        again, _live_arrays = _snapshot_v2(
+            runner,
+            originals,
+            genesis,
+            physical,
+            source_identity,
+            environment_sha256,
+            limits,
+        )
+        again["arrays"] = rows
+        if oi._json(again) != oi._json(manifest):
+            _fail("accepted_state_changed", "accepted wrapper changed during writing")
+        # Prepare actual written readback privately before sealing any acceptance-visible metadata.
+        unsigned = {
+            key: manifest[key] for key in ROOT_FIELDS if key != "manifest_sha256"
+        }
+        manifest["manifest_sha256"] = _sha(unsigned)
+        raw = oi._json(manifest)
+        if (
+            len(raw) > limits.max_metadata_bytes
+            or used + len(raw) > limits.max_serialized_bytes
+        ):
+            _fail("serialized_cap", "actual wrapper metadata/aggregate cap")
+        fd = os.open(
+            "manifest.tmp",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600,
+            dir_fd=directory,
+        )
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(raw)
+            os.fchmod(stream.fileno(), 0o400)
+            stream.flush()
+            os.fsync(stream.fileno())
+        fd, s = oi._open_file(directory, "manifest.tmp")
+        try:
+            if os.read(fd, len(raw) + 1) != raw or oi._stat_id(
+                os.fstat(fd)
+            ) != oi._stat_id(s):
+                _fail("manifest_identity", "written manifest readback differs")
+        finally:
+            os.close(fd)
+        # The SAME complete reader admits the actual unlinked manifest/NPY bytes.
+        written_manifest, written_arrays, written_raw = _read_wrapper_v2(
+            target, manifest["manifest_sha256"], limits, _manifest_name="manifest.tmp"
+        )
+        _prepare_material_v2(
+            written_manifest,
+            written_arrays,
+            artifact_root,
+            source_identity,
+            environment_sha256,
+            limits,
+            wrapper_raw=written_raw,
+            artifacts=artifacts,
+        )
+        final_record, final_arrays = _snapshot_v2(
+            runner,
+            originals,
+            genesis,
+            physical,
+            source_identity,
+            environment_sha256,
+            limits,
+        )
+        final_record["arrays"] = rows
+        if oi._json(final_record) != oi._json(unsigned):
+            _fail(
+                "accepted_state_changed",
+                "accepted wrapper metadata changed before seal",
+            )
+        for written, live in zip(written_arrays, final_arrays, strict=True):
+            _same(written, live, limits)
+        for row in rows:
+            oi._verify_written(directory, row, limits)
+        _writer_path_identity(target.parent, parent)
+        _writer_path_identity(target, directory)
+        os.fsync(directory)
+        artifacts.check()
+        linked = True  # Publication can occur from this syscall onward, including interruption.
+        os.link(
+            "manifest.tmp",
+            "manifest.json",
+            src_dir_fd=directory,
+            dst_dir_fd=directory,
+            follow_symlinks=False,
+        )
+        os.unlink("manifest.tmp", dir_fd=directory)
+        os.fsync(directory)
+        os.fsync(parent)
+        _writer_path_identity(target.parent, parent)
+        _writer_path_identity(target, directory)
+        artifacts.check()
+        return manifest["manifest_sha256"]
+    except BaseException as exc:
+        if linked:
+            identity = image_identity
+            message = f"boundary seal may be published at {target}, directory {identity}; durability uncertain; inspect retained files"
+            if not isinstance(exc, Exception):
+                exc.add_note(message)
+                raise
+            raise BoundaryPublicationUncertain(message) from exc
+        if created:
+            exc.add_note(
+                f"unsealed boundary image retained at {target}; retry requires a new exclusive name"
+            )
+        raise
+    finally:
+        if directory is not None:
+            os.close(directory)
+        os.close(parent)

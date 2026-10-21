@@ -1852,7 +1852,7 @@ def _receipt(manifest):
 def _head_record(header, store_file_sha, name, generation, generation_file_sha):
     return _seal(
         {
-            "schema": SCHEMA + ".head",
+            "schema": _store_schema(header) + ".head",
             "store_id": header["store_id"],
             "store_file_sha256": store_file_sha,
             "sequence": generation["sequence"],
@@ -1927,10 +1927,13 @@ def _generation_chain(root, header, store_sha, head, limits):
             st_ino=header["storage_contract"]["root_ino"],
         ),
     )
+    if _dynamic_store(header):
+        _reservation_v2(limits, 0)
     chain, seen, child_receipts = [], set(), None
+    native_config = None
     current = head
     while True:
-        _check_seal(current, _HEAD, "head_sha256", SCHEMA + ".head")
+        _check_seal(current, _HEAD, "head_sha256", _store_schema(header) + ".head")
         _control_fields(current)
         sequence = _integer(
             current["sequence"], min(8, limits.max_accepted - 1), "HEAD sequence"
@@ -1952,7 +1955,7 @@ def _generation_chain(root, header, store_sha, head, limits):
             links=_published_links(path, "generation.json"),
         )
         _check_seal(
-            generation, _GENERATION, "generation_sha256", SCHEMA + ".generation"
+            generation, _GENERATION, "generation_sha256", _store_schema(header) + ".generation"
         )
         _control_fields(generation, generation=True)
         if (
@@ -1969,7 +1972,7 @@ def _generation_chain(root, header, store_sha, head, limits):
         ):
             _fail("ancestry", "generation/HEAD binding")
         intent, intent_raw = _record(path / "intent.json", limits.max_intent_bytes)
-        _check_seal(intent, _INTENT, "intent_sha256", SCHEMA + ".intent")
+        _check_seal(intent, _INTENT, "intent_sha256", _store_schema(header) + ".intent")
         _control_fields(intent, intent=True)
         if _sha(intent_raw) != generation["intent_file_sha256"]:
             _fail("ancestry", "intent raw hash differs")
@@ -1993,9 +1996,9 @@ def _generation_chain(root, header, store_sha, head, limits):
             or image.get("relative_path") != f"generations/{name}/image"
         ):
             _fail("image_reference", "image must belong to own generation")
-        manifest, wrapper_raw = _image_metadata(root, image, limits)
-        b._preflight_metadata(
-            manifest,
+        manifest, wrapper_raw = _image_for(header, root, image, limits)
+        _preflight_for(
+            header, manifest,
             header["source_identity"],
             header["environment_sha256"],
             limits.image,
@@ -2010,8 +2013,8 @@ def _generation_chain(root, header, store_sha, head, limits):
             header["genesis_physical"]
         ):
             _fail("ancestry", "genesis physical differs")
-        artifacts = b._Artifacts(
-            root,
+        artifacts = _artifacts_for(
+            header, root,
             manifest["originals"],
             manifest["genesis"],
             manifest["physical"],
@@ -2019,8 +2022,14 @@ def _generation_chain(root, header, store_sha, head, limits):
             wrapper_raw,
         )
         try:
+            artifact_hashes = {}
             for ref in artifacts.refs:
-                artifacts.hashed(ref)
+                artifact_hashes[ref["relative_path"]] = artifacts.hashed(ref)
+            if _dynamic_store(header):
+                config = _native_headers_v2(artifacts, manifest, limits, artifact_hashes)
+                if native_config is not None and config != native_config:
+                    _fail("native_identity", "native configuration branches across ancestry")
+                native_config = config
             artifacts.check()
         finally:
             artifacts.close()
@@ -2070,6 +2079,8 @@ def _generation_chain(root, header, store_sha, head, limits):
         ):
             _fail("ancestry", "event operation identity differs")
         current = parent
+    if _dynamic_store(header):
+        _history_v2(root, header, chain, limits)
     return chain
 
 
@@ -2252,7 +2263,7 @@ class DenseBoundaryStore:
         _keys(record, _CONTRACT, "storage contract")
         info = os.fstat(self._rootfd)
         if (
-            record["schema"] != SCHEMA + ".storage"
+            record["schema"] != _store_schema(self._header) + ".storage"
             or record["operator_declares_local"] is not True
             or record["operator_declares_fsync_durable"] is not True
             or (record["root_dev"], record["root_ino"]) != _identity(info)
@@ -2308,7 +2319,7 @@ class DenseBoundaryStore:
             head, _raw = _record(
                 self._root / f"HEAD.{nonce}.tmp", self._limits.max_head_bytes
             )
-            _check_seal(head, _HEAD, "head_sha256", SCHEMA + ".head")
+            _check_seal(head, _HEAD, "head_sha256", _store_schema(self._header) + ".head")
             _control_fields(head)
             match = (
                 _GEN.fullmatch(head["generation_name"])
@@ -2330,7 +2341,7 @@ class DenseBoundaryStore:
                 links=_published_links(path, "generation.json"),
             )
             _check_seal(
-                generation, _GENERATION, "generation_sha256", SCHEMA + ".generation"
+                generation, _GENERATION, "generation_sha256", _store_schema(self._header) + ".generation"
             )
             if (
                 _sha(raw) != head["generation_file_sha256"]
@@ -2340,7 +2351,7 @@ class DenseBoundaryStore:
 
     def _head(self):
         record, raw = _record(self._root / "HEAD", self._limits.max_head_bytes)
-        _check_seal(record, _HEAD, "head_sha256", SCHEMA + ".head")
+        _check_seal(record, _HEAD, "head_sha256", _store_schema(self._header) + ".head")
         _control_fields(record)
         return record, raw
 
@@ -2368,7 +2379,7 @@ class DenseBoundaryStore:
                 "metadata_cap",
                 "v1 writes reserve the complete finite control envelope before work",
             )
-        reservation = _reservation(self._limits, max_work_bytes)
+        reservation = _reservation_for(self._header, self._limits, max_work_bytes)
         if initial:
             reservation = {
                 **reservation,
@@ -2394,9 +2405,9 @@ class DenseBoundaryStore:
         chain = _generation_chain(
             self._root, self._header, _sha(self._store_raw), head, self._limits
         )
-        _reservation(self._limits, 0)
+        _reservation_for(self._header, self._limits, 0)
         image = chain[0][1]["image"]
-        prepared = b.prepare_passive_boundary(
+        prepared = _prepare_for(self._header,
             self._root / image["relative_path"],
             artifact_root=self._root,
             expected_manifest_sha256=image["manifest_sha256"],
@@ -2404,7 +2415,7 @@ class DenseBoundaryStore:
             expected_environment_sha256=self._header["environment_sha256"],
             limits=self._limits.image,
         )
-        owner = _owner(prepared)
+        owner = _owner_for(self._header, prepared)
         diagnostics = prepared.diagnostics()
         if oi._json(diagnostics["accepted"]) != oi._json(
             chain[0][1]["accepted_summary"]
@@ -2420,7 +2431,7 @@ class DenseBoundaryStore:
         return prepared, chain
 
     def _idle_state(self, head, prepared, generation):
-        owner = _owner(prepared)
+        owner = _owner_for(self._header, prepared)
         report, diagnostics = owner.report(), prepared.diagnostics()
         receipt = (
             None
@@ -2433,7 +2444,7 @@ class DenseBoundaryStore:
             _fail("receipt_identity", "loaded receipt differs from generation")
         token = _token(head)
         ack = BoundaryAcknowledgement(
-            SCHEMA + ".ack",
+            _store_schema(self._header) + ".ack",
             self._header["store_id"],
             generation["operation_id"],
             head["sequence"],
@@ -2486,7 +2497,7 @@ class DenseBoundaryStore:
                 os.close(directory)
             intent = _seal(
                 {
-                    "schema": SCHEMA + ".intent",
+                    "schema": _store_schema(self._header) + ".intent",
                     "store_id": self._header["store_id"],
                     "attempt_id": attempt,
                     "sequence": sequence,
@@ -2514,6 +2525,8 @@ class DenseBoundaryStore:
             raise
 
     def _extra_original(self, manifest, wrapper_raw):
+        if _dynamic_store(self._header):
+            return _extra_original_v2(self, manifest, wrapper_raw)
         artifacts = b._Artifacts(
             self._root,
             manifest["originals"],
@@ -2550,6 +2563,8 @@ class DenseBoundaryStore:
             artifacts.close()
 
     def _save_physical(self, path, owner, pack):
+        if _dynamic_store(self._header):
+            return _save_physical_v2(self, path, owner, pack)
         if (
             pack.content_sha256 != self._header["originals"]["identity"]
             or pack.static_sha256 != owner.static_sha256
@@ -2581,6 +2596,8 @@ class DenseBoundaryStore:
         return _reference(path, cp.SCHEMA, packed.identity, self._root)
 
     def _save_image(self, directory, owner, physical):
+        if _dynamic_store(self._header):
+            return _save_image_v2(self, directory, owner, physical)
         seal = b.save_passive_boundary(
             directory,
             owner,
@@ -2603,11 +2620,11 @@ class DenseBoundaryStore:
         }
 
     def _seal_generation(self, directory, intent, parent, image):
-        manifest, _raw = _image_metadata(self._root, image, self._limits)
+        manifest, _raw = _image_for(self._header, self._root, image, self._limits)
         receipt = _receipt(manifest)
         generation = _seal(
             {
-                "schema": SCHEMA + ".generation",
+                "schema": _store_schema(self._header) + ".generation",
                 "store_id": self._header["store_id"],
                 "store_file_sha256": _sha(self._store_raw),
                 "attempt_id": intent["attempt_id"],
@@ -2677,7 +2694,7 @@ class DenseBoundaryStore:
     def report(self):
         self._binding()
         return {
-            "schema": SCHEMA + ".report",
+            "schema": _store_schema(self._header) + ".report",
             "phase": self._state.phase,
             "head_token": self._state.token,
             "intended_token": self._state.intended,
@@ -2724,8 +2741,8 @@ class DenseBoundaryStore:
             ):
                 _fail("schedule_complete", "all events already accepted")
             # Parent B metadata is not a fresh bed constructor and does not expand arrays.
-            manifest, wrapper_raw = _image_metadata(
-                self._root, chain[0][1]["image"], self._limits
+            manifest, wrapper_raw = _image_for(
+                self._header, self._root, chain[0][1]["image"], self._limits
             )
             # Original native work guard is persisted in original pack, checked below.
             self._admit(
@@ -2737,7 +2754,7 @@ class DenseBoundaryStore:
             )
             reserved = True
             prepared, _parent_chain = self._load(head)
-            work = _owner(prepared)
+            work = _owner_for(self._header, prepared)
             self._failed_owner = work
             result = work.step()
             if (
@@ -2749,15 +2766,15 @@ class DenseBoundaryStore:
                     "event_incomplete",
                     "private event did not accept; native evidence retained until close",
                 )
-            b._runner_admission(work, self._limits.image)
+            _admit_owner_for(self._header, work, self._limits.image)
             pack = self._extra_original(manifest, wrapper_raw)
             physical = self._save_physical(directory / "physical", work, pack)
             del pack
             image = self._save_image(directory / "image", work, physical)
             next_head = self._seal_generation(directory, intent, head, image)
             readback, selected = self._load(next_head)
-            read_owner = _owner(readback)
-            _compare_owners(work, read_owner, self._limits.image)
+            read_owner = _owner_for(self._header, readback)
+            _compare_for(self._header, work, read_owner, self._limits.image)
             state = self._idle_state(next_head, readback, selected[0][1])
             del work, read_owner, prepared, readback
             self._failed_owner = None
@@ -2792,7 +2809,7 @@ class DenseBoundaryStore:
     def _failure(self, directory, error):
         try:
             record = {
-                "schema": SCHEMA + ".failure",
+                "schema": _store_schema(self._header) + ".failure",
                 "phase": self._state.phase,
                 "attempt_id": self._state.attempt_id,
                 "intended_token": self._state.intended,
@@ -2832,7 +2849,7 @@ class DenseBoundaryStore:
                 ):
                     _fail("stale_parent", "no matching direct-child operation")
                 return BoundaryAcknowledgement(
-                    SCHEMA + ".ack",
+                    _store_schema(self._header) + ".ack",
                     self._header["store_id"],
                     generation["operation_id"],
                     accepted_head["sequence"],
@@ -3041,6 +3058,671 @@ def recover_boundary_store(path, *, expected_store_file_sha256, limits=_DEFAULT)
             header["genesis_physical"]["relative_path"],
         ):
             _fail("store_identity", "original/genesis roles")
+        handle._header, handle._store_raw = header, raw
+        handle._stable()
+        head, head_raw = handle._head()
+        prepared, chain = handle._load(head)
+        state = handle._idle_state(head, prepared, chain[0][1])
+        del prepared
+        _sync_tree(handle._root)
+        handle._stable()
+        if handle._head()[1] != head_raw:
+            _fail("parent_drift", "HEAD changed during recovery")
+        # Final fsync, then only the preprepared metadata state assignment.
+        os.fsync(handle._rootfd)
+        handle._state = state
+        return handle
+    except BaseException:
+        handle.close()
+        raise
+
+
+# Closed manual-vegetation boundary codec; no additional publication engine.
+SCHEMA_V2 = "masy.dense_boundary_store.v2"
+PROFILE_V2 = "dynamic_manual_dense_numpy_accepted_v1"
+
+
+def _store_schema(header):
+    """Closed code-owned v1/v2 selector; partial headers allowed before store_sha256."""
+    if type(header) is not dict:
+        _fail("store_profile", "exact header mapping required")
+    schema = header.get("schema")
+    profile = header.get("profile")
+    if type(schema) is not str or type(profile) is not str:
+        _fail("store_profile", "exact plain str schema/profile required")
+    if schema == SCHEMA and profile == PROFILE:
+        return SCHEMA
+    if schema == SCHEMA_V2 and profile == PROFILE_V2:
+        return SCHEMA_V2
+    _fail("store_profile", "unknown or mixed schema/profile pair")
+
+
+def _dynamic_store(header):
+    return _store_schema(header) == SCHEMA_V2
+
+
+def _owner_v2(prepared):
+    """Only actual v2 loader results, immediately internal; nominal discipline."""
+    if type(prepared) is not b._PreparedBoundaryV2:
+        _fail("private_carrier", "actual inert passive v2 loader result required")
+    owner = prepared._PreparedBoundaryV2__owner
+    fields = b.RUNNER_FIELDS_V2
+    if (
+        type(owner) is not dr.DenseRunner
+        or len(set(fields)) != 28
+        or set(vars(owner)) != set(fields)
+    ):
+        _fail("private_carrier", "exact private28-field owner required")
+    try:
+        plan = owner._vegetation_plan
+        aligned = plan is not None and plan is owner._bed._dynamic.plan
+    except AttributeError:
+        aligned = False
+    if not aligned:
+        _fail("private_carrier", "vegetation plan identity mismatch")
+    return owner
+
+
+def _reference_v2(directory, fmt, identity, root):
+    if type(fmt) is str and fmt == oi.SCHEMA_V2:
+        filename, cap = "manifest.json", 4 << 20
+    elif type(fmt) is str and fmt == "maple-exact-physical-checkpoint/1":
+        filename, cap = "checkpoint.json", 1 << 20
+    else:
+        _fail("reference_format", "closed v2 reference format required")
+    digest = runtime._hash_path(directory / filename, budget=cap)[0]
+    result = {
+        "format": fmt,
+        "relative_path": str(directory.relative_to(root)),
+        "manifest_file_sha256": digest,
+        "identity": copy.deepcopy(identity),
+    }
+    b._reference_v2(result, fmt)
+    return result
+
+
+def _owner_for(header, prepared):
+    return _owner_v2(prepared) if _dynamic_store(header) else _owner(prepared)
+
+
+def _preflight_for(header, *args):
+    function = b._preflight_metadata_v2 if _dynamic_store(header) else b._preflight_metadata
+    return function(*args)
+
+
+def _artifacts_for(header, *args):
+    kind = b._ArtifactsV2 if _dynamic_store(header) else b._Artifacts
+    return kind(*args)
+
+
+def _prepare_for(header, *args, **kwargs):
+    function = b.prepare_passive_boundary_v2 if _dynamic_store(header) else b.prepare_passive_boundary
+    return function(*args, **kwargs)
+
+
+def _admit_owner_for(header, owner, limits):
+    function = b._runner_admission_v2 if _dynamic_store(header) else b._runner_admission
+    return function(owner, limits)
+
+
+def _compare_for(header, owner, readback, limits):
+    function = _compare_owners_v2 if _dynamic_store(header) else _compare_owners
+    return function(owner, readback, limits)
+
+
+def _image_for(header, root, image, limits):
+    dynamic = _dynamic_store(header)
+    if type(image) is not dict or image.get("format") != (b.SCHEMA_V2 if dynamic else b.SCHEMA):
+        _fail("image_reference", "image format must match the admitted store codec")
+    return _image_metadata_v2(root, image, limits) if dynamic else _image_metadata(root, image, limits)
+
+
+def _reservation_for(header, limits, max_work_bytes):
+    return _reservation_v2(limits, max_work_bytes) if _dynamic_store(header) else _reservation(limits, max_work_bytes)
+
+
+def _extra_original_v2(handle, manifest, wrapper_raw):
+    artifacts = b._ArtifactsV2(handle._root, manifest["originals"], manifest["genesis"],
+        manifest["physical"], handle._limits.image, wrapper_raw)
+    try:
+        original = manifest["originals"]
+        artifacts.hashed(original)
+        seal = b._original_manifest_seal(artifacts, original, handle._limits.image)
+        decoded = oi.load_original_inputs_v2(handle._root / original["relative_path"],
+            expected_manifest_sha256=seal,
+            expected_source_identity=handle._header["source_identity"],
+            limits=oi.OriginalPackLimits(max_cells=handle._limits.image.max_cells,
+                max_classes=handle._limits.image.max_classes, max_voxels=handle._limits.image.max_voxels,
+                max_cohorts=handle._limits.image.max_cohorts, max_events=handle._limits.image.max_events))
+        if (type(decoded) is not oi._DecodedOriginalInputsV2
+                or decoded._authority is not oi._DECODED_V2_TOKEN
+                or type(decoded.originals) is not oi.OriginalInputsV2
+                or decoded.originals.content_sha256 != original["identity"]):
+            _fail("original_identity", "exact v2 original decoder authority/content required")
+        # Retain the decoded plan together with its original capsule until save.
+        artifacts.check()
+        artifacts.hashed(original)
+        return decoded
+    finally:
+        artifacts.close()
+
+
+def _save_physical_v2(handle, path, owner, decoded):
+    if (type(decoded) is oi.OriginalInputsV2
+            and handle._header["genesis_physical"] is None and owner._next == 0):
+        # A virgin owner supplies the genuine, independently recaptured pack.
+        pack, plan = decoded, owner._vegetation_plan
+    elif (type(decoded) is oi._DecodedOriginalInputsV2
+            and decoded._authority is oi._DECODED_V2_TOKEN):
+        pack, plan = decoded.originals, decoded.plan
+    else:
+        _fail("original_identity", "genuine genesis pack or exact v2 decoder authority required")
+    if (pack.content_sha256 != handle._header["originals"]["identity"]
+            or pack.static_sha256 != owner.static_sha256
+            or plan.plan_sha256 != owner._vegetation_plan.plan_sha256):
+        _fail("original_identity", "work/original/plan controlling identity differs")
+    resources = b._resources_from_runner_v2(owner, handle._limits.image)
+    caller = {"schema": b._NATIVE_CALLER_SCHEMA_V2,
+        "source_identity": handle._header["source_identity"],
+        "environment_sha256": handle._header["environment_sha256"],
+        "static_sha256": owner.static_sha256}
+    packed = bridge.pack_boundary_physical_v2(owner._bed, owner._pool, owner._wind.config,
+        caller, inputs=pack.capsule, shared_resources=resources,
+        max_bytes=handle._limits.image.native_max_bytes)
+    from maple.aeolian.scheduler import physical_checkpoint as cp
+
+    cp.save_exact_physical_checkpoint(path, packed.physical, owner._wind.config, packed.identity,
+        max_bytes=handle._limits.image.native_max_bytes)
+    return _reference_v2(path, cp.SCHEMA, packed.identity, handle._root)
+
+
+def _save_image_v2(handle, directory, owner, physical):
+    seal = b.save_passive_boundary_v2(directory, owner, artifact_root=handle._root,
+        originals=handle._header["originals"], genesis=handle._header["genesis_physical"],
+        physical=physical, source_identity=handle._header["source_identity"],
+        environment_sha256=handle._header["environment_sha256"], limits=handle._limits.image)
+    return {"format": b.SCHEMA_V2, "relative_path": str(directory.relative_to(handle._root)),
+        "manifest_file_sha256": runtime._hash_path(directory / "manifest.json",
+            budget=handle._limits.image.max_metadata_bytes)[0], "manifest_sha256": seal}
+
+
+def _image_metadata_v2(root, image, limits):
+    _keys(image, ("format", "relative_path", "manifest_file_sha256", "manifest_sha256"), "image reference")
+    if image["format"] != b.SCHEMA_V2:
+        _fail("image_reference", "v2 format")
+    _digest(image["manifest_file_sha256"], "image raw hash")
+    _digest(image["manifest_sha256"], "image seal")
+    path = root / image["relative_path"]
+    directory = oi._open_dir(path)
+    try:
+        manifest, _arrays, raw = b._read_wrapper_v2(path, image["manifest_sha256"],
+            limits.image, metadata_only=True)
+        # B already required its exact read bytes == oi._json(manifest) and
+        # checked every held file identity. Bind that admitted canonical image;
+        # `raw` below is B's aggregate byte COUNT, not its manifest bytes.
+        if _sha(oi._json(manifest)) != image["manifest_file_sha256"]:
+            _fail("image_reference", "raw manifest hash differs")
+        for row in manifest["arrays"]:
+            actual, _blob, size, _data = runtime._hash_path(path / row["name"], budget=row["file_bytes"])
+            if actual != row["sha256"] or size != row["file_bytes"]:
+                _fail("image_reference", "retained wrapper bytes differ")
+        _same_directory(path, directory)
+    except runtime.RuntimeRefusal as exc:
+        raise BoundaryStoreError(exc.code, exc.detail) from exc
+    finally:
+        os.close(directory)
+    return manifest, raw
+
+
+def _native_headers_v2(artifacts, manifest, limits, hashes):
+    """Native header consistency only; selected B/native loads own physical validation."""
+    from maple.aeolian.scheduler import physical_checkpoint as cp
+
+    expected_config = None
+    seen = {}
+    for name in ("genesis", "physical"):
+        reference = manifest[name]
+        relative = reference["relative_path"]
+        if relative in seen:
+            if oi._json(seen[relative]) != oi._json(reference):
+                _fail("native_identity", "one native path requires one complete identity")
+            continue
+        seen[relative] = reference
+        path, _fd, _rows, _fmt, sizes = artifacts.files[relative]
+        if (type(sizes["checkpoint.json"]) is not int
+                or not 1 <= sizes["checkpoint.json"] <= min(cp.MAX_METADATA_BYTES, 1 << 20)):
+            _fail("native_identity", "bounded native header required before parse")
+        artifacts.check()
+        raw = runtime._read_bounded(path / "checkpoint.json", sizes["checkpoint.json"], "native_manifest_read")
+        if len(raw) != sizes["checkpoint.json"] or _sha(raw) != reference["manifest_file_sha256"]:
+            _fail("native_identity", "native admitted header bytes differ")
+        native = cp._strict_json(raw)
+        cp._keys(native, cp._MANIFEST_KEYS, "manifest")
+        identity = cp._identity(native["identity"])
+        if (native["schema"] != cp.SCHEMA
+                or cp._json(identity) != cp._json(cp._identity(reference["identity"]))):
+            _fail("native_identity", "native schema/identity differs")
+        # The immutable raw header is ref-bound. The actual selected/genesis
+        # native loaders validate their internal seals; no copied seal framing.
+        _digest(native["manifest_sha256"], "native manifest seal")
+        config = _digest(native["config_sha256"], "native configuration")
+        _digest(native["physical_sha256"], "native physical metadata")
+        if expected_config is not None and config != expected_config:
+            _fail("native_identity", "genesis/current native configurations differ")
+        expected_config = config
+        cp._keys(native["files"], cp.PAYLOADS, "payload list")
+        for payload in cp.PAYLOADS:
+            row = native["files"][payload]
+            cp._keys(row, ("sha256", "size_bytes", "members"), "payload record")
+            if (type(row["size_bytes"]) is not int or row["size_bytes"] != sizes[payload]
+                    or _digest(row["sha256"], "native payload") != hashes[relative][payload]
+                    or type(row["members"]) is not dict or not 1 <= len(row["members"]) <= 256):
+                _fail("native_identity", "admitted native payload metadata differs")
+            for member, description in row["members"].items():
+                if type(member) is not str or len(member) > 200:
+                    _fail("native_identity", "bounded native member name")
+                cp._keys(description, ("dtype", "shape", "npy_bytes"), "native member")
+                if (type(description["dtype"]) is not str or len(description["dtype"]) > 128
+                        or type(description["npy_bytes"]) is not int
+                        or not 0 <= description["npy_bytes"] <= limits.image.native_max_bytes
+                        or type(description["shape"]) is not list or len(description["shape"]) > 5
+                        or any(type(v) is not int or not 0 <= v <= max(
+                            limits.image.max_cohorts, limits.image.max_cells + 2) for v in description["shape"])):
+                    _fail("native_identity", "bounded native raw description before expansion")
+        artifacts.check()
+        # Header parse/canonical/identity outputs never enter ancestry records.
+        # Drop them before the next header; only admitted complete refs remain.
+        del raw, native, identity, row, description
+    # Also check the current role when genesis/current are the same complete ref.
+    identity = manifest["physical"]["identity"]
+    resources = manifest["shared_resources"]
+    if (identity["bed_identity_sha256"] != manifest["state"]["accepted_bed_sha256"]
+            or identity["vegetation_metadata_sha256"] != resources["vegetation_metadata_sha256"]
+            or identity["plan_sha256"] != resources["vegetation"]["plan_sha256"]
+            or identity["caller"]["shared_resource_record_sha256"] != bridge._bed._sha256(resources)):
+        _fail("native_identity", "native current/vegetation/resource roles differ")
+    for field in ("original_inputs_sha256", "case_sha256", "plan_sha256"):
+        if manifest["genesis"]["identity"][field] != manifest["physical"]["identity"][field]:
+            _fail("native_identity", "fixed original/case/plan native identity differs")
+    if (manifest["genesis"]["identity"]["caller"]["static_sha256"]
+            != manifest["physical"]["identity"]["caller"]["static_sha256"]):
+        _fail("native_identity", "fixed native static identity differs")
+    return expected_config
+
+
+def _history_v2(root, header, chain, limits):
+    """Exact accepted metadata prefixes, no original/native array expansion or update replay."""
+    from masy import landscape_vegetation as lv
+
+    selected = chain[0][2]
+    endpoint = selected["shared_resources"]["vegetation"]
+    _keys(endpoint, lv._ENVELOPE_KEYS, "selected vegetation envelope")
+    if type(endpoint["source"]) is not str or endpoint["source"] not in ("none", "raster"):
+        _fail("vegetation_history", "only admitted native none/raster sources")
+    rows = endpoint["receipts"]
+    if type(rows) is not list or len(rows) > lv._CEILINGS["max_total_updates"]:
+        _fail("vegetation_history", "bounded plain delta receipts required")
+    for row in rows:
+        _keys(row, lv._RECEIPT_KEYS, "accepted vegetation receipt")
+        _integer(row["event_index"], limits.image.max_events - 1, "delta event")
+        _integer(row["sequence"], lv._CEILINGS["max_total_updates"], "delta sequence")
+        _integer(row["copied_bytes"], lv._CEILINGS["max_run_copy_bytes"], "delta copies")
+        if type(row["proposer"]) is not str or row["proposer"] not in lv.PROPOSERS:
+            _fail("vegetation_history", "exact prescribed proposer required")
+    bindings = endpoint["bindings"]
+    if type(bindings) is not list or len(bindings) > limits.image.max_events:
+        _fail("vegetation_history", "bounded plain boundary bindings required")
+    initial_source = ("none" if any(row["source_transition"] == "none->raster" for row in rows)
+        else endpoint["source"])
+    initial_version_sha = (selected["receipts"][0]["body"]["vegetation"]["input_version_sha256"]
+        if selected["receipts"] else endpoint["version_sha256"])
+    for _head, generation, manifest in chain:
+        s = generation["sequence"]
+        shared = manifest["shared_resources"]
+        env = shared["vegetation"]
+        _keys(env, lv._ENVELOPE_KEYS, "vegetation envelope")
+        cursor = env["cursor"]
+        _keys(cursor, lv._CURSOR_KEYS, "vegetation cursor")
+        prefix = [row for row in rows if row["event_index"] < s]
+        last = {}
+        for row in prefix:
+            last[row["proposer"]] = row["sequence"]
+        expected_cursor = {"next_event_index": s, "last_sequence": last,
+            "copied_bytes": sum(row["copied_bytes"] for row in prefix)}
+        expected_ledger = {**selected["ledger"], "entries": selected["ledger"]["entries"][:s]}
+        if (oi._json(env["receipts"]) != oi._json(prefix)
+                or oi._json(cursor) != oi._json(expected_cursor)
+                or oi._json(env["bindings"]) != oi._json(bindings[:s])
+                or oi._json(manifest["ledger"]) != oi._json(expected_ledger)
+                or oi._json(manifest["receipts"]) != oi._json(selected["receipts"][:s])
+                or env["schema"] != endpoint["schema"] or env["profile"] != endpoint["profile"]
+                or env["plan_sha256"] != endpoint["plan_sha256"]
+                or env["initial_native_content_sha256"] != endpoint["initial_native_content_sha256"]
+                or shared["prescribed_identity_sha256"] != selected["shared_resources"]["prescribed_identity_sha256"]):
+            _fail("vegetation_history", "accepted ledger/binding/delta prefix differs")
+        if s:
+            body = selected["receipts"][s - 1]["body"]["vegetation"]
+            expected_version = body["output_version"]
+            expected_version_sha = body["output_version_sha256"]
+            expected_native = body["output_native_content_sha256"]
+            copies = body["accepted_run_copy_bytes"]
+            binding_row = bindings[s - 1]
+            binding = lv.BoundaryBinding.from_ledger_record(manifest["ledger"],
+                event_index=s - 1, event_kind=binding_row["event_kind"],
+                schedule_sha256=binding_row["schedule_sha256"])
+            if (oi._json(binding.record()) != oi._json(env["last_boundary_binding"])
+                    or binding.binding_sha256 != binding_row["binding_sha256"]):
+                _fail("vegetation_history", "complete last native boundary binding differs")
+        else:
+            expected_version, expected_version_sha, expected_native = (
+                0, initial_version_sha, endpoint["initial_native_content_sha256"])
+            # Genuine genesis native restore validates its exact initial copy
+            # counter/resource hash. Do not duplicate that construction here.
+            copies = None
+            if (oi._json(manifest["physical"]) != oi._json(selected["genesis"])
+                    or bridge._bed._sha256(shared) != selected["genesis"]["identity"]["caller"]["shared_resource_record_sha256"]):
+                _fail("vegetation_history", "genuine genesis ref/resource anchor differs")
+            if env["last_boundary_binding"] is not None:
+                _fail("vegetation_history", "genesis alone has no boundary binding")
+        if (type(env["version"]) is not int or env["version"] != expected_version
+                or env["version_sha256"] != expected_version_sha
+                or env["native_content_sha256"] != expected_native
+                or type(shared["accepted_run_copy_bytes"]) is not int
+                or (copies is not None and shared["accepted_run_copy_bytes"] != copies)
+                or env["source"] != ("raster" if prefix else initial_source)
+                or env["source_transition"] != ("none->raster" if any(
+                    row["source_transition"] == "none->raster" for row in prefix) else None)):
+            _fail("vegetation_history", "accepted endpoint version/native/copies/source differs")
+        descriptions = manifest["arrays"]
+        soil = descriptions[b._ROLES.index("current_soil")]
+        identity = shared["soil_identity"]["array"]
+        expected_soil = {"dtype": soil["dtype"], "shape": soil["shape"], "order": "C",
+            "nbytes": soil["data_bytes"], "sha256": soil["data_sha256"]}
+        if oi._json(identity) != oi._json(expected_soil):
+            _fail("vegetation_history", "current soil identity differs from admitted raw row")
+        path = root / generation["image"]["relative_path"]
+        directory = oi._open_dir(path)
+        try:
+            oi._verify_written(directory, soil, limits.image)
+            _same_directory(path, directory)
+        finally:
+            os.close(directory)
+
+
+def _reservation_v2(limits, max_work_bytes):
+    """Add the pinned v2 owner/metadata/factory envelope before any recapture.
+
+    This is a logical requested-payload reservation, with a separate whole-worker
+    OS address-space ceiling required by the qualification controller. It is not
+    a Python heap/RSS or opaque NumPy allocator peak estimate.
+    """
+    base = _reservation(limits, max_work_bytes)
+    image = limits.image
+    cells = image.max_cells
+    metadata = image.max_metadata_bytes
+    # ny*nx <= C implies (ny+2)*(nx+2) <= 3*C+6. Donors have
+    # 4*C entries; every other factory array has <=C+1 or five entries.
+    q = max(3 * cells + 6, 4 * cells, cells + 1, 5)
+    # Exact source census over the pinned D4 factory closure: every expression,
+    # including scalars/views, charged as a fresh Q-element float64 allocation;
+    # four-direction, <=C and <=C+1 loops and local helpers expanded at C=64.
+    graph_bytes = 25130 * q * 8
+    increments = {
+        # Sum all eight v2 native restore metadata/validation budgets, even
+        # though writer preparation/readback releases earlier temporary owners.
+        "native_v2_validation_bytes": 8 * image.native_max_bytes,
+        # Four ancestry passes can remain referenced at publication. Also
+        # retain four standalone writer/parent B records; no ancestor arrays.
+        "retained_wrapper_metadata_bytes": (4 * limits.max_accepted + 4) * metadata,
+        "retained_control_metadata_bytes": 4 * limits.max_accepted * (
+            limits.max_generation_bytes + limits.max_intent_bytes + limits.max_head_bytes),
+        # One owning full typed plan and its encoded original record per decode.
+        "typed_original_metadata_bytes": 5 * ((4 << 20) + (1 << 20)),
+        # Max-live bounded raw/parsed/identity/canonical header slots. Current
+        # native headers stream one at a time; all-chain records above stay held.
+        "native_header_frame_bytes": 8 << 20,
+        "canonical_frame_bytes": 4 * metadata,
+        "native_clock_frame_bytes": 4 * metadata,
+        # Complete native D4 closure, including transitive scalar-cell loops;
+        # no new routing decision or cached graph is installed by this census.
+        "graph_requested_payload_bytes": 16 * graph_bytes,
+        # Sum eight five-field initial snapshots plus all four three-grid
+        # native probes. Each actual probe totals24*C bytes, with no alias credit.
+        "additional_dynamic_array_bytes": (8 * 40 + 4 * 24) * cells,
+        # Source hash loops can hold old and new 1MiB chunks at assignment.
+        "additional_hash_buffer_bytes": 2 << 20,
+    }
+    memory = base["memory_bytes"] + sum(increments.values())
+    if memory > limits.max_memory_bytes:
+        _fail("memory_cap", "computed dynamic owner/history/native/factory reservation")
+    return {**base, "memory_bytes": memory, "v2_increments": increments,
+        "max_original_terrain_graph_builds": 10,
+        "max_passive_runner_constructions": 4,
+        "max_step_original_terrain_graph_builds": 9,
+        "max_total_passive_graph_builds": 16,
+        "max_ancestry_passes": 4,
+        "max_native_header_parses": 8 * limits.max_accepted,
+        "max_streamed_soil_checks": 4 * limits.max_accepted,
+        "scope": "bounded default-flat CPU logical reservation; whole-worker OS cap separate"}
+
+
+def _compare_owners_v2(work, readback, limits):
+    """Exact passive readback comparison without another native graph rebuild."""
+    for name in (
+        "_inventory0",
+        "_pool",
+        "_soil",
+        "_totals",
+        "_static_parts",
+        "_static_record",
+    ):
+        b._same(getattr(work, name), getattr(readback, name), limits)
+    for a, z in (
+        (work._bed.state, readback._bed.state),
+        (work._bed.context, readback._bed.context),
+        (work._bed.threshold_modifier_state, readback._bed.threshold_modifier_state),
+    ):
+        b._same(a, z, limits)
+    for name in (
+        "_accepted_bed",
+        "_accepted_private",
+        "_n_accepted",
+        "_next",
+        "_n_classes",
+        "_inventory_elements",
+        "_static_parts_sha256",
+        "_static_sha256",
+    ):
+        if getattr(work, name) != getattr(readback, name):
+            _fail("readback_identity", name)
+    if (
+        oi._json(work.ledger_record()) != oi._json(readback.ledger_record())
+        or dr._canonical_json(work._receipts) != dr._canonical_json(readback._receipts)
+        or oi._json(work.accepted.as_record())
+        != oi._json(readback.accepted.as_record())
+    ):
+        _fail("readback_identity", "clocks/receipts/accepted state")
+    if (work._routing is None) != (readback._routing is None):
+        _fail("readback_identity", "routing presence")
+    if work._routing is not None:
+        geometry = work._bed.context.geometry
+        shape = (geometry.ny, geometry.nx)
+        a = b._routing_record(
+            work._routing, work._water, shape, work._n_classes, limits
+        )
+        z = b._routing_record(
+            readback._routing, readback._water, shape, readback._n_classes, limits
+        )
+        if oi._json(a) != oi._json(z):
+            _fail("readback_identity", "retained native source/cache identity")
+    from masy import landscape_vegetation as lv
+
+    for owner in (work, readback):
+        env = owner._bed._dynamic
+        if (type(owner._vegetation_plan) is not lv.VegetationPlan
+                or env.plan is not owner._vegetation_plan
+                or env._native_borrow() is not owner._bed._vegetation):
+            _fail("readback_identity", "shared plan/current native vegetation aliases")
+        # Fresh native construction deliberately owns a separate initial copy.
+        # Exact type/layout/bytes bind it to the static prescribed input; only
+        # the current native state and owning typed plan require object aliases.
+        b._same(env._native_borrow(initial=True), owner._bed._veg_initial, limits)
+    a, z = work._bed._dynamic, readback._bed._dynamic
+    for left, right in ((a._native_borrow(initial=True), z._native_borrow(initial=True)),
+            (a._native_borrow(), z._native_borrow())):
+        b._same(left, right, limits)
+    if (oi._json(work._vegetation_plan.plan_record()) != oi._json(readback._vegetation_plan.plan_record())
+            or oi._json(work._vegetation_plan.limits.as_record()) != oi._json(readback._vegetation_plan.limits.as_record())
+            or oi._json(a.as_record()) != oi._json(z.as_record())
+            or type(work._vegetation_copied_bytes) is not int
+            or type(readback._vegetation_copied_bytes) is not int
+            or work._vegetation_copied_bytes != readback._vegetation_copied_bytes):
+        _fail("readback_identity", "complete typed plan/envelope/copy identity")
+
+
+def create_dynamic_boundary_store(
+    path, *, runner, originals, runtime_reference, limits=_DEFAULT, storage_contract
+):
+    """Create a NEW genesis store; never import an arbitrary progressed runner."""
+    BoundaryStoreLimits.__post_init__(limits)
+    StorageContract.__post_init__(storage_contract)
+    # Admit the complete v2 metadata/recapture envelope before native/plan work.
+    # Event work is separately read only after the actual closed runner admission.
+    _reservation_v2(limits, 0)
+    b._runner_admission_v2(runner, limits.image)
+    _reservation_v2(limits, runner._limits.max_work_bytes)
+    if (
+        runner._next != 0
+        or runner._n_accepted != 0
+        or runner._receipts
+        or runner._stop_receipt is not None
+        or runner._active_evidence is not None
+    ):
+        _fail(
+            "fresh_runner_required",
+            "only untouched dynamic manual genesis may initialize a store",
+        )
+    if type(originals) is not oi.OriginalInputsV2:
+        _fail("original_identity", "actual newly captured OriginalInputs required")
+    env = runner._bed._dynamic
+    record = env.as_record()
+    if (record["version"] != 0 or record["cursor"]["next_event_index"] != 0
+            or record["receipts"] or record["bindings"] or record["last_boundary_binding"] is not None
+            or type(runner._vegetation_copied_bytes) is not int
+            or runner._vegetation_copied_bytes != 48 * runner._vegetation_plan.cells):
+        _fail("fresh_runner_required", "dynamic virgin envelope and exact initial copy counter required")
+    source, environment = _runtime_binding(runtime_reference, limits)
+    if originals.source_identity != source:
+        _fail("original_identity", "captured source differs from complete runtime")
+    # The original codec preserves input mapping order; never silently reorder
+    # its captured source dictionary merely because control JSON sorts keys.
+    captured = oi.capture_original_inputs_v2(
+        runner, source_identity=originals.source_identity
+    )
+    if (
+        captured.content_sha256 != originals.content_sha256
+        or captured.static_sha256 != originals.static_sha256
+    ):
+        _fail(
+            "original_identity",
+            "independently recaptured original does not match runner",
+        )
+    del captured
+    handle = DenseBoundaryStore._open(path, limits, create=True)
+    try:
+        probe, probe_sha = _probe(handle._root, handle._rootfd)
+        os.mkdir(handle._root / "originals", 0o700)
+        os.mkdir(handle._root / "generations", 0o700)
+        handle._header = {
+            "schema": SCHEMA_V2,
+            "store_id": uuid.uuid4().hex,
+            "profile": PROFILE_V2,
+            "source_identity": source,
+            "runtime_reference": copy.deepcopy(runtime_reference),
+            "environment_sha256": environment,
+            "storage_contract": {
+                "schema": SCHEMA_V2 + ".storage",
+                "operator_declares_local": True,
+                "operator_declares_fsync_durable": True,
+                "observed_fs_type": probe["observation"]["fs_type"],
+                "observed_fs_id": probe["f_fsid"],
+                "root_path": str(handle._root),
+                "root_dev": probe["root_dev"],
+                "root_ino": probe["root_ino"],
+                "probe_file_sha256": probe_sha,
+            },
+            "limits": _limits_record(limits),
+            "originals": None,
+            "genesis_physical": None,
+        }
+        handle._admit([], runner._limits.max_work_bytes, initial=True)
+        original_path = handle._root / "originals" / ("o-" + uuid.uuid4().hex)
+        oi.save_original_inputs_v2(
+            original_path,
+            originals,
+            limits=oi.OriginalPackLimits(
+                max_cells=limits.image.max_cells,
+                max_classes=limits.image.max_classes,
+                max_voxels=limits.image.max_voxels,
+                max_cohorts=limits.image.max_cohorts,
+                max_events=limits.image.max_events,
+            ),
+        )
+        handle._header["originals"] = _reference_v2(
+            original_path, oi.SCHEMA_V2, originals.content_sha256, handle._root
+        )
+        directory, intent, halt = handle._reserve(0, None, runner._schedule.digest)
+        physical = handle._save_physical(directory / "physical", runner, originals)
+        handle._header["genesis_physical"] = physical
+        handle._header = _seal(handle._header, "store_sha256")
+        _sealed_write(handle._root, "STORE.json", handle._header, 128 << 10)
+        handle._store_raw = oi._json(handle._header)
+        image = handle._save_image(directory / "image", runner, physical)
+        head = handle._seal_generation(directory, intent, None, image)
+        prepared, chain = handle._load(head)
+        _compare_owners_v2(runner, _owner_v2(prepared), limits.image)
+        state = handle._idle_state(head, prepared, chain[0][1])
+        del prepared
+        handle._publish(head, state, None, halt)
+        return handle
+    except BaseException:
+        handle.close()
+        raise
+
+def recover_dynamic_boundary_store(path, *, expected_store_file_sha256, limits=_DEFAULT):
+    """Recover ONLY selected HEAD with retained originals/native sources; no fallback."""
+    BoundaryStoreLimits.__post_init__(limits)
+    _digest(expected_store_file_sha256, "expected STORE file hash")
+    handle = DenseBoundaryStore._open(path, limits, create=False)
+    try:
+        _inventory(handle._root, limits, expected_root=os.fstat(handle._rootfd))
+        header, raw = _record(
+            handle._root / "STORE.json",
+            128 << 10,
+            links=_published_links(handle._root, "STORE.json"),
+        )
+        _check_seal(header, _STORE, "store_sha256", SCHEMA_V2)
+        if (
+            _sha(raw) != expected_store_file_sha256
+            or header["profile"] != PROFILE_V2
+            or type(header["store_id"]) is not str
+            or not _NONCE.fullmatch(header["store_id"])
+        ):
+            _fail("store_identity", "store hash/id/profile mismatch")
+        stored_limits = _limits_load(header["limits"])
+        if _limits_record(stored_limits) != _limits_record(limits):
+            _fail("limit_identity", "restore must use exact persisted limits")
+        b._reference_v2(header["originals"], oi.SCHEMA_V2)
+        b._reference_v2(header["genesis_physical"], "maple-exact-physical-checkpoint/1")
+        if not re.fullmatch(
+            r"originals/o-[0-9a-f]{32}", header["originals"]["relative_path"]
+        ) or not re.fullmatch(
+            r"generations/g-0000-[0-9a-f]{32}/physical",
+            header["genesis_physical"]["relative_path"],
+        ):
+            _fail("store_identity", "original/genesis roles")
+        if not _dynamic_store(header):
+            _fail("store_profile", "named dynamic recovery requires v2")
         handle._header, handle._store_raw = header, raw
         handle._stable()
         head, head_raw = handle._head()
