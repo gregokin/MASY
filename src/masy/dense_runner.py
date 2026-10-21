@@ -828,6 +828,8 @@ class DenseRunner:
     @property
     def active_evidence(self) -> Any:
         """Latest unaccepted native output of a stopped event (never adopted, never resumable here)."""
+        if self._stop_receipt is None and self._active_evidence is not None:
+            _reject_active(self)
         return self._active_evidence
 
     @property
@@ -896,39 +898,23 @@ class DenseRunner:
 
     # stepping --------------------------------------------------------------------------------------------------
     def run(self) -> dict[str, Any]:
+        if self._stop_receipt is None and self._active_evidence is not None:
+            _reject_active(self)
         while self._stop_receipt is None and self._next < len(self._schedule.events):
             self.step()
         return self.report()
 
     def step(self) -> dict[str, Any]:
-        if self._stop_receipt is not None:
-            raise DenseRunnerError("runner_halted", f"stopped at event {self._stop_receipt['index']} "
-                                   f"({self._stop_receipt['code']}); no further event runs")
-        if self._next >= len(self._schedule.events):
-            raise DenseRunnerError("schedule_complete", "every event has been accepted")
-        index = self._next
-        event = self._schedule.events[index]
-        start = self._bed.time_s
+        index, event, start = _step_start(self)
         try:
-            self._precheck()
-            try:
-                resolved = resolve_event(self._schedule, index, start)
-            except (ClockError, DenseScheduleError) as exc:
-                raise _Stop("refused", "unresolvable_event", _detail(exc), exception=exc) from exc
+            resolved = _step_resolve(self, index, start)
             if type(event) is WindEvent:
                 return self._wind_event(index, event, resolved)
             return self._rain_event(index, event, resolved)
         except _Stop as stop:
-            if self._production is not None and isinstance(stop.exception, MemoryError):
-                stop = _Stop("runner_error", "address_space_exhausted", _detail(stop.exception),
-                             exception=stop.exception, elapsed=stop.elapsed, evidence=stop.evidence,
-                             guarantee=stop.guarantee)
-            return self._stop(index, event.kind, start, stop)
+            return _step_stopped(self, index, event, start, stop)
         except Exception as exc:  # noqa: BLE001 - publication is the last fallible step; stop unpublished
-            code = ("address_space_exhausted" if self._production is not None and isinstance(exc, MemoryError)
-                    else "runner_internal_error")
-            return self._stop(index, event.kind, start,
-                              _Stop("runner_error", code, _detail(exc), exception=exc))
+            return _step_failed(self, index, event, start, exc)
 
     def _stop(self, index: int, kind: str, start: float, stop: _Stop) -> dict[str, Any]:
         self._abandon()
@@ -974,460 +960,19 @@ class DenseRunner:
 
     # wind ------------------------------------------------------------------------------------------------------
     def _wind_event(self, index: int, event: WindEvent, resolved: dict[str, Any]) -> dict[str, Any]:
-        n = _native()
-        np, bed, cfg = n.np, self._bed, self._wind.config
-        ops, own = self._array_ops(np), self._ownership()
-        t = bed.time_s
-        end = decode_time(resolved["resolved_edges"]["edges"][-1]["native"])
-        # Theoretical native accounting work (exact upper bound, no step list): ceil(duration / outer) + 1.
-        quotient = Fraction(event.duration_s) / Fraction(cfg.outer_timestep_s)
-        upper = -(-quotient.numerator // quotient.denominator) + 1
-        if upper > self._limits.max_wind_accounting_steps:
-            raise _Stop("refused", "wind_step_limit", f"up to {upper} native accounting steps > "
-                        f"max_wind_accounting_steps={self._limits.max_wind_accounting_steps}")
-        stage_bytes = own.stage_bytes()
-        pool_bytes = own.pool_bytes(self._pool)
-        # Bound staged inputs, transport/finalizer outputs, empty replacement pool,
-        # native deposition request and the native accounting plan. Dense CPU only.
-        self._work_bytes_check(4 * stage_bytes + 3 * pool_bytes
-                               + 8 * self._inventory_elements * self._n_classes + 32 * upper)
-        # The native baseline splits the block with `accounting_step_durations_s` (a list of at most `upper`
-        # floats, guarded above). Its exact sum must cover the requested duration up to the rounding of the
-        # split's own two operations (n * outer and duration - n * outer, unit roundoff 2**-53 each). A dropped
-        # or extended interval is an unsupported duration: refused before any model work, time never rewritten.
-        plan = n.accounting_step_durations_s(event.duration_s, cfg.outer_timestep_s)
-        requested = Fraction(event.duration_s)
-        covered = sum((Fraction(dt) for dt in plan), Fraction(0))
-        rounding = Fraction(2, 2 ** 53) * max(requested, covered)
-        if len(plan) > upper or covered <= 0 or abs(covered - requested) > rounding:
-            raise _Stop("refused", "unsupported_wind_duration",
-                        f"native accounting steps ({len(plan)}) cover {float(covered)!r} s of the requested "
-                        f"{event.duration_s!r} s at outer_timestep_s={cfg.outer_timestep_s!r}; the difference "
-                        "exceeds the split's own FP rounding (the native split drops or extends scheduled time)")
-
-
-        if self._production is not None:
-            try:
-                own.production_require_dry(self._production, np)
-            except self._production.DenseProductionError as exc:
-                raise _Stop("refused", exc.code, exc.detail, exception=exc) from exc
-        stage = self._stage()
-        pool = own.work_pool(self._pool)
+        prepared = _wind_enter(self, index, event, resolved)
         try:
-            scheduler = own.scheduler(stage, pool, t)
-        except DenseBedError as exc:
-            raise _Stop("refused", exc.code, exc.detail, exception=exc) from exc
-        block = n.WindBlock(shear_velocity_m_s=event.shear_velocity_m_s,
-                            direction_deg=event.direction_deg_cw_from_north, duration_s=event.duration_s,
-                            start_time_s=t, end_time_s=end)
-        inventory_before = ops.inventory(n, own.stage_state(stage))
-        try:
-            result = _advance_wind_block(scheduler, block, cfg)
+            result = _advance_wind_block(prepared.scheduler, prepared.block, prepared.cfg)
         except Exception as exc:  # noqa: BLE001 - every native failure stops the event unpublished
             status = "native_refused" if isinstance(exc, ValueError) else "native_error"
             raise _Stop(status, "wind_native_failure", _detail(exc), exception=exc) from exc
-        physical, a = result.state.physical, result.accounting
-        t_end = ops.scalar(physical.time_s)
-        elapsed = _elapsed(t, t_end)
-
-        def incomplete(code: str, detail: str) -> _Stop:
-            return _Stop("incomplete", code, detail, elapsed=elapsed, evidence=result)
-
-        if result.process_mode != SUPPORTED_WIND_MODE or result.integration_path != "baseline_direct":
-            raise incomplete("unsupported_wind_path", f"{result.process_mode}/{result.integration_path}")
-        if result.conservation_ok is not True:
-            raise incomplete("wind_conservation_failed", "native check_block_conservation reported failure")
-        water_fields = [getattr(a, f"water_{name}", None) for name in
-                        ("mobile_mass_before_by_class_kg", "mobile_mass_after_by_class_kg",
-                         "boundary_input_by_class_kg", "boundary_export_by_class_kg")]
-        if any(v is not None and ops.any_nonzero(ops.class_vector(v)) for v in water_fields):
-            raise incomplete("wind_water_pass", "native wind accounting reports water-borne exchange")
-        if a.n_accounting_steps > upper or a.n_accounting_steps > self._limits.max_wind_accounting_steps:
-            raise incomplete("wind_step_limit", f"{a.n_accounting_steps} native accounting steps")
-        if ops.any_nonzero(physical.water.mobile_mass_by_cell_class_kg):
-            raise incomplete("water_mobile_not_empty", "water-borne load appeared during wind")
-        if t_end < t:
-            raise incomplete("time_reversed", "native wind end precedes its start")
-        if t_end == t:
-            raise incomplete("wind_no_elapsed", "positive requested duration but native physical time did not advance")
-
-        bed_change = ops.class_vector(a.bed_change_by_class_kg)
-        mobile_delta = (ops.class_vector(a.mobile_mass_after_by_class_kg)
-                        - ops.class_vector(a.mobile_mass_before_by_class_kg))
-        inflow, export = ops.class_vector(a.boundary_input_by_class_kg), ops.class_vector(a.boundary_export_by_class_kg)
-        native_residual = bed_change + mobile_delta - inflow + export
-        native_bound = ops.scalar(n.summation_error_bound_kg(max(a.n_accounting_steps, 1),
-                                                             n.reservoir_arithmetic_scale_kg(a, physical)))
-        if not bool(np.all(np.abs(native_residual) <= native_bound)):
-            raise incomplete("wind_budget_open", "native per-class reservoir identity exceeds its native bound")
-        # advance_wind_block leaves the consumed block cursor in place. Apply
-        # exactly the native record loop's terminal cursor mapping, at this
-        # deliberate event boundary only. No native physical timestamp changes.
-        if (result.state.block_index != 0
-                or result.state.block_offset_s < event.duration_s - n.record_end_epsilon_s):
-            raise incomplete("wind_record_incomplete", "native block did not reach its terminal cursor")
-        record = n.resolve_wind_forcing_record({"blocks": [{
-            "shear_velocity_m_s": event.shear_velocity_m_s,
-            "direction_deg": event.direction_deg_cw_from_north, "duration_s": event.duration_s}]})
-        completed = dataclasses.replace(result.state, block_index=len(record.blocks), block_offset_s=0.0)
-        evidence = {"transport": result}
-        try:
-            final = _finalize_wind_event(completed, cfg, record, record_origin_s=t)
-        except Exception as exc:  # native errors never publish this event or admit water
-            raise _Stop("native_error", "wind_finalization_failure", _detail(exc), exception=exc,
-                        elapsed=elapsed, evidence=evidence) from exc
-        evidence["finalization"] = final
-        if type(final) is not n.WindEventFinalizationResult:
-            raise _Stop("incomplete", "invalid_wind_finalization", "unexpected native finalizer result type",
-                        elapsed=elapsed, evidence=evidence)
-        if not final.completed or not final.water_handoff_ready:
-            raise _Stop("incomplete", "wind_finalization_incomplete", str(final.reasons)[:_DETAIL_CHARS],
-                        elapsed=elapsed, evidence=evidence)
-        settled = final.state
-        if (ops.scalar(settled.physical.time_s).hex() != t_end.hex()
-                or ops.scalar(final.time_s).hex() != t_end.hex()
-                or settled.block_index != completed.block_index or settled.block_offset_s != 0.0
-                or final.block_index != completed.block_index or final.block_offset_s != 0.0):
-            raise _Stop("incomplete", "wind_finalization_clock_changed", "native finalizer changed time or cursor",
-                        elapsed=elapsed, evidence=evidence)
-        if not n.mobile_state_is_genuinely_empty(settled.physical.mobile_state):
-            raise _Stop("incomplete", "wind_finalization_mobile_nonempty", "native finalizer left airborne material",
-                        elapsed=elapsed, evidence=evidence)
-        # Finalizer deposition is INTERNAL: its native returned bed/ledger already
-        # includes it. Only its native boundary export is added to external export.
-        final_vectors = {name: ops.class_vector(getattr(final, name)) for name in (
-            "airborne_mass_before_by_class_kg", "airborne_mass_after_by_class_kg",
-            "deposited_mass_by_class_kg", "boundary_export_mass_by_class_kg", "bed_change_by_class_kg",
-            "transfer_identity_gap_by_class_kg", "reservoir_identity_gap_by_class_kg")}
-        if any(v.shape != (self._n_classes,) or not bool(np.isfinite(v).all()) for v in final_vectors.values()):
-            raise _Stop("incomplete", "wind_finalization_budget_invalid", "nonfinite or incompatible class vector",
-                        elapsed=elapsed, evidence=evidence)
-        for prefix in ("transfer", "reservoir"):
-            bound = ops.scalar(getattr(final, prefix + "_identity_bound_kg"))
-            if (not math.isfinite(bound) or bound < 0.0
-                    or not bool(np.all(np.abs(final_vectors[prefix + "_identity_gap_by_class_kg"]) <= bound))):
-                raise _Stop("incomplete", "wind_finalization_budget_open", "native finalizer class budget failed",
-                            elapsed=elapsed, evidence=evidence)
-        if (bool(np.any(final_vectors["airborne_mass_after_by_class_kg"] != 0.0))
-                or not ops.equal_class_vector(final_vectors["airborne_mass_before_by_class_kg"],
-                                              n.mobile_mass_by_class_kg(physical.mobile_state, self._n_classes))):
-            raise _Stop("incomplete", "wind_finalization_mobile_budget", "native mobile inventory disagrees",
-                        elapsed=elapsed, evidence=evidence)
-        transport_export = export
-        export = transport_export + final_vectors["boundary_export_mass_by_class_kg"]
-        transport_bed_change = bed_change
-        bed_change = bed_change + final_vectors["bed_change_by_class_kg"]
-        physical = settled.physical
-        candidate = n.BedState(physical.voxel_column, physical.active_layer, physical.water, physical.ledger,
-                               physical.committed_topography, physical.sediment_availability)
-        inventory_after = ops.inventory(n, candidate)
-        event_mobile_delta = (final_vectors["airborne_mass_after_by_class_kg"]
-                              - ops.class_vector(a.mobile_mass_before_by_class_kg))
-        event_residual = bed_change + event_mobile_delta - inflow + export
-        # Use the original operands, so cancellation of erosion and settlement
-        # cannot shrink the arithmetic scale of the six combining operations.
-        event_scale = sum(float(np.abs(value).sum()) for value in (
-            transport_bed_change, final_vectors["bed_change_by_class_kg"],
-            final_vectors["airborne_mass_after_by_class_kg"], ops.class_vector(a.mobile_mass_before_by_class_kg),
-            inflow, transport_export, final_vectors["boundary_export_mass_by_class_kg"]))
-        reservoir_bound = ops.scalar(final.reservoir_identity_bound_kg)
-        event_bound = (native_bound + reservoir_bound
-                       + n.summation_error_bound_kg(6, event_scale))
-        if not bool(np.all(np.abs(event_residual) <= event_bound)):
-            raise _Stop("incomplete", "wind_event_budget_open", "combined transport/finalizer class identity failed",
-                        elapsed=elapsed, evidence=evidence)
-        inventory_residual = inventory_after - inventory_before + event_mobile_delta - inflow + export
-        scale = max(float(np.abs(inventory_before).sum()), float(np.abs(inventory_after).sum()),
-                    float(inflow.sum()), float(export.sum()))
-        inventory_bound = (native_bound + reservoir_bound
-                           + n.summation_error_bound_kg(2 * self._inventory_elements + 6, scale))
-        if not bool(np.all(np.abs(inventory_residual) <= inventory_bound)):
-            raise _Stop("incomplete", "wind_inventory_open", "actual bed inventories do not close within native bounds",
-                        elapsed=elapsed, evidence=evidence)
-
-        spatial = getattr(a, "spatial", None)
-        body = {
-            "native": {
-                "block": {"start_time_s": encode_time(ops.scalar(result.start_time_s)),
-                          "end_time_s": encode_time(ops.scalar(result.end_time_s)),
-                          "duration_s": encode_time(ops.scalar(result.duration_s))},
-                "advanced_end_time_s": encode_time(ops.scalar(result.advanced_end_time_s)),
-                "advanced_duration_s": encode_time(ops.scalar(result.advanced_duration_s)),
-                "physical_time_s": encode_time(t_end),
-                "process_mode": result.process_mode, "integration_path": result.integration_path,
-                "n_accounting_steps": int(a.n_accounting_steps), "accounting_step_upper_bound": upper,
-                "n_commits_this_block": int(result.n_commits_this_block),
-                "conservation_residual_kg": ops.scalar(result.conservation_residual_kg),
-            },
-            # Native FP accumulation is kept as is (endpoints unchanged); only the discrepancy is recorded.
-            "coverage": {"requested_s": encode_time(event.duration_s), "native_plan_steps": len(plan),
-                         "native_plan_sum_s": _fraction_text(covered),
-                         "plan_discrepancy_s": _fraction_text(covered - requested),
-                         "plan_rounding_bound_s": _fraction_text(rounding),
-                         "elapsed_discrepancy_s": _fraction_text(Fraction(t_end) - Fraction(t) - requested)},
-            "classes": {
-                "bed_change_kg": _floats(np, bed_change), "boundary_input_kg": _floats(np, inflow),
-                "boundary_export_kg": _floats(np, export),
-                "mobile_before_kg": ops.float_values(a.mobile_mass_before_by_class_kg),
-                "mobile_after_kg": ops.float_values(final.airborne_mass_after_by_class_kg),
-                "transport_mobile_after_kg": ops.float_values(a.mobile_mass_after_by_class_kg),
-                "transport_boundary_export_kg": _floats(np, transport_export),
-                "transport_bed_change_kg": _floats(np, transport_bed_change),
-                "detachment_kg": (None if spatial is None
-                                  else _floats(np, ops.class_vector(
-                                      spatial.detachment_by_cell_class_kg.sum(axis=(0, 1))))),
-                "native_residual_kg": _floats(np, native_residual), "native_bound_kg": float(native_bound),
-                "event_residual_kg": _floats(np, event_residual), "event_bound_kg": float(event_bound),
-                "event_summation_terms": 6, "event_arithmetic_scale_kg": event_scale,
-                "inventory_before_kg": _floats(np, inventory_before), "inventory_after_kg": _floats(np, inventory_after),
-                "inventory_residual_kg": _floats(np, inventory_residual),
-                "inventory_bound_kg": float(inventory_bound),
-            },
-            "wind_end_pool": "genuinely_empty",
-            "finalization": {
-                "status": final.status, "algorithm_version": final.algorithm_version,
-                "representation": final.representation, "placement_rule": final.placement_rule,
-                "record_origin_s": encode_time(t),
-                "record": _canonical_input(np, record, "completed_record"),
-                "record_sha256": _bed._sha256(_canonical_input(np, record, "completed_record")),
-                "completed_block_index": settled.block_index, "completed_block_offset_s": settled.block_offset_s,
-                "physical_time_s": encode_time(ops.scalar(physical.time_s)),
-                "n_settled": int(final.n_settled), "n_exported": int(final.n_exported),
-                **{name: _floats(np, value) for name, value in final_vectors.items()},
-                "transfer_identity_bound_kg": ops.scalar(final.transfer_identity_bound_kg),
-                "reservoir_identity_bound_kg": reservoir_bound,
-                "numerical_residual_scalar_kg": ops.scalar(final.numerical_residual_scalar_kg),
-            },
-        }
-
-        if self._production is not None:
-            try:
-                body["production"] = own.production_wind_evidence(self._production, n, result, final)
-                body["production"]["worker"] = self._production_process_check(
-                    checkpoint="after_native_wind", elapsed=elapsed, evidence=evidence)
-                body["production"]["retained_wrapper_owners"] = own.production_retained_owners(
-                    self._production, self._wind, self._water, self._control, self._wind_profile,
-                    self._pool, self._soil, self._routing, len(self._receipts))
-            except _Stop:
-                raise
-            except MemoryError as exc:
-                raise _Stop("runner_error", "address_space_exhausted", _detail(exc), exception=exc,
-                            elapsed=elapsed, evidence=evidence) from exc
-            except self._production.DenseProductionError as exc:
-                raise _Stop("incomplete", exc.code, exc.detail, exception=exc,
-                            elapsed=elapsed, evidence=evidence) from exc
-            except Exception as exc:
-                raise _Stop("runner_error", "production_evidence_failure", _detail(exc), exception=exc,
-                            elapsed=elapsed, evidence=evidence) from exc
-
-        publish = own.prepare_scheduler(physical)
-
-        # The legitimate empty native pool is the next accepted pool; caches are rebuilt at re-entry.
-        return self._finish(n, index, "wind", resolved, stage, candidate, t, t_end,
-                            ops.scalar(result.advanced_duration_s), inflow, export,
-                            np.full(self._n_classes, inventory_bound), body, publish,
-                            pool=physical.mobile_state, soil=self._soil, routing=self._routing,
-                            terminal=final_vectors["deposited_mass_by_class_kg"],
-                            elapsed=elapsed, evidence=evidence, publication_source=physical)
+        return _wind_accept(self, index, event, resolved, prepared, result)
 
     # rain ------------------------------------------------------------------------------------------------------
     def _rain_event(self, index: int, event: Any, resolved: dict[str, Any]) -> dict[str, Any]:
-        n = _native()
-        np, bed, ctx = n.np, self._bed, self._bed.context
-        ops, own = self._array_ops(np), self._ownership()
-        sc, policy, every = self._control.sediment_control, self._control.completion_policy, self._control.report_every_s
-        w, limits = self._water, self._limits
-        t = bed.time_s
-        edges = [decode_time(edge["native"]) for edge in resolved["resolved_edges"]["edges"]]
-        rain_edges, guard_end = edges[:-1], edges[-1]
-        intensities = [interval.intensity_mm_h for interval in event.intervals]
-        # Preflight (no allocation yet): steps needed to reach the rainfall end plus the native hold at max_dt_s.
-        need = (Fraction(rain_edges[-1]) - Fraction(t) + Fraction(policy.hold_s)) / Fraction(sc.storm.max_dt_s)
-        lower_steps = -(-need.numerator // need.denominator)
-        if lower_steps > sc.storm.max_steps:
-            raise _Stop("refused", "storm_step_limit", f"at least {lower_steps} storm steps > native max_steps="
-                        f"{sc.storm.max_steps}")
-        span = (Fraction(guard_end) - Fraction(t)) / Fraction(every)
-        rows = span.numerator // span.denominator + len(rain_edges) + 2
-        if rows > limits.max_report_rows:
-            raise _Stop("refused", "report_rows_limit", f"up to {rows} report rows > max_report_rows="
-                        f"{limits.max_report_rows}")
-        g = ctx.geometry
-        cells, nc = g.ny * g.nx, self._n_classes
-        stage_bytes = own.stage_bytes()
-        columns = len(n.HYDROGRAPH_COLUMNS) + len(n.sediment_hydrograph_columns(nc))
-        # Retained process-private memory of the accepted template (sediment velocity in particular): every array
-        # field the entry does not replace is handed to native code only as a work copy, never by reference.
-        retained = self._routing
-        memory_names: tuple[str, ...] = ()
-        memory_bytes = 0
-        if retained is not None:
-            memory_names, memory_bytes = own.routing_memory(np, retained, w, (g.ny, g.nx), nc)
-        # stage + committed candidate + dry bed; storm / soil / velocity work grids; two report tables; memory copies.
-        self._work_bytes_check(3 * stage_bytes + 8 * cells * (6 + nc) + 2 * 8 * rows * columns + memory_bytes)
-        try:
-            schedule = n.RainfallSchedule(edges_s=rain_edges, intensity_mm_per_h=intensities,
-                                          provenance=n.RainfallProvenance(kind="constant"))
-        except ValueError as exc:
-            raise _Stop("refused", "invalid_rainfall", _detail(exc), exception=exc) from exc
-
-        stage = self._stage()
-        stage_bed = own.stage_state(stage)
-        if ops.any_nonzero(stage_bed.water.mobile_mass_by_cell_class_kg):
-            raise _Stop("refused", "water_mobile_not_empty", "rain entry needs an empty water-borne load")
-        inventory_before = ops.inventory(n, stage_bed)
-        soil = own.work_soil(np, self._soil)
-        first = self._routing is None
-        try:
-            if first:  # first-time construction: the native graph of the CURRENT committed elevation
-                source = n.committed_elevation_m(stage_bed.committed_topography)
-                graph0 = n.routing_graph_from_elevation(w.terrain, source, xp=ops.xp)
-                seed = n.initial_event_state(graph0, w.terrain, stage_bed, ctx, soil, t_s=t, control=sc)
-                held = own.retain_routing(seed)
-            else:
-                held = retained
-            own.routing_guard(np, held, w, (g.ny, g.nx), nc)
-            boundary = n.commit_bed(stage_bed, ctx, held.graph, held.terrain, t, force=True,
-                                    routing_source_m=held.source)
-        except _Stop:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            status = "native_refused" if isinstance(exc, ValueError) else "native_error"
-            raise _Stop(status, "rain_entry_failure", _detail(exc), exception=exc) from exc
-        if boundary.did_commit is not True or type(boundary.rerouted) is not bool or boundary.routing_source_m is None:
-            raise _Stop("incomplete", "rain_entry_commit", "native entry commit did not return a held routing source")
-        graph = boundary.graph
-        if boundary.rerouted:
-            network, grid = n.transport_network(graph), n.physics_grid_from_graph(graph)
-        else:
-            if graph is not held.graph or boundary.routing_source_m is not held.source:
-                raise _Stop("incomplete", "routing_identity_changed", "no reroute but the routing pair was replaced")
-            network, grid = held.network, held.grid
-        try:
-            # Same values (native reset semantics kept), independent buffers: a native write to the entry's memory
-            # can never reach the accepted template or restored projection.
-            entry = own.routing_entry(n, held, boundary, graph, network, grid, soil, t, memory_names,
-                                      water=w, shape=(g.ny, g.nx), nc=nc)
-            cover = w.vegetation_cover_fraction
-            if hasattr(self, "_vegetation_plan"):
-                cover = bed.vegetation_cover_fraction()  # owned current cover, admitted before stage allocation
-            wet = _complete_event(entry, ctx, w.column, w.field, schedule, cover, w.sediment,
-                                  max_end_s=guard_end, control=sc, policy=policy, report_every_s=every,
-                                  max_report_rows=limits.max_report_rows, **self._rain_native_kwargs())
-        except _Stop:
-            raise
-        except n.IncompleteEventError as exc:
-            raise _Stop("incomplete", "rain_incomplete_native_limit", _detail(exc), exception=exc) from exc
-        except Exception as exc:  # noqa: BLE001
-            status = "native_refused" if isinstance(exc, ValueError) else "native_error"
-            raise _Stop(status, "rain_native_failure", _detail(exc), exception=exc) from exc
-        finally:
-            self._rain_native_release()
-        if type(wet) is not n.DryHandoff or wet.status != "complete":
-            progress = wet if type(wet) is n.EventProgress else None
-            elapsed = None if progress is None else _elapsed(t, progress.result.state.t_s)
-            raise _Stop("incomplete", "rain_not_dry", f"native returned {type(wet).__name__}, not a DryHandoff "
-                        "(wet progress kept as evidence only; no combined resume)", elapsed=elapsed, evidence=wet)
-        dry, acc, r = wet.dry_state, wet.accounting, wet.progress.result
-        t_end = ops.scalar(dry.t_s)
-        elapsed = _elapsed(t, t_end)
-
-        def incomplete(code: str, detail: str) -> _Stop:
-            return _Stop("incomplete", code, detail, elapsed=elapsed, evidence=wet)
-
-        closure, budget = acc["sediment_closure"], acc["storm_water_budget"]
-        if closure["closed"] is not True or closure["request_reconciled"] is not True or budget["closed"] is not True:
-            raise incomplete("rain_budget_open", "native sediment closure / request / water budget not closed")
-        if not abs(ops.scalar(acc["combined_water_residual_m3"])) <= ops.scalar(budget["tolerance_m3"]):
-            raise incomplete("dry_water_budget_open", "native combined storm + dry-reset water budget not closed")
-        if (ops.any_nonzero(dry.bed.water.mobile_mass_by_cell_class_kg) or ops.any_nonzero(dry.storm.depth_m)
-                or ops.any_nonzero(dry.storm.soil_water_m) or dry.phase is not None
-                or ops.any_nonzero(dry.sediment_velocity_m_s)):
-            raise incomplete("dry_reset_not_empty", "the native dry state is not the documented empty reset")
-        if dry.terrain is not held.terrain:
-            raise incomplete("terrain_replaced", "the native dry state carries a different terrain reference")
-        if not rain_edges[-1] <= t_end <= guard_end:
-            raise incomplete("rain_end_outside_guard", "dry time outside [rainfall end, recession guard end]")
-
-        export = ops.class_vector(r.by_class["export_actual"])
-        inflow = np.zeros(nc, dtype=np.float64)  # the supported SYRUP event has no sediment boundary input
-        inventory_after = ops.inventory(n, dry.bed)
-        residual = inventory_after - inventory_before + export
-        scale = max(float(np.abs(inventory_before).sum()), float(np.abs(inventory_after).sum()), float(export.sum()))
-        bound = (ops.class_vector(closure["tolerance_kg"]) + ops.class_vector(acc["terminal_sediment_tolerance_kg"])
-                 + n.summation_error_bound_kg(2 * self._inventory_elements + 4, scale))
-        if not bool(np.all(np.abs(residual) <= bound)):
-            raise incomplete("rain_inventory_open", "actual bed inventories do not close within native bounds")
-        terminal = ops.class_vector(acc["terminal_deposition_by_class_kg"])
-        settlement = acc.get("flow_end_settlement")
-        body = {
-            "native": {
-                "dry_time_s": encode_time(t_end), "rainfall_end_s": encode_time(rain_edges[-1]),
-                "recession_guard_end_s": encode_time(guard_end),
-                "rainfall_edges_s": [encode_time(v) for v in rain_edges], "intensity_mm_h": intensities,
-                "n_accepted_steps": int(r.n_accepted_steps), "n_rejected_attempts": int(r.n_rejected_attempts),
-                "n_commits": int(r.n_commits), "report_rows": int(len(r.boundaries)), "report_rows_bound": rows,
-                "storm_steps_lower_bound": lower_steps, "transport_scheme": "upwind", "phase": None,
-            },
-            "routing": {"first_graph_construction": first, "entry_rerouted": boundary.rerouted,
-                        "entry_net_displacement_m": (None if boundary.net_displacement_m is None
-                                                     else ops.scalar(boundary.net_displacement_m)),
-                        "graph_retained_by_identity": graph is held.graph,
-                        "n_reroutes_in_event": int(r.n_reroutes)},
-            "classes": {
-                "actual_pickup_kg": ops.float_values(r.by_class["actual_pickup"]),
-                "deposition_actual_kg": ops.float_values(r.by_class["deposition_actual"]),
-                "export_kg": _floats(np, export), "import_kg": _floats(np, inflow),
-                "internal_terminal_deposition_kg": _floats(np, terminal),
-                "flow_end_mobile_before_settlement_kg": (None if settlement is None else
-                                                         ops.float_values(
-                                                             settlement["mobile_before_settlement_by_class_kg"])),
-                "native_closure_residual_kg": ops.float_values(closure["residual_kg"]),
-                "native_closure_tolerance_kg": ops.float_values(closure["tolerance_kg"]),
-                "terminal_sediment_tolerance_kg": ops.float_values(acc["terminal_sediment_tolerance_kg"]),
-                "inventory_before_kg": _floats(np, inventory_before), "inventory_after_kg": _floats(np, inventory_after),
-                "inventory_residual_kg": _floats(np, residual), "inventory_bound_kg": _floats(np, bound),
-            },
-            "water": {name: ops.scalar(budget[name]) for name in
-                      ("rain_m3", "surface_initial_m3", "soil_initial_m3", "surface_final_m3", "soil_final_m3",
-                       "drainage_m3", "export_m3", "residual_m3", "tolerance_m3")}
-            | {"dry_surface_removed_m3": ops.scalar(acc["surface_removed_m3"]),
-               "dry_soil_removed_m3": ops.scalar(acc["soil_removed_m3"]),
-               "water_added_m3": ops.scalar(acc["water_added_m3"]),
-               "combined_water_residual_m3": ops.scalar(acc["combined_water_residual_m3"]),
-               "dry_reset": "external dry-again removal (native); soil water is zero after the reset"},
-        }
-        if self._production is not None:
-            try:
-                body["production"] = {"scope": self._production.SCOPE,
-                                      "worker": self._production_process_check(
-                                          checkpoint="after_native_rain", elapsed=elapsed, evidence=wet),
-                                      "entry_commit": self._production.commit_evidence(np, boundary.maple_result),
-                                      "retained_wrapper_owners": own.production_retained_owners(
-                                          self._production, self._wind, self._water, self._control,
-                                          self._wind_profile, self._pool, self._soil, self._routing,
-                                          len(self._receipts))}
-            except _Stop:
-                raise
-            except MemoryError as exc:
-                raise _Stop("runner_error", "address_space_exhausted", _detail(exc), exception=exc,
-                            elapsed=elapsed, evidence=wet) from exc
-            except Exception as exc:
-                raise _Stop("runner_error", "production_evidence_failure", _detail(exc), exception=exc,
-                            elapsed=elapsed, evidence=wet) from exc
-        water_delta = {"rain_m3": ops.scalar(budget["rain_m3"]), "drainage_m3": ops.scalar(budget["drainage_m3"]),
-                       "storm_export_m3": ops.scalar(budget["export_m3"]),
-                       "dry_surface_removed_m3": ops.scalar(acc["surface_removed_m3"]),
-                       "dry_soil_removed_m3": ops.scalar(acc["soil_removed_m3"])}
-        body.update(self._rain_receipt_extra())
-
-        publish = own.prepare_bed(dry.bed, t_end, soil=dry.storm.soil_water_m)
-        routing = own.retain_routing(dry)
-        return self._finish(n, index, "rain", resolved, stage, dry.bed, t, t_end, None, inflow, export, bound, body,
-                            publish, pool=self._pool, soil=dry.storm.soil_water_m, routing=routing,
-                            terminal=terminal, water=water_delta,
-                            reroutes=(int(boundary.rerouted), int(r.n_reroutes)), elapsed=elapsed, evidence=wet,
-                            publication_source=dry.bed)
+        prepared = _rain_enter(self, index, event, resolved)
+        wet = _rain_native(self, prepared)
+        return _rain_accept(self, index, event, resolved, prepared, wet)
 
     # atomic acceptance -----------------------------------------------------------------------------------------
     def _aggregate_record(self, np: Any, totals: dict[str, Any], inventory: Any) -> dict[str, Any]:
@@ -1599,3 +1144,591 @@ class DenseRunner:
         self._accepted_private = private_identity
         self._active_evidence = None
         return returned
+
+
+@dataclasses.dataclass(slots=True)
+class _RainEntry:
+    """Private original rain transaction; no runner reference and no persistence API."""
+    n: Any
+    np: Any
+    bed: Any
+    ctx: Any
+    ops: Any
+    own: Any
+    sc: Any
+    policy: Any
+    every: Any
+    w: Any
+    limits: Any
+    t: Any
+    rain_edges: Any
+    guard_end: Any
+    intensities: Any
+    rows: Any
+    lower_steps: Any
+    nc: Any
+    stage: Any
+    inventory_before: Any
+    soil: Any
+    first: Any
+    held: Any
+    boundary: Any
+    graph: Any
+    network: Any
+    grid: Any
+    memory_names: Any
+    g: Any
+    schedule: Any
+    cover: Any = None
+
+
+def _rain_enter(self: DenseRunner, index: int, event: Any, resolved: dict[str, Any]) -> _RainEntry:
+    n = _native()
+    np, bed, ctx = n.np, self._bed, self._bed.context
+    ops, own = self._array_ops(np), self._ownership()
+    sc, policy, every = self._control.sediment_control, self._control.completion_policy, self._control.report_every_s
+    w, limits = self._water, self._limits
+    t = bed.time_s
+    edges = [decode_time(edge["native"]) for edge in resolved["resolved_edges"]["edges"]]
+    rain_edges, guard_end = edges[:-1], edges[-1]
+    intensities = [interval.intensity_mm_h for interval in event.intervals]
+    # Preflight (no allocation yet): steps needed to reach the rainfall end plus the native hold at max_dt_s.
+    need = (Fraction(rain_edges[-1]) - Fraction(t) + Fraction(policy.hold_s)) / Fraction(sc.storm.max_dt_s)
+    lower_steps = -(-need.numerator // need.denominator)
+    if lower_steps > sc.storm.max_steps:
+        raise _Stop("refused", "storm_step_limit", f"at least {lower_steps} storm steps > native max_steps="
+                    f"{sc.storm.max_steps}")
+    span = (Fraction(guard_end) - Fraction(t)) / Fraction(every)
+    rows = span.numerator // span.denominator + len(rain_edges) + 2
+    if rows > limits.max_report_rows:
+        raise _Stop("refused", "report_rows_limit", f"up to {rows} report rows > max_report_rows="
+                    f"{limits.max_report_rows}")
+    g = ctx.geometry
+    cells, nc = g.ny * g.nx, self._n_classes
+    stage_bytes = own.stage_bytes()
+    columns = len(n.HYDROGRAPH_COLUMNS) + len(n.sediment_hydrograph_columns(nc))
+    # Retained process-private memory of the accepted template (sediment velocity in particular): every array
+    # field the entry does not replace is handed to native code only as a work copy, never by reference.
+    retained = self._routing
+    memory_names: tuple[str, ...] = ()
+    memory_bytes = 0
+    if retained is not None:
+        memory_names, memory_bytes = own.routing_memory(np, retained, w, (g.ny, g.nx), nc)
+    # stage + committed candidate + dry bed; storm / soil / velocity work grids; two report tables; memory copies.
+    self._work_bytes_check(3 * stage_bytes + 8 * cells * (6 + nc) + 2 * 8 * rows * columns + memory_bytes)
+    try:
+        schedule = n.RainfallSchedule(edges_s=rain_edges, intensity_mm_per_h=intensities,
+                                      provenance=n.RainfallProvenance(kind="constant"))
+    except ValueError as exc:
+        raise _Stop("refused", "invalid_rainfall", _detail(exc), exception=exc) from exc
+
+    stage = self._stage()
+    stage_bed = own.stage_state(stage)
+    if ops.any_nonzero(stage_bed.water.mobile_mass_by_cell_class_kg):
+        raise _Stop("refused", "water_mobile_not_empty", "rain entry needs an empty water-borne load")
+    inventory_before = ops.inventory(n, stage_bed)
+    soil = own.work_soil(np, self._soil)
+    first = self._routing is None
+    try:
+        if first:  # first-time construction: the native graph of the CURRENT committed elevation
+            source = n.committed_elevation_m(stage_bed.committed_topography)
+            graph0 = n.routing_graph_from_elevation(w.terrain, source, xp=ops.xp)
+            seed = n.initial_event_state(graph0, w.terrain, stage_bed, ctx, soil, t_s=t, control=sc)
+            held = own.retain_routing(seed)
+        else:
+            held = retained
+        own.routing_guard(np, held, w, (g.ny, g.nx), nc)
+        boundary = n.commit_bed(stage_bed, ctx, held.graph, held.terrain, t, force=True,
+                                routing_source_m=held.source)
+    except _Stop:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        status = "native_refused" if isinstance(exc, ValueError) else "native_error"
+        raise _Stop(status, "rain_entry_failure", _detail(exc), exception=exc) from exc
+    if boundary.did_commit is not True or type(boundary.rerouted) is not bool or boundary.routing_source_m is None:
+        raise _Stop("incomplete", "rain_entry_commit", "native entry commit did not return a held routing source")
+    graph = boundary.graph
+    if boundary.rerouted:
+        network, grid = n.transport_network(graph), n.physics_grid_from_graph(graph)
+    else:
+        if graph is not held.graph or boundary.routing_source_m is not held.source:
+            raise _Stop("incomplete", "routing_identity_changed", "no reroute but the routing pair was replaced")
+        network, grid = held.network, held.grid
+    return _RainEntry(n, np, bed, ctx, ops, own, sc, policy, every, w, limits, t, rain_edges, guard_end, intensities, rows, lower_steps, nc, stage, inventory_before, soil, first, held, boundary, graph, network, grid, memory_names, g, schedule)
+
+
+def _rain_native(self: DenseRunner, prepared: _RainEntry, *, continuation: Any = None,
+                 checkpoint_callback: Any = None) -> Any:
+    n, np, bed, ctx, ops, own, sc, policy, every, w, limits, t, rain_edges, guard_end, intensities, rows, lower_steps, nc, stage, inventory_before, soil, first, held, boundary, graph, network, grid, memory_names, g, schedule = (
+        prepared.n, prepared.np, prepared.bed, prepared.ctx, prepared.ops, prepared.own, prepared.sc, prepared.policy, prepared.every, prepared.w, prepared.limits, prepared.t, prepared.rain_edges, prepared.guard_end, prepared.intensities, prepared.rows, prepared.lower_steps, prepared.nc, prepared.stage, prepared.inventory_before, prepared.soil, prepared.first, prepared.held, prepared.boundary, prepared.graph, prepared.network, prepared.grid, prepared.memory_names, prepared.g, prepared.schedule)
+    try:
+        if continuation is None:
+            entry = own.routing_entry(n, held, boundary, graph, network, grid, soil, t, memory_names,
+                                      water=w, shape=(g.ny, g.nx), nc=nc)
+            cover = w.vegetation_cover_fraction
+            if hasattr(self, "_vegetation_plan"):
+                cover = bed.vegetation_cover_fraction()  # owned current cover, admitted before stage allocation
+        else:
+            entry = continuation.result.state
+            cover = prepared.cover
+        if continuation is None and checkpoint_callback is None:
+            wet = _complete_event(entry, ctx, w.column, w.field, schedule, cover, w.sediment,
+                                  max_end_s=guard_end, control=sc, policy=policy, report_every_s=every,
+                                  max_report_rows=limits.max_report_rows, **self._rain_native_kwargs())
+        else:
+            wet = _complete_event(entry, ctx, w.column, w.field, schedule, cover, w.sediment, max_end_s=guard_end, control=sc, policy=policy, report_every_s=every, max_report_rows=limits.max_report_rows, continuation=continuation, checkpoint_callback=checkpoint_callback, **self._rain_native_kwargs())
+    except _Stop:
+        raise
+    except n.IncompleteEventError as exc:
+        raise _Stop("incomplete", "rain_incomplete_native_limit", _detail(exc), exception=exc) from exc
+    except Exception as exc:  # noqa: BLE001
+        status = "native_refused" if isinstance(exc, ValueError) else "native_error"
+        raise _Stop(status, "rain_native_failure", _detail(exc), exception=exc) from exc
+    finally:
+        self._rain_native_release()
+    prepared.cover = cover
+    return wet
+
+
+def _rain_accept(self: DenseRunner, index: int, event: Any, resolved: dict[str, Any],
+                 prepared: _RainEntry, wet: Any) -> dict[str, Any]:
+    n, np, bed, ctx, ops, own, sc, policy, every, w, limits, t, rain_edges, guard_end, intensities, rows, lower_steps, nc, stage, inventory_before, soil, first, held, boundary, graph, network, grid, memory_names, g, schedule = (
+        prepared.n, prepared.np, prepared.bed, prepared.ctx, prepared.ops, prepared.own, prepared.sc, prepared.policy, prepared.every, prepared.w, prepared.limits, prepared.t, prepared.rain_edges, prepared.guard_end, prepared.intensities, prepared.rows, prepared.lower_steps, prepared.nc, prepared.stage, prepared.inventory_before, prepared.soil, prepared.first, prepared.held, prepared.boundary, prepared.graph, prepared.network, prepared.grid, prepared.memory_names, prepared.g, prepared.schedule)
+    if type(wet) is not n.DryHandoff or wet.status != "complete":
+        progress = wet if type(wet) is n.EventProgress else None
+        elapsed = None if progress is None else _elapsed(t, progress.result.state.t_s)
+        raise _Stop("incomplete", "rain_not_dry", f"native returned {type(wet).__name__}, not a DryHandoff "
+                    "(wet progress kept as evidence only; no combined resume)", elapsed=elapsed, evidence=wet)
+    dry, acc, r = wet.dry_state, wet.accounting, wet.progress.result
+    t_end = ops.scalar(dry.t_s)
+    elapsed = _elapsed(t, t_end)
+
+    def incomplete(code: str, detail: str) -> _Stop:
+        return _Stop("incomplete", code, detail, elapsed=elapsed, evidence=wet)
+
+    closure, budget = acc["sediment_closure"], acc["storm_water_budget"]
+    if closure["closed"] is not True or closure["request_reconciled"] is not True or budget["closed"] is not True:
+        raise incomplete("rain_budget_open", "native sediment closure / request / water budget not closed")
+    if not abs(ops.scalar(acc["combined_water_residual_m3"])) <= ops.scalar(budget["tolerance_m3"]):
+        raise incomplete("dry_water_budget_open", "native combined storm + dry-reset water budget not closed")
+    if (ops.any_nonzero(dry.bed.water.mobile_mass_by_cell_class_kg) or ops.any_nonzero(dry.storm.depth_m)
+            or ops.any_nonzero(dry.storm.soil_water_m) or dry.phase is not None
+            or ops.any_nonzero(dry.sediment_velocity_m_s)):
+        raise incomplete("dry_reset_not_empty", "the native dry state is not the documented empty reset")
+    if dry.terrain is not held.terrain:
+        raise incomplete("terrain_replaced", "the native dry state carries a different terrain reference")
+    if not rain_edges[-1] <= t_end <= guard_end:
+        raise incomplete("rain_end_outside_guard", "dry time outside [rainfall end, recession guard end]")
+
+    export = ops.class_vector(r.by_class["export_actual"])
+    inflow = np.zeros(nc, dtype=np.float64)  # the supported SYRUP event has no sediment boundary input
+    inventory_after = ops.inventory(n, dry.bed)
+    residual = inventory_after - inventory_before + export
+    scale = max(float(np.abs(inventory_before).sum()), float(np.abs(inventory_after).sum()), float(export.sum()))
+    bound = (ops.class_vector(closure["tolerance_kg"]) + ops.class_vector(acc["terminal_sediment_tolerance_kg"])
+             + n.summation_error_bound_kg(2 * self._inventory_elements + 4, scale))
+    if not bool(np.all(np.abs(residual) <= bound)):
+        raise incomplete("rain_inventory_open", "actual bed inventories do not close within native bounds")
+    terminal = ops.class_vector(acc["terminal_deposition_by_class_kg"])
+    settlement = acc.get("flow_end_settlement")
+    body = {
+        "native": {
+            "dry_time_s": encode_time(t_end), "rainfall_end_s": encode_time(rain_edges[-1]),
+            "recession_guard_end_s": encode_time(guard_end),
+            "rainfall_edges_s": [encode_time(v) for v in rain_edges], "intensity_mm_h": intensities,
+            "n_accepted_steps": int(r.n_accepted_steps), "n_rejected_attempts": int(r.n_rejected_attempts),
+            "n_commits": int(r.n_commits), "report_rows": int(len(r.boundaries)), "report_rows_bound": rows,
+            "storm_steps_lower_bound": lower_steps, "transport_scheme": "upwind", "phase": None,
+        },
+        "routing": {"first_graph_construction": first, "entry_rerouted": boundary.rerouted,
+                    "entry_net_displacement_m": (None if boundary.net_displacement_m is None
+                                                 else ops.scalar(boundary.net_displacement_m)),
+                    "graph_retained_by_identity": graph is held.graph,
+                    "n_reroutes_in_event": int(r.n_reroutes)},
+        "classes": {
+            "actual_pickup_kg": ops.float_values(r.by_class["actual_pickup"]),
+            "deposition_actual_kg": ops.float_values(r.by_class["deposition_actual"]),
+            "export_kg": _floats(np, export), "import_kg": _floats(np, inflow),
+            "internal_terminal_deposition_kg": _floats(np, terminal),
+            "flow_end_mobile_before_settlement_kg": (None if settlement is None else
+                                                     ops.float_values(
+                                                         settlement["mobile_before_settlement_by_class_kg"])),
+            "native_closure_residual_kg": ops.float_values(closure["residual_kg"]),
+            "native_closure_tolerance_kg": ops.float_values(closure["tolerance_kg"]),
+            "terminal_sediment_tolerance_kg": ops.float_values(acc["terminal_sediment_tolerance_kg"]),
+            "inventory_before_kg": _floats(np, inventory_before), "inventory_after_kg": _floats(np, inventory_after),
+            "inventory_residual_kg": _floats(np, residual), "inventory_bound_kg": _floats(np, bound),
+        },
+        "water": {name: ops.scalar(budget[name]) for name in
+                  ("rain_m3", "surface_initial_m3", "soil_initial_m3", "surface_final_m3", "soil_final_m3",
+                   "drainage_m3", "export_m3", "residual_m3", "tolerance_m3")}
+        | {"dry_surface_removed_m3": ops.scalar(acc["surface_removed_m3"]),
+           "dry_soil_removed_m3": ops.scalar(acc["soil_removed_m3"]),
+           "water_added_m3": ops.scalar(acc["water_added_m3"]),
+           "combined_water_residual_m3": ops.scalar(acc["combined_water_residual_m3"]),
+           "dry_reset": "external dry-again removal (native); soil water is zero after the reset"},
+    }
+    if self._production is not None:
+        try:
+            body["production"] = {"scope": self._production.SCOPE,
+                                  "worker": self._production_process_check(
+                                      checkpoint="after_native_rain", elapsed=elapsed, evidence=wet),
+                                  "entry_commit": self._production.commit_evidence(np, boundary.maple_result),
+                                  "retained_wrapper_owners": own.production_retained_owners(
+                                      self._production, self._wind, self._water, self._control,
+                                      self._wind_profile, self._pool, self._soil, self._routing,
+                                      len(self._receipts))}
+        except _Stop:
+            raise
+        except MemoryError as exc:
+            raise _Stop("runner_error", "address_space_exhausted", _detail(exc), exception=exc,
+                        elapsed=elapsed, evidence=wet) from exc
+        except Exception as exc:
+            raise _Stop("runner_error", "production_evidence_failure", _detail(exc), exception=exc,
+                        elapsed=elapsed, evidence=wet) from exc
+    water_delta = {"rain_m3": ops.scalar(budget["rain_m3"]), "drainage_m3": ops.scalar(budget["drainage_m3"]),
+                   "storm_export_m3": ops.scalar(budget["export_m3"]),
+                   "dry_surface_removed_m3": ops.scalar(acc["surface_removed_m3"]),
+                   "dry_soil_removed_m3": ops.scalar(acc["soil_removed_m3"])}
+    body.update(self._rain_receipt_extra())
+
+    publish = own.prepare_bed(dry.bed, t_end, soil=dry.storm.soil_water_m)
+    routing = own.retain_routing(dry)
+    return self._finish(n, index, "rain", resolved, stage, dry.bed, t, t_end, None, inflow, export, bound, body,
+                        publish, pool=self._pool, soil=dry.storm.soil_water_m, routing=routing,
+                        terminal=terminal, water=water_delta,
+                        reroutes=(int(boundary.rerouted), int(r.n_reroutes)), elapsed=elapsed, evidence=wet,
+                        publication_source=dry.bed)
+
+
+@dataclasses.dataclass(slots=True)
+class _WindEntry:
+    """The original private wind prologue; no runner field or persistence API."""
+    n: Any
+    np: Any
+    bed: Any
+    cfg: Any
+    ops: Any
+    own: Any
+    t: Any
+    end: Any
+    quotient: Any
+    upper: Any
+    stage_bytes: Any
+    pool_bytes: Any
+    plan: Any
+    requested: Any
+    covered: Any
+    rounding: Any
+    stage: Any
+    pool: Any
+    scheduler: Any
+    block: Any
+    inventory_before: Any
+
+
+def _reject_active(self: DenseRunner) -> None:
+    """Closed private wind dispatch; the original water refusal remains its owner."""
+    from masy.dense_wind_pause import _WindLease, _reject_active as reject_wind
+    if type(self._active_evidence) is _WindLease:
+        reject_wind(self)
+    from masy.dense_water_pause import _reject_active as reject_water
+    reject_water(self)
+
+
+def _step_start(self: DenseRunner):
+    if self._stop_receipt is None and self._active_evidence is not None:
+        _reject_active(self)
+    if self._stop_receipt is not None:
+        raise DenseRunnerError("runner_halted", f"stopped at event {self._stop_receipt['index']} "
+                               f"({self._stop_receipt['code']}); no further event runs")
+    if self._next >= len(self._schedule.events):
+        raise DenseRunnerError("schedule_complete", "every event has been accepted")
+    index = self._next
+    event = self._schedule.events[index]
+    start = self._bed.time_s
+    return index, event, start
+
+
+def _step_resolve(self: DenseRunner, index: int, start: float):
+    self._precheck()
+    try:
+        resolved = resolve_event(self._schedule, index, start)
+    except (ClockError, DenseScheduleError) as exc:
+        raise _Stop("refused", "unresolvable_event", _detail(exc), exception=exc) from exc
+    return resolved
+
+
+def _step_stopped(self: DenseRunner, index: int, event: Any, start: float, stop: _Stop):
+    if self._production is not None and isinstance(stop.exception, MemoryError):
+        stop = _Stop("runner_error", "address_space_exhausted", _detail(stop.exception),
+                     exception=stop.exception, elapsed=stop.elapsed, evidence=stop.evidence,
+                     guarantee=stop.guarantee)
+    return self._stop(index, event.kind, start, stop)
+
+
+def _step_failed(self: DenseRunner, index: int, event: Any, start: float, exc: Exception):
+    code = ("address_space_exhausted" if self._production is not None and isinstance(exc, MemoryError)
+            else "runner_internal_error")
+    return self._stop(index, event.kind, start,
+                      _Stop("runner_error", code, _detail(exc), exception=exc))
+
+
+def _wind_enter(self: DenseRunner, index: int, event: WindEvent, resolved: dict[str, Any]) -> _WindEntry:
+    n = _native()
+    np, bed, cfg = n.np, self._bed, self._wind.config
+    ops, own = self._array_ops(np), self._ownership()
+    t = bed.time_s
+    end = decode_time(resolved["resolved_edges"]["edges"][-1]["native"])
+    # Theoretical native accounting work (exact upper bound, no step list): ceil(duration / outer) + 1.
+    quotient = Fraction(event.duration_s) / Fraction(cfg.outer_timestep_s)
+    upper = -(-quotient.numerator // quotient.denominator) + 1
+    if upper > self._limits.max_wind_accounting_steps:
+        raise _Stop("refused", "wind_step_limit", f"up to {upper} native accounting steps > "
+                    f"max_wind_accounting_steps={self._limits.max_wind_accounting_steps}")
+    stage_bytes = own.stage_bytes()
+    pool_bytes = own.pool_bytes(self._pool)
+    # Bound staged inputs, transport/finalizer outputs, empty replacement pool,
+    # native deposition request and the native accounting plan. Dense CPU only.
+    self._work_bytes_check(4 * stage_bytes + 3 * pool_bytes
+                           + 8 * self._inventory_elements * self._n_classes + 32 * upper)
+    # The native baseline splits the block with `accounting_step_durations_s` (a list of at most `upper`
+    # floats, guarded above). Its exact sum must cover the requested duration up to the rounding of the
+    # split's own two operations (n * outer and duration - n * outer, unit roundoff 2**-53 each). A dropped
+    # or extended interval is an unsupported duration: refused before any model work, time never rewritten.
+    plan = n.accounting_step_durations_s(event.duration_s, cfg.outer_timestep_s)
+    requested = Fraction(event.duration_s)
+    covered = sum((Fraction(dt) for dt in plan), Fraction(0))
+    rounding = Fraction(2, 2 ** 53) * max(requested, covered)
+    if len(plan) > upper or covered <= 0 or abs(covered - requested) > rounding:
+        raise _Stop("refused", "unsupported_wind_duration",
+                    f"native accounting steps ({len(plan)}) cover {float(covered)!r} s of the requested "
+                    f"{event.duration_s!r} s at outer_timestep_s={cfg.outer_timestep_s!r}; the difference "
+                    "exceeds the split's own FP rounding (the native split drops or extends scheduled time)")
+
+
+    if self._production is not None:
+        try:
+            own.production_require_dry(self._production, np)
+        except self._production.DenseProductionError as exc:
+            raise _Stop("refused", exc.code, exc.detail, exception=exc) from exc
+    stage = self._stage()
+    pool = own.work_pool(self._pool)
+    try:
+        scheduler = own.scheduler(stage, pool, t)
+    except DenseBedError as exc:
+        raise _Stop("refused", exc.code, exc.detail, exception=exc) from exc
+    block = n.WindBlock(shear_velocity_m_s=event.shear_velocity_m_s,
+                        direction_deg=event.direction_deg_cw_from_north, duration_s=event.duration_s,
+                        start_time_s=t, end_time_s=end)
+    inventory_before = ops.inventory(n, own.stage_state(stage))
+    return _WindEntry(n, np, bed, cfg, ops, own, t, end, quotient, upper, stage_bytes, pool_bytes, plan, requested, covered, rounding, stage, pool, scheduler, block, inventory_before)
+
+
+def _wind_accept(self: DenseRunner, index: int, event: WindEvent, resolved: dict[str, Any],
+                 prepared: _WindEntry, result: Any) -> dict[str, Any]:
+    n, np, bed, cfg, ops, own, t, end, quotient, upper, stage_bytes, pool_bytes, plan, requested, covered, rounding, stage, pool, scheduler, block, inventory_before = (
+        prepared.n, prepared.np, prepared.bed, prepared.cfg, prepared.ops, prepared.own, prepared.t, prepared.end, prepared.quotient, prepared.upper, prepared.stage_bytes, prepared.pool_bytes, prepared.plan, prepared.requested, prepared.covered, prepared.rounding, prepared.stage, prepared.pool, prepared.scheduler, prepared.block, prepared.inventory_before)
+    physical, a = result.state.physical, result.accounting
+    t_end = ops.scalar(physical.time_s)
+    elapsed = _elapsed(t, t_end)
+
+    def incomplete(code: str, detail: str) -> _Stop:
+        return _Stop("incomplete", code, detail, elapsed=elapsed, evidence=result)
+
+    if result.process_mode != SUPPORTED_WIND_MODE or result.integration_path != "baseline_direct":
+        raise incomplete("unsupported_wind_path", f"{result.process_mode}/{result.integration_path}")
+    if result.conservation_ok is not True:
+        raise incomplete("wind_conservation_failed", "native check_block_conservation reported failure")
+    water_fields = [getattr(a, f"water_{name}", None) for name in
+                    ("mobile_mass_before_by_class_kg", "mobile_mass_after_by_class_kg",
+                     "boundary_input_by_class_kg", "boundary_export_by_class_kg")]
+    if any(v is not None and ops.any_nonzero(ops.class_vector(v)) for v in water_fields):
+        raise incomplete("wind_water_pass", "native wind accounting reports water-borne exchange")
+    if a.n_accounting_steps > upper or a.n_accounting_steps > self._limits.max_wind_accounting_steps:
+        raise incomplete("wind_step_limit", f"{a.n_accounting_steps} native accounting steps")
+    if ops.any_nonzero(physical.water.mobile_mass_by_cell_class_kg):
+        raise incomplete("water_mobile_not_empty", "water-borne load appeared during wind")
+    if t_end < t:
+        raise incomplete("time_reversed", "native wind end precedes its start")
+    if t_end == t:
+        raise incomplete("wind_no_elapsed", "positive requested duration but native physical time did not advance")
+
+    bed_change = ops.class_vector(a.bed_change_by_class_kg)
+    mobile_delta = (ops.class_vector(a.mobile_mass_after_by_class_kg)
+                    - ops.class_vector(a.mobile_mass_before_by_class_kg))
+    inflow, export = ops.class_vector(a.boundary_input_by_class_kg), ops.class_vector(a.boundary_export_by_class_kg)
+    native_residual = bed_change + mobile_delta - inflow + export
+    native_bound = ops.scalar(n.summation_error_bound_kg(max(a.n_accounting_steps, 1),
+                                                         n.reservoir_arithmetic_scale_kg(a, physical)))
+    if not bool(np.all(np.abs(native_residual) <= native_bound)):
+        raise incomplete("wind_budget_open", "native per-class reservoir identity exceeds its native bound")
+    # advance_wind_block leaves the consumed block cursor in place. Apply
+    # exactly the native record loop's terminal cursor mapping, at this
+    # deliberate event boundary only. No native physical timestamp changes.
+    if (result.state.block_index != 0
+            or result.state.block_offset_s < event.duration_s - n.record_end_epsilon_s):
+        raise incomplete("wind_record_incomplete", "native block did not reach its terminal cursor")
+    record = n.resolve_wind_forcing_record({"blocks": [{
+        "shear_velocity_m_s": event.shear_velocity_m_s,
+        "direction_deg": event.direction_deg_cw_from_north, "duration_s": event.duration_s}]})
+    completed = dataclasses.replace(result.state, block_index=len(record.blocks), block_offset_s=0.0)
+    evidence = {"transport": result}
+    try:
+        final = _finalize_wind_event(completed, cfg, record, record_origin_s=t)
+    except Exception as exc:  # native errors never publish this event or admit water
+        raise _Stop("native_error", "wind_finalization_failure", _detail(exc), exception=exc,
+                    elapsed=elapsed, evidence=evidence) from exc
+    evidence["finalization"] = final
+    if type(final) is not n.WindEventFinalizationResult:
+        raise _Stop("incomplete", "invalid_wind_finalization", "unexpected native finalizer result type",
+                    elapsed=elapsed, evidence=evidence)
+    if not final.completed or not final.water_handoff_ready:
+        raise _Stop("incomplete", "wind_finalization_incomplete", str(final.reasons)[:_DETAIL_CHARS],
+                    elapsed=elapsed, evidence=evidence)
+    settled = final.state
+    if (ops.scalar(settled.physical.time_s).hex() != t_end.hex()
+            or ops.scalar(final.time_s).hex() != t_end.hex()
+            or settled.block_index != completed.block_index or settled.block_offset_s != 0.0
+            or final.block_index != completed.block_index or final.block_offset_s != 0.0):
+        raise _Stop("incomplete", "wind_finalization_clock_changed", "native finalizer changed time or cursor",
+                    elapsed=elapsed, evidence=evidence)
+    if not n.mobile_state_is_genuinely_empty(settled.physical.mobile_state):
+        raise _Stop("incomplete", "wind_finalization_mobile_nonempty", "native finalizer left airborne material",
+                    elapsed=elapsed, evidence=evidence)
+    # Finalizer deposition is INTERNAL: its native returned bed/ledger already
+    # includes it. Only its native boundary export is added to external export.
+    final_vectors = {name: ops.class_vector(getattr(final, name)) for name in (
+        "airborne_mass_before_by_class_kg", "airborne_mass_after_by_class_kg",
+        "deposited_mass_by_class_kg", "boundary_export_mass_by_class_kg", "bed_change_by_class_kg",
+        "transfer_identity_gap_by_class_kg", "reservoir_identity_gap_by_class_kg")}
+    if any(v.shape != (self._n_classes,) or not bool(np.isfinite(v).all()) for v in final_vectors.values()):
+        raise _Stop("incomplete", "wind_finalization_budget_invalid", "nonfinite or incompatible class vector",
+                    elapsed=elapsed, evidence=evidence)
+    for prefix in ("transfer", "reservoir"):
+        bound = ops.scalar(getattr(final, prefix + "_identity_bound_kg"))
+        if (not math.isfinite(bound) or bound < 0.0
+                or not bool(np.all(np.abs(final_vectors[prefix + "_identity_gap_by_class_kg"]) <= bound))):
+            raise _Stop("incomplete", "wind_finalization_budget_open", "native finalizer class budget failed",
+                        elapsed=elapsed, evidence=evidence)
+    if (bool(np.any(final_vectors["airborne_mass_after_by_class_kg"] != 0.0))
+            or not ops.equal_class_vector(final_vectors["airborne_mass_before_by_class_kg"],
+                                          n.mobile_mass_by_class_kg(physical.mobile_state, self._n_classes))):
+        raise _Stop("incomplete", "wind_finalization_mobile_budget", "native mobile inventory disagrees",
+                    elapsed=elapsed, evidence=evidence)
+    transport_export = export
+    export = transport_export + final_vectors["boundary_export_mass_by_class_kg"]
+    transport_bed_change = bed_change
+    bed_change = bed_change + final_vectors["bed_change_by_class_kg"]
+    physical = settled.physical
+    candidate = n.BedState(physical.voxel_column, physical.active_layer, physical.water, physical.ledger,
+                           physical.committed_topography, physical.sediment_availability)
+    inventory_after = ops.inventory(n, candidate)
+    event_mobile_delta = (final_vectors["airborne_mass_after_by_class_kg"]
+                          - ops.class_vector(a.mobile_mass_before_by_class_kg))
+    event_residual = bed_change + event_mobile_delta - inflow + export
+    # Use the original operands, so cancellation of erosion and settlement
+    # cannot shrink the arithmetic scale of the six combining operations.
+    event_scale = sum(float(np.abs(value).sum()) for value in (
+        transport_bed_change, final_vectors["bed_change_by_class_kg"],
+        final_vectors["airborne_mass_after_by_class_kg"], ops.class_vector(a.mobile_mass_before_by_class_kg),
+        inflow, transport_export, final_vectors["boundary_export_mass_by_class_kg"]))
+    reservoir_bound = ops.scalar(final.reservoir_identity_bound_kg)
+    event_bound = (native_bound + reservoir_bound
+                   + n.summation_error_bound_kg(6, event_scale))
+    if not bool(np.all(np.abs(event_residual) <= event_bound)):
+        raise _Stop("incomplete", "wind_event_budget_open", "combined transport/finalizer class identity failed",
+                    elapsed=elapsed, evidence=evidence)
+    inventory_residual = inventory_after - inventory_before + event_mobile_delta - inflow + export
+    scale = max(float(np.abs(inventory_before).sum()), float(np.abs(inventory_after).sum()),
+                float(inflow.sum()), float(export.sum()))
+    inventory_bound = (native_bound + reservoir_bound
+                       + n.summation_error_bound_kg(2 * self._inventory_elements + 6, scale))
+    if not bool(np.all(np.abs(inventory_residual) <= inventory_bound)):
+        raise _Stop("incomplete", "wind_inventory_open", "actual bed inventories do not close within native bounds",
+                    elapsed=elapsed, evidence=evidence)
+
+    spatial = getattr(a, "spatial", None)
+    body = {
+        "native": {
+            "block": {"start_time_s": encode_time(ops.scalar(result.start_time_s)),
+                      "end_time_s": encode_time(ops.scalar(result.end_time_s)),
+                      "duration_s": encode_time(ops.scalar(result.duration_s))},
+            "advanced_end_time_s": encode_time(ops.scalar(result.advanced_end_time_s)),
+            "advanced_duration_s": encode_time(ops.scalar(result.advanced_duration_s)),
+            "physical_time_s": encode_time(t_end),
+            "process_mode": result.process_mode, "integration_path": result.integration_path,
+            "n_accounting_steps": int(a.n_accounting_steps), "accounting_step_upper_bound": upper,
+            "n_commits_this_block": int(result.n_commits_this_block),
+            "conservation_residual_kg": ops.scalar(result.conservation_residual_kg),
+        },
+        # Native FP accumulation is kept as is (endpoints unchanged); only the discrepancy is recorded.
+        "coverage": {"requested_s": encode_time(event.duration_s), "native_plan_steps": len(plan),
+                     "native_plan_sum_s": _fraction_text(covered),
+                     "plan_discrepancy_s": _fraction_text(covered - requested),
+                     "plan_rounding_bound_s": _fraction_text(rounding),
+                     "elapsed_discrepancy_s": _fraction_text(Fraction(t_end) - Fraction(t) - requested)},
+        "classes": {
+            "bed_change_kg": _floats(np, bed_change), "boundary_input_kg": _floats(np, inflow),
+            "boundary_export_kg": _floats(np, export),
+            "mobile_before_kg": ops.float_values(a.mobile_mass_before_by_class_kg),
+            "mobile_after_kg": ops.float_values(final.airborne_mass_after_by_class_kg),
+            "transport_mobile_after_kg": ops.float_values(a.mobile_mass_after_by_class_kg),
+            "transport_boundary_export_kg": _floats(np, transport_export),
+            "transport_bed_change_kg": _floats(np, transport_bed_change),
+            "detachment_kg": (None if spatial is None
+                              else _floats(np, ops.class_vector(
+                                  spatial.detachment_by_cell_class_kg.sum(axis=(0, 1))))),
+            "native_residual_kg": _floats(np, native_residual), "native_bound_kg": float(native_bound),
+            "event_residual_kg": _floats(np, event_residual), "event_bound_kg": float(event_bound),
+            "event_summation_terms": 6, "event_arithmetic_scale_kg": event_scale,
+            "inventory_before_kg": _floats(np, inventory_before), "inventory_after_kg": _floats(np, inventory_after),
+            "inventory_residual_kg": _floats(np, inventory_residual),
+            "inventory_bound_kg": float(inventory_bound),
+        },
+        "wind_end_pool": "genuinely_empty",
+        "finalization": {
+            "status": final.status, "algorithm_version": final.algorithm_version,
+            "representation": final.representation, "placement_rule": final.placement_rule,
+            "record_origin_s": encode_time(t),
+            "record": _canonical_input(np, record, "completed_record"),
+            "record_sha256": _bed._sha256(_canonical_input(np, record, "completed_record")),
+            "completed_block_index": settled.block_index, "completed_block_offset_s": settled.block_offset_s,
+            "physical_time_s": encode_time(ops.scalar(physical.time_s)),
+            "n_settled": int(final.n_settled), "n_exported": int(final.n_exported),
+            **{name: _floats(np, value) for name, value in final_vectors.items()},
+            "transfer_identity_bound_kg": ops.scalar(final.transfer_identity_bound_kg),
+            "reservoir_identity_bound_kg": reservoir_bound,
+            "numerical_residual_scalar_kg": ops.scalar(final.numerical_residual_scalar_kg),
+        },
+    }
+
+    if self._production is not None:
+        try:
+            body["production"] = own.production_wind_evidence(self._production, n, result, final)
+            body["production"]["worker"] = self._production_process_check(
+                checkpoint="after_native_wind", elapsed=elapsed, evidence=evidence)
+            body["production"]["retained_wrapper_owners"] = own.production_retained_owners(
+                self._production, self._wind, self._water, self._control, self._wind_profile,
+                self._pool, self._soil, self._routing, len(self._receipts))
+        except _Stop:
+            raise
+        except MemoryError as exc:
+            raise _Stop("runner_error", "address_space_exhausted", _detail(exc), exception=exc,
+                        elapsed=elapsed, evidence=evidence) from exc
+        except self._production.DenseProductionError as exc:
+            raise _Stop("incomplete", exc.code, exc.detail, exception=exc,
+                        elapsed=elapsed, evidence=evidence) from exc
+        except Exception as exc:
+            raise _Stop("runner_error", "production_evidence_failure", _detail(exc), exception=exc,
+                        elapsed=elapsed, evidence=evidence) from exc
+
+    publish = own.prepare_scheduler(physical)
+
+    # The legitimate empty native pool is the next accepted pool; caches are rebuilt at re-entry.
+    return self._finish(n, index, "wind", resolved, stage, candidate, t, t_end,
+                        ops.scalar(result.advanced_duration_s), inflow, export,
+                        np.full(self._n_classes, inventory_bound), body, publish,
+                        pool=physical.mobile_state, soil=self._soil, routing=self._routing,
+                        terminal=final_vectors["deposited_mass_by_class_kg"],
+                        elapsed=elapsed, evidence=evidence, publication_source=physical)

@@ -46,7 +46,7 @@ import enum
 import hashlib
 import json
 import math
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 from masy.clock import _native_clock, encode_time
@@ -199,6 +199,8 @@ def _leaves(value: Any, path: str, out: list[tuple[str, Any]]) -> None:
 
     if isinstance(value, np.ndarray):
         out.append((path, value))
+    elif isinstance(value, ModuleType):
+        return  # Backend namespaces are not array holdings.
     elif dataclasses.is_dataclass(value) and not isinstance(value, type):
         for field in dataclasses.fields(value):
             _leaves(getattr(value, field.name), f"{path}.{field.name}", out)
