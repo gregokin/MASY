@@ -448,6 +448,51 @@ def _host_mem_available_bytes() -> int:
     raise DenseProductionError("process_observation", "MemAvailable not found in /proc/meminfo")
 
 
+def _check_observed_device_memory(limits: Any, *, free: Any, total: Any, used: Any, held: Any,
+                                  cap: Any, upcoming: Any, checkpoint: Any) -> None:
+    """Original scalar predicates over already observed counters; passing is not admission."""
+    if not all(type(v) is int and 0 <= v <= _TIB for v in (free, total, used, held, cap)) or free > total or used > held:
+        raise DenseProductionError("device_observation", "device memory counters are not bounded consistent ints")
+    if held > limits.max_device_bytes:
+        raise DenseProductionError("device_pool_limit", "pool held bytes exceed max_device_bytes")
+    if cap != limits.max_device_bytes:
+        raise DenseProductionError("device_pool_limit", "default pool hard limit must equal max_device_bytes")
+    if used + upcoming > limits.max_device_bytes:
+        raise DenseProductionError("device_budget", "pool used plus upcoming bytes exceeds max_device_bytes")
+    if upcoming > free:
+        raise DenseProductionError("device_budget", "upcoming bytes exceed current driver free memory")
+    if checkpoint == "constructing" and free < limits.min_device_free_bytes:
+        error = DenseProductionError("device_free_floor", "driver free memory below min_device_free_bytes")
+        try:
+            error._device_memory_refusal = (free, total, used, held, cap, upcoming,
+                                             limits.min_device_free_bytes, limits.max_device_bytes)
+        except Exception:
+            pass
+        raise error
+
+
+def _copy_device_memory_refusal(error: Any) -> tuple[int, ...] | None:
+    """Optional primitive DATA only; unavailable data never changes refusal or admission."""
+    if type(error) is not DenseProductionError:
+        return None
+    fields = error.__dict__
+    if type(fields) is not dict:
+        return None
+    code = fields.get("code")
+    if type(code) is not str or code != "device_free_floor":
+        return None
+    data = fields.get("_device_memory_refusal")
+    if type(data) is not tuple or len(data) != 8:
+        return None
+    if not all(type(value) is int and 0 <= value <= _TIB for value in data):
+        return None
+    free, total, used, held, cap, upcoming, minimum, maximum = data
+    if (free > total or used > held or held > maximum or cap != maximum
+            or used + upcoming > maximum or upcoming > free or free >= minimum):
+        return None
+    return data
+
+
 def check_process(limits: Any, identity: Any, *, upcoming_wrapper_bytes: Any = 0,
                   checkpoint: Any = "unspecified") -> dict[str, Any]:
     """Read-only check of already-enforced process policy, expected worker identity, host and device budgets."""
@@ -507,18 +552,8 @@ def check_process(limits: Any, identity: Any, *, upcoming_wrapper_bytes: Any = 0
         used, held, cap = pool.used_bytes(), pool.total_bytes(), pool.get_limit()
     except Exception as exc:
         raise DenseProductionError("device_observation", f"device memory read failed: {type(exc).__name__}") from exc
-    if not all(type(v) is int and 0 <= v <= _TIB for v in (free, total, used, held, cap)) or free > total or used > held:
-        raise DenseProductionError("device_observation", "device memory counters are not bounded consistent ints")
-    if held > limits.max_device_bytes:
-        raise DenseProductionError("device_pool_limit", "pool held bytes exceed max_device_bytes")
-    if cap != limits.max_device_bytes:
-        raise DenseProductionError("device_pool_limit", "default pool hard limit must equal max_device_bytes")
-    if used + upcoming > limits.max_device_bytes:
-        raise DenseProductionError("device_budget", "pool used plus upcoming bytes exceeds max_device_bytes")
-    if upcoming > free:
-        raise DenseProductionError("device_budget", "upcoming bytes exceed current driver free memory")
-    if checkpoint == "constructing" and free < limits.min_device_free_bytes:
-        raise DenseProductionError("device_free_floor", "driver free memory below min_device_free_bytes")
+    _check_observed_device_memory(limits, free=free, total=total, used=used, held=held,
+                                  cap=cap, upcoming=upcoming, checkpoint=checkpoint)
     return {"checkpoint": checkpoint, "policy_authority": _POLICY_AUTHORITY,
             "worker_pid_namespace_local": actual["pid"], "device_id": actual["device_id"],
             "cpu_used_s": cpu_s, "host_rss_bytes": rss, "host_mem_available_bytes": mem_available,

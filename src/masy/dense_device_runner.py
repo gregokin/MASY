@@ -1305,19 +1305,33 @@ def _create_dense_production_device_runner(bed: DenseBed, schedule: DenseSchedul
     from masy import dense_device_production as production
 
     made: dict[str, Any] = {}
-    failure: tuple[str, str] | None = None
+    failure: tuple[str, str, tuple[int, ...] | None] | None = None
     try:
         runner = _build_impl(bed, schedule, wind, water, control, limits, device_limits, bed_limits, resource_limits,
             device_id, made, _production=(wind_profile, production_limits, worker_identity))
     except (DenseRunnerError, DenseBedError, DeviceBedError, DeviceResourceError,
             production.DenseProductionError) as exc:
-        failure = (exc.code, exc.detail)
+        failure = (exc.code, exc.detail, None)
+        try:
+            failure = (failure[0], failure[1], production._copy_device_memory_refusal(exc))
+        except Exception:
+            pass
     except Exception as exc:  # noqa: BLE001 - conversion/refusal evidence, same bounded cleanup as the default
-        failure = ("device_construction_failure", _runner._detail(exc))
+        failure = ("device_construction_failure", _runner._detail(exc), None)
     if failure is not None:
-        made.clear()
-        raise DenseRunnerError(*failure)
+        raise _production_device_failure(made, failure)
     return runner
+
+
+def _production_device_failure(made: dict[str, Any], failure: tuple[str, str, tuple[int, ...] | None]) -> DenseRunnerError:
+    made.clear()
+    error = DenseRunnerError(failure[0], failure[1])
+    if failure[2] is not None:
+        try:
+            error._device_memory_refusal = failure[2]
+        except Exception:
+            pass
+    return error
 
 
 def _build(bed: Any, schedule: Any, wind: Any, water: Any, control: Any, limits: Any, device_limits: Any,

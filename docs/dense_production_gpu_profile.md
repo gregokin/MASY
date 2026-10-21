@@ -153,6 +153,27 @@ recorded installed-JAX additions `TF_CPP_MIN_LOG_LEVEL=1` and
 This adapter does not change the native profile or worker guard. A separately
 reviewed concrete process recipe remains necessary; no memory-fit claim follows.
 
+### Optional construction-refusal diagnostic
+
+At the existing `device_free_floor` refusal, the original guard may attach a
+private `_device_memory_refusal` tuple. Its eight plain integers are, in order:
+the same observation's driver free/total and pool used/held/limit bytes, the
+derived upcoming-wrapper bytes, and the policy minimum-free/maximum-device
+bytes. The last three values are declared or derived values, not measurements.
+The production factory carries only this immutable tuple through its existing
+cleanup and fresh `DenseRunnerError`; it retains no original exception,
+traceback, frame, driver, pool or unaccepted owner through this data.
+
+Absent, malformed or foreign data means `diagnostic_unavailable`. It never
+means zero free bytes, successful admission or permission to change a guard.
+The original error code/detail, 10 GiB entry floor, 8 GiB maximum pool cap,
+query/call order, cancellation and success records remain unchanged. Optional
+metadata failures preserve the primary refusal and cleanup. CPU scalar/cleanup
+tests do not establish genuine device-counter collection. New runtime source
+requires a new accepted source object/profile; old locks, profiles and failed
+evidence remain immutable. A protected evidence consumer and any actual device
+attempt require their own source and execution gates.
+
 The dormant `tests/gpu/test_dense_device_production_cupy.py` refuses ordinary
 automatic collection. A reviewed protected parent must provide a new genuine
 committed source profile, both distinct grants, exact test/module/fixture bytes,
