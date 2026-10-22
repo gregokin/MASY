@@ -446,7 +446,7 @@ def _wet(runner: Any, lease: _WaterLease, item: Any, n: Any, checkpoint: Any, sc
             or float(item.result.state.t_s) not in lease.plan
             or float(item.result.state.t_s) >= lease.plan[-1]
             or tuple(float(t) for t in item.planned_boundaries) != lease.plan
-            or item.result.state.terrain is not lease.prepared.held.terrain):
+            or item.result.state.terrain is not _entry_terrain(runner, lease.prepared)):
         _fail("water_pause_result", "native returned no unfinished original-boundary wet state")
     bounds = _bounds(runner, lease.plan)
     first = _scan(item, n, schemas, bounds)
@@ -480,7 +480,7 @@ def _outcome(runner: Any, lease: _WaterLease, item: Any, ordinal: int | None,
     if type(item) is n.DryHandoff and item.status == "complete":
         runner._precheck()
         _runtime(store, None, lease)
-        if _entry_digest(runner, lease.prepared, n, schemas, _bounds(runner, lease.plan), lease.resolved) != lease.entry_sha256:
+        if _entry_seal(runner, lease.prepared, n, schemas, _bounds(runner, lease.plan), lease.resolved) != lease.entry_sha256:
             _fail("water_entry_changed", "original entry changed during final native continuation")
         lease.phase = "finishing"
         result = dr._rain_accept(runner, lease.index, lease.event, lease.resolved, lease.prepared, item)
@@ -492,7 +492,7 @@ def _outcome(runner: Any, lease: _WaterLease, item: Any, ordinal: int | None,
     runner._precheck()
     _runtime(store, None, lease)
     reservation = _reserve(runner, lease.plan)
-    entry_sha = _entry_digest(runner, lease.prepared, n, schemas, _bounds(runner, lease.plan), lease.resolved)
+    entry_sha = _entry_seal(runner, lease.prepared, n, schemas, _bounds(runner, lease.plan), lease.resolved)
     if lease.entry_sha256 and lease.entry_sha256 != entry_sha:
         _fail("water_entry_changed", "original entry witness changed")
     token = _WaterToken()
@@ -578,7 +578,7 @@ def pause_water(runner: Any, *, runtime_reference: Any, boundary_ordinal: int):
         if (actual_plan != lease.plan or prepared.guard_end != lease.plan[-1]
                 or prepared.every != runner._control.report_every_s):
             _fail("water_entry_plan", "prepared native plan differs from the admitted original plan")
-        lease.entry_sha256 = _entry_digest(runner, lease.prepared, n, schemas, _bounds(runner, lease.plan), lease.resolved)
+        lease.entry_sha256 = _entry_seal(runner, lease.prepared, n, schemas, _bounds(runner, lease.plan), lease.resolved)
     except dr._Stop as stop:
         return _halt(runner, lease, stop)
     except Exception as exc:
@@ -610,7 +610,7 @@ def resume_water(runner: Any, token: Any, *, boundary_ordinal: int | None = None
     except dr._Stop as stop:
         return _halt(runner, lease, stop)
     bounds = _bounds(runner, lease.plan)
-    if _entry_digest(runner, lease.prepared, n, schemas, bounds, lease.resolved) != lease.entry_sha256:
+    if _entry_seal(runner, lease.prepared, n, schemas, bounds, lease.resolved) != lease.entry_sha256:
         _fail("water_entry_changed", "original entry witness changed")
     if _wet(runner, lease, lease.progress, n, checkpoint, schemas)["sha256"] != lease.progress_sha256:
         _fail("water_progress_changed", "private wet progress changed while paused")
@@ -655,3 +655,19 @@ _FIELDS = MappingProxyType({
     ('maple.core.types.topographic_commit', 'CommittedTopographyState'): ('reference_elevation_m', 'elevation_offset_m', 'committed_active_layer_mass_by_class_kg', 'committed_voxel_mass_by_class_kg', 'last_commit_time_s', 'commit_count'),
     ('maple.core.types.water', 'WaterState'): ('depth_m', 'mobile_mass_by_cell_class_kg'),
 })
+
+
+def _entry_seal(runner, prepared, n, schemas, bounds, resolved):
+    from masy import dense_runner as dr
+    if type(prepared) is dr._RainEntry:
+        return _entry_digest(runner, prepared, n, schemas, bounds, resolved)
+    from masy.dense_active_checkpoint import _cold_entry_seal
+    return _cold_entry_seal(runner, prepared, n, schemas, bounds, resolved)
+
+
+def _entry_terrain(runner, prepared):
+    from masy import dense_runner as dr
+    if type(prepared) is dr._RainEntry:
+        return prepared.held.terrain
+    from masy.dense_active_checkpoint import _entry_value
+    return _entry_value(runner, prepared, "terrain")

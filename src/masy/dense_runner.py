@@ -1017,7 +1017,7 @@ class DenseRunner:
         if not bool(np.all(np.abs(joint) <= allowed)):
             raise stop("incomplete", "aggregate_budget_open", "joint per-class closure exceeds accumulated native bounds")
         # Candidate clock ledger (round trip through its own record, then append the native endpoints).
-        stamp_before = float(own.stage_state(stage).committed_topography.last_commit_time_s)
+        stamp_before = (_cold_rain_stage(self, stage, "stamp") if type(stage) is _ColdRainStage else float(own.stage_state(stage).committed_topography.last_commit_time_s))
         stamp_after = float(candidate.committed_topography.last_commit_time_s)
         try:
             ledger = ClockLedger.from_record(self._ledger.as_record())
@@ -1071,7 +1071,7 @@ class DenseRunner:
             candidate_identity = own.candidate_label(candidate, t_end)
         receipt = {"schema": own.receipt_schema, "index": index, "kind": kind, "status": "accepted", "code": "accepted",
                    "static_sha256": self._static_sha256, "resolved": resolved, "clock": clock,
-                   "bed_identity_before": own.stage_label(stage), "bed_identity_after": candidate_identity,
+                   "bed_identity_before": (_cold_rain_stage(self, stage, "label") if type(stage) is _ColdRainStage else own.stage_label(stage)), "bed_identity_after": candidate_identity,
                    **body,
                    "aggregate": {"joint_residual_kg": _floats(np, joint), "joint_bound_kg": _floats(np, allowed),
                                  "n_summation_terms": n_terms}}
@@ -1100,7 +1100,7 @@ class DenseRunner:
         if live != self._static_parts_sha256:
             raise stop("refused", "static_input_mutated", "a controlling runner input changed during the event",
                        guarantee=_EXTERNAL)
-        if (own.accepted_label() != own.stage_label(stage)
+        if (own.accepted_label() != (_cold_rain_stage(self, stage, "label") if type(stage) is _ColdRainStage else own.stage_label(stage))
                 or own.private_label(np, self._pool, self._soil) != self._accepted_private):
             raise stop("refused", "accepted_state_changed", "the accepted bed / pool / soil changed outside the "
                        "runner while the event was staged", guarantee=_EXTERNAL)
@@ -1259,8 +1259,12 @@ def _rain_enter(self: DenseRunner, index: int, event: Any, resolved: dict[str, A
 
 def _rain_native(self: DenseRunner, prepared: _RainEntry, *, continuation: Any = None,
                  checkpoint_callback: Any = None) -> Any:
-    n, np, bed, ctx, ops, own, sc, policy, every, w, limits, t, rain_edges, guard_end, intensities, rows, lower_steps, nc, stage, inventory_before, soil, first, held, boundary, graph, network, grid, memory_names, g, schedule = (
-        prepared.n, prepared.np, prepared.bed, prepared.ctx, prepared.ops, prepared.own, prepared.sc, prepared.policy, prepared.every, prepared.w, prepared.limits, prepared.t, prepared.rain_edges, prepared.guard_end, prepared.intensities, prepared.rows, prepared.lower_steps, prepared.nc, prepared.stage, prepared.inventory_before, prepared.soil, prepared.first, prepared.held, prepared.boundary, prepared.graph, prepared.network, prepared.grid, prepared.memory_names, prepared.g, prepared.schedule)
+    if type(prepared) is _RainEntry:
+        n, np, bed, ctx, ops, own, sc, policy, every, w, limits, t, rain_edges, guard_end, intensities, rows, lower_steps, nc, stage, inventory_before, soil, first, held, boundary, graph, network, grid, memory_names, g, schedule = (
+            prepared.n, prepared.np, prepared.bed, prepared.ctx, prepared.ops, prepared.own, prepared.sc, prepared.policy, prepared.every, prepared.w, prepared.limits, prepared.t, prepared.rain_edges, prepared.guard_end, prepared.intensities, prepared.rows, prepared.lower_steps, prepared.nc, prepared.stage, prepared.inventory_before, prepared.soil, prepared.first, prepared.held, prepared.boundary, prepared.graph, prepared.network, prepared.grid, prepared.memory_names, prepared.g, prepared.schedule)
+    else:
+        from masy.dense_active_checkpoint import _native_fields
+        n, ctx, w, schedule, sc, policy, every, limits, guard_end = _native_fields(self, prepared, continuation)
     try:
         if continuation is None:
             entry = own.routing_entry(n, held, boundary, graph, network, grid, soil, t, memory_names,
@@ -1292,8 +1296,12 @@ def _rain_native(self: DenseRunner, prepared: _RainEntry, *, continuation: Any =
 
 def _rain_accept(self: DenseRunner, index: int, event: Any, resolved: dict[str, Any],
                  prepared: _RainEntry, wet: Any) -> dict[str, Any]:
-    n, np, bed, ctx, ops, own, sc, policy, every, w, limits, t, rain_edges, guard_end, intensities, rows, lower_steps, nc, stage, inventory_before, soil, first, held, boundary, graph, network, grid, memory_names, g, schedule = (
-        prepared.n, prepared.np, prepared.bed, prepared.ctx, prepared.ops, prepared.own, prepared.sc, prepared.policy, prepared.every, prepared.w, prepared.limits, prepared.t, prepared.rain_edges, prepared.guard_end, prepared.intensities, prepared.rows, prepared.lower_steps, prepared.nc, prepared.stage, prepared.inventory_before, prepared.soil, prepared.first, prepared.held, prepared.boundary, prepared.graph, prepared.network, prepared.grid, prepared.memory_names, prepared.g, prepared.schedule)
+    if type(prepared) is _RainEntry:
+        n, np, bed, ctx, ops, own, sc, policy, every, w, limits, t, rain_edges, guard_end, intensities, rows, lower_steps, nc, stage, inventory_before, soil, first, held, boundary, graph, network, grid, memory_names, g, schedule = (
+            prepared.n, prepared.np, prepared.bed, prepared.ctx, prepared.ops, prepared.own, prepared.sc, prepared.policy, prepared.every, prepared.w, prepared.limits, prepared.t, prepared.rain_edges, prepared.guard_end, prepared.intensities, prepared.rows, prepared.lower_steps, prepared.nc, prepared.stage, prepared.inventory_before, prepared.soil, prepared.first, prepared.held, prepared.boundary, prepared.graph, prepared.network, prepared.grid, prepared.memory_names, prepared.g, prepared.schedule)
+    else:
+        from masy.dense_active_checkpoint import _accept_fields
+        n, np, bed, ctx, ops, own, sc, policy, every, w, limits, t, rain_edges, guard_end, intensities, rows, lower_steps, nc, stage, inventory_before, first, g, schedule = _accept_fields(self, prepared)
     if type(wet) is not n.DryHandoff or wet.status != "complete":
         progress = wet if type(wet) is n.EventProgress else None
         elapsed = None if progress is None else _elapsed(t, progress.result.state.t_s)
@@ -1315,7 +1323,7 @@ def _rain_accept(self: DenseRunner, index: int, event: Any, resolved: dict[str, 
             or ops.any_nonzero(dry.storm.soil_water_m) or dry.phase is not None
             or ops.any_nonzero(dry.sediment_velocity_m_s)):
         raise incomplete("dry_reset_not_empty", "the native dry state is not the documented empty reset")
-    if dry.terrain is not held.terrain:
+    if dry.terrain is not (_cold_rain_value(self, prepared, 'terrain') if type(prepared) is not _RainEntry else held.terrain):
         raise incomplete("terrain_replaced", "the native dry state carries a different terrain reference")
     if not rain_edges[-1] <= t_end <= guard_end:
         raise incomplete("rain_end_outside_guard", "dry time outside [rainfall end, recession guard end]")
@@ -1340,10 +1348,10 @@ def _rain_accept(self: DenseRunner, index: int, event: Any, resolved: dict[str, 
             "n_commits": int(r.n_commits), "report_rows": int(len(r.boundaries)), "report_rows_bound": rows,
             "storm_steps_lower_bound": lower_steps, "transport_scheme": "upwind", "phase": None,
         },
-        "routing": {"first_graph_construction": first, "entry_rerouted": boundary.rerouted,
-                    "entry_net_displacement_m": (None if boundary.net_displacement_m is None
-                                                 else ops.scalar(boundary.net_displacement_m)),
-                    "graph_retained_by_identity": graph is held.graph,
+        "routing": {"first_graph_construction": first, "entry_rerouted": (_cold_rain_value(self, prepared, 'rerouted') if type(prepared) is not _RainEntry else boundary.rerouted),
+                    "entry_net_displacement_m": (None if (_cold_rain_value(self, prepared, 'net_displacement_m') if type(prepared) is not _RainEntry else boundary.net_displacement_m) is None
+                                                 else ops.scalar((_cold_rain_value(self, prepared, 'net_displacement_m') if type(prepared) is not _RainEntry else boundary.net_displacement_m))),
+                    "graph_retained_by_identity": (_cold_rain_value(self, prepared, 'graph_retained') if type(prepared) is not _RainEntry else graph is held.graph),
                     "n_reroutes_in_event": int(r.n_reroutes)},
         "classes": {
             "actual_pickup_kg": ops.float_values(r.by_class["actual_pickup"]),
@@ -1397,7 +1405,7 @@ def _rain_accept(self: DenseRunner, index: int, event: Any, resolved: dict[str, 
     return self._finish(n, index, "rain", resolved, stage, dry.bed, t, t_end, None, inflow, export, bound, body,
                         publish, pool=self._pool, soil=dry.storm.soil_water_m, routing=routing,
                         terminal=terminal, water=water_delta,
-                        reroutes=(int(boundary.rerouted), int(r.n_reroutes)), elapsed=elapsed, evidence=wet,
+                        reroutes=(int((_cold_rain_value(self, prepared, 'rerouted') if type(prepared) is not _RainEntry else boundary.rerouted)), int(r.n_reroutes)), elapsed=elapsed, evidence=wet,
                         publication_source=dry.bed)
 
 
@@ -1732,3 +1740,21 @@ def _wind_accept(self: DenseRunner, index: int, event: WindEvent, resolved: dict
                         pool=physical.mobile_state, soil=self._soil, routing=self._routing,
                         terminal=final_vectors["deposited_mass_by_class_kg"],
                         elapsed=elapsed, evidence=evidence, publication_source=physical)
+
+
+# Cold water witnesses are separate nominal objects, never DenseStage or rollback authority.
+class _ColdRainStage:
+    __slots__ = ("_parent", "_owner", "_label", "_case", "_nbytes", "_time", "_stamp", "_capsule")
+
+    def __init__(self):
+        raise DenseRunnerError("cold_stage_private", "only an admitted Native cold load issues this witness")
+
+
+def _cold_rain_stage(runner, stage, field):
+    from masy.dense_active_checkpoint import _stage_value
+    return _stage_value(runner, stage, field)
+
+
+def _cold_rain_value(runner, prepared, field):
+    from masy.dense_active_checkpoint import _entry_value
+    return _entry_value(runner, prepared, field)

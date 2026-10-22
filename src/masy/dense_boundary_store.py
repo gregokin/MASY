@@ -3740,3 +3740,200 @@ def recover_dynamic_boundary_store(path, *, expected_store_file_sha256, limits=_
     except BaseException:
         handle.close()
         raise
+
+
+# --- StageA private water-parent borrow (static stores only; no HEAD/publication promise) ---
+_WATER_PARENT_KEY = object()
+
+
+def _water_parent_ready(handle, parent):
+    if type(handle) is not DenseBoundaryStore:
+        _fail("water_parent", "exact DenseBoundaryStore required")
+    handle._binding()
+    state = handle._state
+    if handle._entered is not False:
+        _fail("handle_reentrant", "store operation already in progress")
+    if type(state) is not _State or state.phase != "idle" or type(state.head) is not dict:
+        _fail("water_parent", "idle store with retained parent head required")
+    if _dynamic_store(handle._header):
+        _fail("water_parent", "static store only")
+    if type(state.token) is not str or parent != state.token:
+        _fail("water_parent", "expected parent differs from current store token")
+    return state
+
+
+def _abandon_issued(runner):
+    from masy import dense_water_pause as pause
+    lease = runner._active_evidence
+    try:
+        if type(lease) is not pause._WaterLease:
+            return "released"
+        if lease.owner() is not runner:
+            _fail("water_cleanup", "issued runner carries a foreign water lease")
+        if lease.phase == "busy":
+            _fail("water_busy", "issued runner has busy water work; refusing to claim idle")
+        if lease.phase == "paused":
+            if lease.token is None:
+                _fail("water_cleanup", "paused water lease has no token")
+            pause.abandon_water(runner, lease.token)
+            return "abandoned"
+        if lease.phase not in ("closed", "halted"):
+            _fail("water_cleanup", "unknown water lease phase")
+        return "released"
+    finally:
+        lease = runner = None
+
+
+class _WaterParent:
+    """One-shot private borrow of the unchanged accepted parent; StageA only."""
+
+    __slots__ = ("_handle", "_pid", "_thread", "_phase", "_owner", "_issued", "_head",
+                 "_token", "_source", "_environment", "_outcome", "_cleanup", "_image", "__weakref__")
+
+    def __init_subclass__(cls, **kwargs):
+        raise TypeError("water parent context is final")
+
+    def __init__(self, key, handle, token, head, source, environment):
+        if key is not _WATER_PARENT_KEY:
+            _fail("private_carrier", "water parent contexts come only from borrow_water_parent")
+        self._handle, self._pid, self._thread = handle, os.getpid(), threading.get_ident()
+        self._phase, self._owner, self._issued = "new", None, None
+        self._head, self._token = head, token
+        self._source, self._environment = source, environment
+        self._outcome, self._cleanup, self._image = None, None, None
+
+    def __reduce_ex__(self, protocol):
+        _fail("private_carrier", "water parent context cannot be copied or pickled")
+
+    @property
+    def cleanup_record(self):
+        return self._outcome, self._cleanup
+
+    def _own(self):
+        if type(self) is not _WaterParent or os.getpid() != self._pid or threading.get_ident() != self._thread:
+            _fail("handle_binding", "water parent used outside creating PID/thread")
+
+    def _light(self, h):
+        h._binding()
+        state = h._state
+        if (h._entered is not True or type(state) is not _State or state.phase != "idle"
+                or state.token != self._token or type(state.head) is not dict
+                or oi._json(state.head) != self._head or _dynamic_store(h._header)
+                or oi._json(h._header["source_identity"]) != self._source
+                or h._header["environment_sha256"] != self._environment):
+            _fail("water_parent", "parent store state or metadata drifted")
+        record, _raw = h._head()
+        if oi._json(record) != self._head:
+            _fail("water_parent", "HEAD differs from borrowed parent")
+
+    def _release(self):
+        h, self._handle = self._handle, None
+        self._owner = self._issued = None
+        if self._phase == "entered" and h is not None:
+            h._entered = False
+        self._phase = "closed"
+
+    def __enter__(self):
+        self._own()
+        if self._phase != "new":
+            _fail("water_parent", "one-shot context already entered or closed")
+        h = self._handle
+        _water_parent_ready(h, self._token)
+        self._phase, h._entered = "entered", True
+        prepared = owner = chain = None
+        try:
+            if oi._json(h._state.head) != self._head:
+                _fail("water_parent", "store parent changed before entry")
+            h._stable()
+            record, _raw = h._head()
+            if oi._json(record) != self._head:
+                _fail("water_parent", "HEAD differs from borrowed parent")
+            prepared, chain = h._load(record)
+            self._image = oi._json(chain[0][1]["image"])
+            chain = None
+            owner = _owner_for(h._header, prepared)
+            prepared = None
+            self._owner, owner = owner, None
+        except BaseException:
+            prepared = owner = chain = None
+            self._image = None
+            self._outcome = "entry_failed"
+            self._release()
+            raise
+        return self
+
+    def take_runner(self):
+        import weakref
+        self._own()
+        if self._phase != "entered" or self._issued is not None or self._owner is None:
+            _fail("water_parent", "runner already taken, not entered, or closed")
+        self._light(self._handle)
+        runner = self._owner
+        issued = weakref.ref(runner)
+        self._owner, self._issued = None, issued
+        return runner
+
+    def check(self, runner):
+        self._own()
+        if (self._phase != "entered" or self._issued is None or runner is None
+                or self._issued() is not runner):
+            _fail("water_parent", "foreign, unissued or closed water parent runner")
+        self._light(self._handle)
+
+    def close(self):
+        self._own()
+        if self._phase == "entered" and self._issued is not None:
+            from masy import dense_water_pause as pause
+            live = self._issued()
+            active = None if live is None else live._active_evidence
+            if type(active) is pause._WaterLease and active.phase in ("busy", "finishing", "exporting"):
+                self._cleanup = ("BoundaryStoreError", "water_busy")
+                _fail("water_busy", "active close is non-consuming; parent guard remains held")
+        if self._phase == "closed":
+            return
+        error = runner = None
+        try:
+            self._owner = None
+            if self._phase != "entered":
+                self._outcome = "never_entered"
+            else:
+                issued = self._issued
+                runner = None if issued is None else issued()
+                self._issued = None
+                self._outcome = (("never_taken" if issued is None else "taken_collected")
+                                 if runner is None else _abandon_issued(runner))
+                runner = None
+                h = self._handle
+                h._stable()
+                self._light(h)
+        except BaseException as exc:
+            code = getattr(exc, "code", None)
+            self._cleanup = (type(exc).__name__[:64],
+                             code if type(code) is str and len(code) <= 64 else None)
+            error = exc
+        finally:
+            runner = None
+            self._release()
+        if error is not None:
+            try:
+                raise error
+            finally:
+                error = None
+
+    def __exit__(self, exc_type, exc, tb):
+        exc = tb = None
+        try:
+            self.close()
+        except BaseException:
+            if exc_type is None:
+                raise
+        return False
+
+
+def borrow_water_parent(handle, *, expected_parent):
+    """Private one-shot borrow of the unchanged accepted parent; no store writes or receipt."""
+    _digest(expected_parent, "water parent token")
+    state = _water_parent_ready(handle, expected_parent)
+    return _WaterParent(_WATER_PARENT_KEY, handle, state.token, oi._json(state.head),
+                        oi._json(handle._header["source_identity"]),
+                        handle._header["environment_sha256"])
