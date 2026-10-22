@@ -1919,6 +1919,8 @@ def _image_metadata(root, image, limits):
 
 def _generation_chain(root, header, store_sha, head, limits):
     """Metadata/byte-bound ancestry; selected full native preparation is separate."""
+    if _active_water_store(header):
+        return _active_module()._generation_chain(root, header, store_sha, head, limits)
     _inventory(
         root,
         limits,
@@ -2291,6 +2293,8 @@ class DenseBoundaryStore:
             _fail("storage_observation", "bound probe receipt differs")
 
     def _stable(self):
+        if _active_water_store(self._header):
+            return _active_module()._stable(self)
         self._binding()
         inventory = _inventory(
             self._root, self._limits, expected_root=os.fstat(self._rootfd)
@@ -2315,6 +2319,8 @@ class DenseBoundaryStore:
 
     def _temporary_heads(self, inventory):
         # Aggregate raw admission has completed before parsing any retained temp.
+        if _active_water_store(self._header):
+            return _active_module()._temporary_heads(self, inventory)
         for nonce in inventory["temps"]:
             head, _raw = _record(
                 self._root / f"HEAD.{nonce}.tmp", self._limits.max_head_bytes
@@ -2350,12 +2356,16 @@ class DenseBoundaryStore:
                 _fail("head_temporary", "temp generation raw identity differs")
 
     def _head(self):
+        if _active_water_store(self._header):
+            return _active_module()._head(self)
         record, raw = _record(self._root / "HEAD", self._limits.max_head_bytes)
         _check_seal(record, _HEAD, "head_sha256", _store_schema(self._header) + ".head")
         _control_fields(record)
         return record, raw
 
     def _admit(self, accepted_names, max_work_bytes, *, initial=False):
+        if _active_water_store(self._header):
+            return _active_module()._admit(self, accepted_names, max_work_bytes, initial=initial)
         if not initial and len(accepted_names) >= self._limits.max_accepted:
             _fail(
                 "accepted_cap",
@@ -2402,6 +2412,8 @@ class DenseBoundaryStore:
         self._reservation_record = reservation
 
     def _load(self, head):
+        if _active_water_store(self._header):
+            return _active_module()._load(self, head)
         chain = _generation_chain(
             self._root, self._header, _sha(self._store_raw), head, self._limits
         )
@@ -2431,6 +2443,8 @@ class DenseBoundaryStore:
         return prepared, chain
 
     def _idle_state(self, head, prepared, generation):
+        if _active_water_store(self._header):
+            return _active_module()._idle_state(self, head, prepared, generation)
         owner = _owner_for(self._header, prepared)
         report, diagnostics = owner.report(), prepared.diagnostics()
         receipt = (
@@ -2692,6 +2706,8 @@ class DenseBoundaryStore:
         return self._state.token
 
     def report(self):
+        if _active_water_store(self._header):
+            return _active_module().report(self)
         self._binding()
         return {
             "schema": _store_schema(self._header) + ".report",
@@ -2709,6 +2725,8 @@ class DenseBoundaryStore:
         }
 
     def step(self, expected_parent):
+        if _active_water_store(self._header):
+            return _active_module().step(self, expected_parent)
         self._binding()
         if self._entered:
             _fail("handle_reentrant", "one store operation at a time")
@@ -2805,6 +2823,17 @@ class DenseBoundaryStore:
             raise
         finally:
             self._entered = False
+
+    def checkpoint_water(self, expected_parent, *, boundary_ordinal):
+        if not _active_water_store(self._header):
+            _fail("store_profile", "explicit active-water format required")
+        return _active_module().checkpoint_water(self, expected_parent, boundary_ordinal=boundary_ordinal)
+
+    def acknowledge(self, expected_parent, *, request_kind, boundary_ordinal=None):
+        if not _active_water_store(self._header):
+            _fail("store_profile", "explicit active-water format required")
+        return _active_module().acknowledge(self, expected_parent, request_kind=request_kind,
+                                            boundary_ordinal=boundary_ordinal)
 
     def _failure(self, directory, error):
         try:
@@ -3094,6 +3123,8 @@ def _store_schema(header):
         return SCHEMA
     if schema == SCHEMA_V2 and profile == PROFILE_V2:
         return SCHEMA_V2
+    if schema == SCHEMA_ACTIVE_WATER and profile == PROFILE_ACTIVE_WATER:
+        return SCHEMA_ACTIVE_WATER
     _fail("store_profile", "unknown or mixed schema/profile pair")
 
 
@@ -3750,6 +3781,8 @@ def _water_parent_ready(handle, parent):
     if type(handle) is not DenseBoundaryStore:
         _fail("water_parent", "exact DenseBoundaryStore required")
     handle._binding()
+    if _active_water_store(handle._header):
+        _fail("water_parent", "active-water stores issue their own reserved parent context")
     state = handle._state
     if handle._entered is not False:
         _fail("handle_reentrant", "store operation already in progress")
@@ -3788,7 +3821,7 @@ class _WaterParent:
     """One-shot private borrow of the unchanged accepted parent; StageA only."""
 
     __slots__ = ("_handle", "_pid", "_thread", "_phase", "_owner", "_issued", "_head",
-                 "_token", "_source", "_environment", "_outcome", "_cleanup", "_image", "__weakref__")
+                 "_token", "_source", "_environment", "_outcome", "_cleanup", "_image", "_selection", "__weakref__")
 
     def __init_subclass__(cls, **kwargs):
         raise TypeError("water parent context is final")
@@ -3801,6 +3834,7 @@ class _WaterParent:
         self._head, self._token = head, token
         self._source, self._environment = source, environment
         self._outcome, self._cleanup, self._image = None, None, None
+        self._selection = None
 
     def __reduce_ex__(self, protocol):
         _fail("private_carrier", "water parent context cannot be copied or pickled")
@@ -3814,6 +3848,8 @@ class _WaterParent:
             _fail("handle_binding", "water parent used outside creating PID/thread")
 
     def _light(self, h):
+        if self._selection is not None:
+            return _active_module()._parent_light(self, h)
         h._binding()
         state = h._state
         if (h._entered is not True or type(state) is not _State or state.phase != "idle"
@@ -3827,6 +3863,8 @@ class _WaterParent:
             _fail("water_parent", "HEAD differs from borrowed parent")
 
     def _release(self):
+        if self._selection is not None:
+            return _active_module()._release_parent(self)
         h, self._handle = self._handle, None
         self._owner = self._issued = None
         if self._phase == "entered" and h is not None:
@@ -3834,6 +3872,8 @@ class _WaterParent:
         self._phase = "closed"
 
     def __enter__(self):
+        if self._selection is not None:
+            return _active_module()._enter_parent(self)
         self._own()
         if self._phase != "new":
             _fail("water_parent", "one-shot context already entered or closed")
@@ -3937,3 +3977,28 @@ def borrow_water_parent(handle, *, expected_parent):
     return _WaterParent(_WATER_PARENT_KEY, handle, state.token, oi._json(state.head),
                         oi._json(handle._header["source_identity"]),
                         handle._header["environment_sha256"])
+
+
+# New opt-in durable active-water schema; default callers never import its owner.
+SCHEMA_ACTIVE_WATER = "masy.dense_boundary_store.activewater.v1"
+PROFILE_ACTIVE_WATER = "default_dense_numpy_activewater_v1"
+
+
+def _active_water_store(header):
+    return type(header) is dict and header.get("schema") == SCHEMA_ACTIVE_WATER and header.get("profile") == PROFILE_ACTIVE_WATER
+
+
+def _active_module():
+    from masy import dense_active_water_store
+    return dense_active_water_store
+
+
+def create_active_water_boundary_store(path, *, runner, originals, runtime_reference,
+                                       limits=_DEFAULT, storage_contract):
+    return _active_module().create_active_water_boundary_store(path, runner=runner, originals=originals,
+        runtime_reference=runtime_reference, limits=limits, storage_contract=storage_contract)
+
+
+def recover_active_water_boundary_store(path, *, expected_store_file_sha256, limits=_DEFAULT):
+    return _active_module().recover_active_water_boundary_store(path,
+        expected_store_file_sha256=expected_store_file_sha256, limits=limits)

@@ -111,6 +111,9 @@ def _parent(parent, runner):
 def _parent_record(parent, runner):
     from masy import dense_boundary_store as c
     _parent(parent, runner)
+    if getattr(parent, "_selection", None) is not None:
+        from masy import dense_active_water_store as active
+        return active._parent_record(parent, runner)
     h = parent._handle
     _record, head_raw = h._head()
     return {"store_id": h._header["store_id"], "token": parent._token,
@@ -312,6 +315,8 @@ def _schedule_record(schedule):
 
 
 def _capture(parent, runner, lease, semantic, attempt):
+    if type(lease.prepared) is _ColdPrepared:
+        return _capture_cold(parent, runner, lease, semantic, attempt)
     p, n = lease.prepared, lease.prepared.n
     from masy import dense_runner as dr
     if type(p) is not dr._RainEntry:
@@ -732,7 +737,7 @@ def _export_check(parent, runner, lease, token, declared):
     runner._precheck()
     pause._runtime(c, None, lease)
     bounds = pause._bounds(runner, lease.plan)
-    if pause._entry_digest(runner, lease.prepared, n, schemas, bounds, lease.resolved) != lease.entry_sha256:
+    if _export_entry_seal(parent, runner, lease, n, schemas, bounds) != lease.entry_sha256:
         _fail("active_export_entry", "original warm entry changed")
     if pause._wet(runner, lease, lease.progress, n, checkpoint, schemas)["sha256"] != lease.progress_sha256:
         _fail("active_export_progress", "original warm progress changed")
@@ -746,7 +751,9 @@ def export_water_pause(parent, runner, token, *, attempt):
     """
     from masy import dense_runner as dr, dense_water_pause as pause
     lease = pause._lease(runner, token)
-    if type(lease.prepared) is not dr._RainEntry:
+    if type(lease.prepared) is _ColdPrepared:
+        _cold_export_parent(parent, runner, lease)
+    elif type(lease.prepared) is not dr._RainEntry:
         _fail("active_export_entry", "only the genuine original warm entry can export in StageA")
     declared = _declare()
     n, checkpoint, schemas, c, backend, _snapshot, _native = declared
@@ -913,3 +920,43 @@ def load_water_pause(parent, runner, *, attempt, expected_export_sha256, runtime
         os.close(rootfd)
 
 
+
+
+def _cold_export_parent(parent, runner, lease):
+    from masy import dense_active_water_store as active
+    _check_prepared(runner, lease.prepared)
+    if lease.prepared.parent() is not parent:
+        _fail("active_parent", "cold export requires the original entry actual C parent")
+    active._checked_selection(parent, runner)
+    return parent
+
+
+def _export_entry_seal(parent, runner, lease, n, schemas, bounds):
+    from masy import dense_water_pause as pause
+    if type(lease.prepared) is _ColdPrepared:
+        _cold_export_parent(parent, runner, lease)
+        return pause._entry_seal(runner, lease.prepared, n, schemas, bounds, lease.resolved)
+    return pause._entry_digest(runner, lease.prepared, n, schemas, bounds, lease.resolved)
+
+
+def _capture_cold(parent, runner, lease, semantic, attempt):
+    _cold_export_parent(parent, runner, lease)
+    p = lease.prepared
+    facts = p.facts
+    if (p.parent() is not parent or facts["index"] != lease.index
+            or facts["source"] != lease.source or facts["environment"] != lease.environment
+            or facts["origin"] != _hex(lease.origin)
+            or facts["plan"] != [_hex(x) for x in lease.plan]
+            or [_hex(x) for x in p.plan] != facts["plan"]
+            or _metadata(facts["resolved"], _CAPSULE_BYTES, "original resolved rain")
+                != _metadata(lease.resolved, _CAPSULE_BYTES, "current resolved rain")
+            or _metadata(facts["schedule"], _CAPSULE_BYTES, "original schedule")
+                != _metadata(_schedule_record(p.schedule), _CAPSULE_BYTES, "current schedule")):
+        _fail("active_export_entry", "cold export changed original entry/plan/source/forcing")
+    return {"schema": SCHEMA, "parent": _parent_record(parent, runner),
+            "source": lease.source, "environment": lease.environment,
+            "operation": _operation(parent, runner), "attempt": attempt,
+            "index": lease.index, "resolved": lease.resolved, "origin": _hex(lease.origin),
+            "plan": [_hex(x) for x in lease.plan], "ordinal": lease.ordinal, "pauses": lease.pauses,
+            "entry": facts["entry"], "schedule": facts["schedule"],
+            "native_semantic_sha256": semantic}
