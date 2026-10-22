@@ -27,7 +27,7 @@ _MAX_STEPS, _MAX_EVENTS, _MAX_PAUSES = 4096, 8, 2
 _MAX_REFERENCE, _MAX_MANIFEST = 32 << 10, 1 << 20
 # Canonical complete src/pyproject TABLE digests, not a claimed bundle ID.
 # Root251 immutable package includes exactly the accepted247+253 accessor.
-_NATIVE_TABLE = "a40160d1b3dcbce15145b3f951edc1eacf9036247f803a61f1f8b4c87874d5e1"
+_NATIVE_TABLE = "aaf01a6c3edf0c1668af3d2405de646df0b568f42580868b4e3c7676f0f1102c"
 _SYRUP_TABLE = "f9778bf0af975d06da808514b08000c0c5d54bea6b1715f5d1001acc90ac03c9"
 _PROGRESS_FIELDS = ("native_time_s", "next_step_index", "n_steps", "advanced_start_time_s",
                     "advanced_duration_s", "advanced_end_time_s")
