@@ -4,9 +4,9 @@ This supplement selects one audited resource family for the existing private,
 in-memory default Dense CPU water lease. It does not change the water model,
 completion policy, lease protocol, accepted state or resource limits.
 
-The baseline is private MASYb387, rather than mainfc95. The Source candidate
+The baseline is committed private MASY61a (descended from b387), rather than mainfc95. This projected Source correction
 binds Native MAPLE986 by the verified native **bundle ID**
-`55b564fbe547754e2fe1dc19745cee5c9f9fe9d1eeef005e65a582c2b1cf1f8a`.
+`7fd3caf1b52bcf9b2e4285765db18ba6c70bc7e945b913af4f41d5a2de408abc`.
 SYRUP603 is bound by the canonical complete65-row `src`/`pyproject.toml`
 `size_bytes`/`sha256` **Source-table digest**
 `390ff7cc0d04b5e7d713156315a8a1607549b8a7f4b75fa5f04aa9b1d1bb2d03`.
@@ -51,3 +51,7 @@ Root329's fc95/986/d43 GPU Source profile remains historical ancestry only.
 P3, CvNextOriginalEntry, Native wind codec/family retargeting, active persistence,
 production/dynamic/GPU/windowed/scale/migration and new soil-water/physics laws
 remain outside this work. No execution or publication grant is supplied here.
+
+The actual CPU runtime-store bundle identity above is store/path bound by the existing native exporter. The prior GPU-runtime-store-20261019 bundle ID55b564fbe547754e2fe1dc19745cee5c9f9fe9d1eeef005e65a582c2b1cf1f8a belongs to a different export location and is not an alternate accepted CPU family. Root346 sanitized Source provenance independently compares the complete manifests: only bundle_id and project.exported_from differ; every file row, Source digest, distribution metadata and archive identity is unchanged. Neither bundle identity is derived by stripping fields or rewriting a native manifest. The actual owning C binding returns the genuine CPU bundle ID after its unchanged checks.
+
+This three-path correction changes only the CPU bundle literal in the module and negative-check metadata, plus this explanation. SYRUP603 Source digest390ff7cc0d04b5e7d713156315a8a1607549b8a7f4b75fa5f04aa9b1d1bb2d03, logical counts6418/4605, all resource limits, complete71-field progress/21-layout ownership and original37 test methods remain unchanged. A new private child commit and genuinely prepared/verified runtime containing these exact corrected bytes are still required before Root can qualify real pause/resume. The prior61a runtime and GPU Source profile do not qualify this corrected component; no successful runtime or model result is claimed here.

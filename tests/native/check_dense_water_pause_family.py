@@ -19,7 +19,7 @@ from masy import dense_runner as dr
 from masy import dense_water_pause as pause
 
 
-NATIVE_BUNDLE = "55b564fbe547754e2fe1dc19745cee5c9f9fe9d1eeef005e65a582c2b1cf1f8a"
+NATIVE_BUNDLE = "7fd3caf1b52bcf9b2e4285765db18ba6c70bc7e945b913af4f41d5a2de408abc"
 SYRUP_SOURCE_TABLE = "390ff7cc0d04b5e7d713156315a8a1607549b8a7f4b75fa5f04aa9b1d1bb2d03"
 OLD_NATIVE_BUNDLE = "9eab1a52b23d59f674028062649eb25661824f82a1aaa1edada7f9a7641fe9bf"
 OLD_SYRUP_TABLE = "f9778bf0af975d06da808514b08000c0c5d54bea6b1715f5d1001acc90ac03c9"
