@@ -26,9 +26,10 @@ _MAX_CELLS, _MAX_CLASSES, _MAX_VOXELS, _MAX_COHORTS = 64, 6, 16, 16000
 _MAX_STEPS, _MAX_EVENTS, _MAX_PAUSES = 4096, 8, 2
 _MAX_REFERENCE, _MAX_MANIFEST = 32 << 10, 1 << 20
 # Canonical complete src/pyproject TABLE digests, not a claimed bundle ID.
-# Root251 immutable package includes exactly the accepted247+253 accessor.
-_NATIVE_TABLE = "aaf01a6c3edf0c1668af3d2405de646df0b568f42580868b4e3c7676f0f1102c"
-_SYRUP_TABLE = "f9778bf0af975d06da808514b08000c0c5d54bea6b1715f5d1001acc90ac03c9"
+# Locked committed Native fa2 (370 rows) / SYRUP 603 (65 rows) Source census;
+# current-family wind pause/resume qualification remains pending Root.
+_NATIVE_TABLE = "dd6b7575fc83a11178e8fa31738e1d5fc5df0d879a8c2e20337c18f7859a5640"
+_SYRUP_TABLE = "390ff7cc0d04b5e7d713156315a8a1607549b8a7f4b75fa5f04aa9b1d1bb2d03"
 _PROGRESS_FIELDS = ("native_time_s", "next_step_index", "n_steps", "advanced_start_time_s",
                     "advanced_duration_s", "advanced_end_time_s")
 

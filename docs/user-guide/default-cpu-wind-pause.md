@@ -1,15 +1,18 @@
 # Explicit default CPU wind pause and resume
 
-This M1 component is **SOURCE_UNACTIVATED**. Its source/test candidate does not
-qualify a new runtime or authorize transport. Root must first accept a genuine
-complete composition of this MASY source, the exact MAPLE continuation/getter
-source and current SYRUP: native bundle/materialization, environment, compiled
-dependencies and all loaded module origins. An old CPU lock, a source hash, a
-caller Boolean or historical native tests cannot replace that P2 gate.
-Committed-only lock validation is unchanged. The first interface explicitly
-accepts the existing strict `source_manifest_prototype` development-reference
-format through its actual owning C runtime verifier; the format is not an
-activation certificate. A committed runtime kind is refused in this slice.
+This component remains **SOURCE_UNACTIVATED**. The adapter's complete Source
+census now names committed MAPLEfa2d5ef (370 rows) and SYRUP603f8ae (65 rows).
+These table hashes are not bundle IDs. Root must independently qualify a new
+complete composition, including the actual native bundle, environment,
+compiled dependencies and loaded module origins, before transport.
+
+The unchanged adapter accepts only a genuinely verified
+`source_manifest_prototype` reference through the owning C Source-manifest
+mechanism. The current376 `committed_cpu_lock` reference is intentionally
+refused with `wind_runtime_kind`; no lock is relabelled. A new supported
+reference and full wind pause/resume qualification remain pending. Ordinary
+`DenseRunner` calls never select this component. Source/default/resource/caller
+equivalence and model support are not established by a matching digest.
 
 Only the exact static default Dense NumPy runner is supported: aerodynamic,
 flat hop-distance transport, dormancy off and the original native profile.
