@@ -1,28 +1,67 @@
 # Explicit default CPU wind pause and resume
 
-This component remains **SOURCE_UNACTIVATED**. The adapter's complete Source
-census now names committed MAPLEfa2d5ef (370 rows) and SYRUP603f8ae (65 rows).
-These table hashes are not bundle IDs. Root must independently qualify a new
-complete composition, including the actual native bundle, environment,
-compiled dependencies and loaded module origins, before transport.
+**Status: qualified for a bounded scope only.** Root independently accepted
+qualification of this component for task 393 on this runtime composition:
 
-The unchanged adapter accepts only a genuinely verified
-`source_manifest_prototype` reference through the owning C Source-manifest
-mechanism. The current376 `committed_cpu_lock` reference is intentionally
-refused with `wind_runtime_kind`; no lock is relabelled. A new supported
-reference and full wind pause/resume qualification remain pending. Ordinary
-`DenseRunner` calls never select this component. Source/default/resource/caller
-equivalence and model support are not established by a matching digest.
+- MASY `b9d8ae51016c49e074cd93526bcc84245d5e9a3e`
+- MAPLE `fa2d5ef2733f84ef88005c7b06c119415ccba1df`
+- SYRUP `603f8aeb0f2a87fafd556819c9c41fde98bd41b9`
+- immutable CPU lock
+  `84ed1f93bf084a50e0c0b0fe758573dd29761fcbd2abbf3442c3be7ca0105af0`
+- Root aggregate
+  `d7ae954c0d49801c32176c7b15df512157841a9449bc8c64d738629f52ca843f`
+
+The qualification ran 37 unique tests: 35 original wind behaviour tests and 2
+patched historical Source-census refusals. With the first and natural focus
+reruns, this was 39 executions and 27 subtests. All 8 workers exited 0, were
+reaped, and their actual host processes were confirmed gone. No test failed or
+was skipped. Later documentation-only descendants do not change the qualified
+runtime HEAD `b9d8ae5`.
+
+The qualified tests cover:
+
+- genuine pause and resume
+- native commit cadence
+- a four-event wind-water-wind-water sequence
+- retained routing
+- nonzero origins
+- final settlement
+- in-memory failure admission
+
+Native bounds, clocks, physics, Source guards and resource caps are unchanged.
+The two Source-fingerprint tests first execute the real, unpatched C binding
+and then patch one TABLE literal. They establish refusal behaviour only. No
+native compatibility is inferred from them.
+
+This result covers the bounded static default Dense NumPy profile only.
+Production reduced/topographic/creep/avalanching wind, GPU, windowed storage,
+dynamic vegetation, persisted active restart, heap peaks, scale and performance
+remain outside this qualification. This component has no dedicated pause CLI.
+
+The actual committed C binding derives a supported `source_manifest_prototype`
+compatibility view through the existing C Source-manifest mechanism. That view
+alone is not a lock and grants no execution authority. The `committed_cpu_lock`
+reference kind is still intentionally refused with `wind_runtime_kind`, and no
+lock is relabelled. Ordinary `DenseRunner` calls never select pause
+automatically. A matching digest does not establish Source, default, resource
+or caller equivalence, or model support. The Source census names MAPLE
+`fa2d5ef` (370 rows) and SYRUP `603f8ae` (65 rows). The adapter hashes complete Source tables for these revisions; those hashes
+are distinct from the native bundle ID.
 
 Only the exact static default Dense NumPy runner is supported: aerodynamic,
 flat hop-distance transport, dormancy off and the original native profile.
 Production, GPU/device, reduced/topographic/wake wind, windowed storage,
 dynamic vegetation, persisted active work and active-process recovery are
-outside M1. The old water-pause fixed source census is unchanged and refuses
-the new native family. Ordinary wind and water retain their original source
-and compatibility requirements.
+outside M1. Water-pause qualification is separate. The previously qualified
+Stage A water result (58 unique tests, 51 subtests) remains on MASY
+`038ed538`/MAPLE `fa2d5ef`/SYRUP `603f8ae`; see
+[dense active checkpoint](../dense_active_checkpoint.md). It is not
+relabelled to `b9d8ae5`, and this wind qualification does not extend it.
+Ordinary wind and water retain their original source and compatibility
+requirements.
 
-After independent P2 qualification and an explicit Root execution gate, use:
+Within the qualified scope above, and under an explicit Root execution gate,
+use:
 
 ```python
 from masy.dense_wind_pause import pause_wind, resume_wind, abandon_wind
