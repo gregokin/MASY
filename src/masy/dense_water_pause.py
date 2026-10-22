@@ -22,10 +22,10 @@ __all__ = ["pause_water", "resume_water", "abandon_water"]
 
 _MAX_CELLS, _MAX_CLASSES, _MAX_VOXELS, _MAX_COHORTS, _MAX_EVENTS = 64, 6, 16, 16000, 8
 _MAX_PAUSES, _MAX_ROWS, _MAX_STEPS = 2, 4096, 10000
-# After ACTUAL owning binding: MAPLE986 Native bundle; SYRUP603 canonical
+# After ACTUAL owning binding: MAPLEfa2 Native CPU bundle; SYRUP603 canonical
 # src/pyproject size_bytes+sha256 table. Whole-file logical census335/336;
 # not an allocator/heap/JIT/IO fit claim. The whole-worker gate stays required.
-_NATIVE_CENSUS_MAPLE = "7fd3caf1b52bcf9b2e4285765db18ba6c70bc7e945b913af4f41d5a2de408abc"
+_NATIVE_CENSUS_MAPLE = "f3e8a99980cfbca2a948af1a8f381a942c1547315aefcb33c0564528b282c82b"
 _NATIVE_CENSUS_SYRUP = "390ff7cc0d04b5e7d713156315a8a1607549b8a7f4b75fa5f04aa9b1d1bb2d03"
 _ALLOCATION_SITES = MappingProxyType({"hydrology": 1849, "wet_physics": 681, "upwind": 439,
                                       "event_and_terminal": 4605, "maple_dense": 6418})

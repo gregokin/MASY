@@ -19,9 +19,10 @@ from masy import dense_runner as dr
 from masy import dense_water_pause as pause
 
 
-NATIVE_BUNDLE = "7fd3caf1b52bcf9b2e4285765db18ba6c70bc7e945b913af4f41d5a2de408abc"
+NATIVE_BUNDLE = "f3e8a99980cfbca2a948af1a8f381a942c1547315aefcb33c0564528b282c82b"
 SYRUP_SOURCE_TABLE = "390ff7cc0d04b5e7d713156315a8a1607549b8a7f4b75fa5f04aa9b1d1bb2d03"
-OLD_NATIVE_BUNDLE = "9eab1a52b23d59f674028062649eb25661824f82a1aaa1edada7f9a7641fe9bf"
+OLD_NATIVE_BUNDLE = "7fd3caf1b52bcf9b2e4285765db18ba6c70bc7e945b913af4f41d5a2de408abc"
+EARLIER_NATIVE_BUNDLE = "9eab1a52b23d59f674028062649eb25661824f82a1aaa1edada7f9a7641fe9bf"
 OLD_SYRUP_TABLE = "f9778bf0af975d06da808514b08000c0c5d54bea6b1715f5d1001acc90ac03c9"
 
 
@@ -65,7 +66,7 @@ class FamilyRefusalProtocols(unittest.TestCase):
 
     def test_wrong_native_bundle_has_no_legacy_or_source_table_fallback(self):
         # The Native Source-table SHA is deliberately NOT a bundle identity.
-        for wrong in (OLD_NATIVE_BUNDLE,
+        for wrong in (OLD_NATIVE_BUNDLE, EARLIER_NATIVE_BUNDLE,
                       "aaf01a6c3edf0c1668af3d2405de646df0b568f42580868b4e3c7676f0f1102c"):
             with self.subTest(wrong=wrong), \
                     mock.patch.object(store, "_runtime_binding",
