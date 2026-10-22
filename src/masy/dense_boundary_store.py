@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import ctypes
 import dataclasses
 import fcntl
 import hashlib
@@ -298,8 +299,114 @@ def _identity(st):
     return st.st_dev, st.st_ino
 
 
+
+# Fresh directory-currentness resolution; original acquisition walkers stay intact.
+class _OpenHow(ctypes.Structure):
+    _fields_ = (
+        ("flags", ctypes.c_uint64),
+        ("mode", ctypes.c_uint64),
+        ("resolve", ctypes.c_uint64),
+    )
+
+
+_ABI_LOCK = threading.Lock()
+_ABI = None
+
+
+def _abi_profile():
+    return (
+        sys.platform == "linux"
+        and getattr(sys.implementation, "_multiarch", None) == "x86_64-linux-gnu"
+        and ctypes.sizeof(ctypes.c_long) == ctypes.sizeof(ctypes.c_void_p) == 8
+        and ctypes.sizeof(_OpenHow) == 24
+    )
+
+
+def _abi_setup():
+    global _ABI
+    with _ABI_LOCK:
+        if _ABI is None:
+            owner = ctypes.pythonapi
+            lib = ctypes.CDLL(None, handle=owner._handle, use_errno=False)
+            fn = lib["syscall"]
+            fn.argtypes = (
+                ctypes.c_long,
+                ctypes.c_long,
+                ctypes.c_char_p,
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+            )
+            fn.restype = ctypes.c_long
+            _ABI = (owner, lib, fn)
+        return _ABI
+
+
+def _open_current_directory(path):
+    p = Path(path)
+    if not (
+        _abi_profile()
+        and p.is_absolute()
+        and p.anchor == "/"
+        and len(p.parts) > 1
+        and ".." not in p.parts
+    ):
+        return oi._open_dir(p)
+    try:
+        encoded = os.fsencode(str(p))
+    except Exception:
+        encoded = None
+    if encoded is None or b"\0" in encoded or len(encoded) > 4095:
+        return oi._open_dir(p)
+    abi = _ABI
+    if abi is None:
+        try:
+            abi = _abi_setup()
+        except Exception:
+            abi = None
+        if abi is None:
+            return oi._open_dir(p)
+    try:
+        reserve = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    except Exception:
+        reserve = None
+    if reserve is None:
+        return oi._open_dir(p)
+    result = None
+    failure = None
+    try:
+        how = _OpenHow(os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC, 0, 0x04)
+        raw = abi[2](437, -100, encoded, ctypes.byref(how), 24)
+        if raw >= 0:
+            result = raw
+        held, reserve = reserve, None
+        os.close(held)
+    except BaseException as error:
+        failure = error
+    if failure is not None:
+        errors = [failure]
+        held, reserve = reserve, None
+        if held is not None:
+            try:
+                os.close(held)
+            except BaseException as error:
+                errors.append(error)
+        held, result = result, None
+        if held is not None:
+            try:
+                os.close(held)
+            except BaseException as error:
+                errors.append(error)
+        if len(errors) == 1:
+            raise failure
+        raise BaseExceptionGroup("directory currentness cleanup failed", errors)
+    if result is None:
+        return oi._open_dir(p)
+    descriptor, result = result, None
+    return descriptor
+
+
 def _same_directory(path, descriptor):
-    other = oi._open_dir(path)
+    other = _open_current_directory(path)
     try:
         if _identity(os.fstat(other)) != _identity(os.fstat(descriptor)):
             _fail("identity_drift", "held ancestor no longer names directory")
