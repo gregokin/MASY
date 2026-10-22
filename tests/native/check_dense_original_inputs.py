@@ -1375,5 +1375,42 @@ class OriginalPackChecks(unittest.TestCase):
             self.assertIn(error.exception.code, ("metadata_fields", "source_identity"))
 
 
+    def test_64_decoded_terrain_owns_fromfile_allocation_and_passes_native_anchor(
+        self,
+    ):
+        from maple_syrup.checkpoint import _terrain_anchor_admission
+
+        path, identity = self.saved()
+        real_fromfile = np.fromfile
+        recorded = []
+
+        def track(*args, **kwargs):
+            result = real_fromfile(*args, **kwargs)
+            recorded.append((result, result.__array_interface__["data"][0]))
+            return result
+
+        with mock.patch.object(np, "fromfile", side_effect=track):
+            restored = codec.load_original_inputs(
+                path,
+                expected_manifest_sha256=identity,
+                expected_source_identity=SOURCES,
+            )
+        terrain = restored.water.terrain
+        for name in (
+            "initial_full_elevation_m",
+            "initial_committed_elevation_m",
+            "export_receiver_full",
+            "active_mask",
+            "friction_factor",
+        ):
+            array = getattr(terrain, name)
+            match = [p for r, p in recorded if r is array]
+            self.assertEqual(len(match), 1, name)
+            self.assertEqual(array.__array_interface__["data"][0], match[0], name)
+        limit = codec.OriginalPackLimits().max_numeric_bytes
+        _ny, _nx, total = _terrain_anchor_admission(terrain, limit)
+        self.assertLessEqual(total, limit)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

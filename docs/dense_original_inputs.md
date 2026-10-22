@@ -123,3 +123,14 @@ the existing MAPLE venv, `-I -B`, immutable complete source origins/genuine sour
 metadata, hidden GPUs/JAX CPU, AS8GiB, CPU90/120s, per-file96MiB, core0 and wall180s.
 Resident memory and exact reference file/data/serialized counts are recorded in
 task receipts. Data caps are not peak-RSS or large/GPU/windowed readiness claims.
+
+2026-10-22 (task368, Source only): both `load_original_inputs` and
+`load_original_inputs_v2` now decode each numeric file as one canonical owning
+read-only array. The array returned by `np.fromfile` is reshaped in place and frozen
+before its data hash, so the decoded object retains that owner with no extra numeric copy.
+Saved bits, format, schema, hashes, caps and refusal order are unchanged. This is
+the prerequisite for the existing SYRUP terrain-anchor admission, which requires
+exact owning, base-free, read-only, C-contiguous native arrays; that guard is not
+weakened. Status: Source authored, pending independent Root tests on the current
+runtime and composition. No combined active persisted restart, GPU, windowed,
+production or migration claim is made.

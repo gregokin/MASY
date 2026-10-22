@@ -2462,8 +2462,8 @@ def load_original_inputs(
                 a = np.fromfile(stream, dtype=dtype, count=size // dtype.itemsize)
             if a.size != size // dtype.itemsize:
                 _fail("file_changed", "truncated numerical data")
-            a = a.reshape(tuple(shape))
-            a.base.flags.writeable = False
+            a.shape = tuple(shape)
+            a.flags.writeable = False
             if (
                 hashlib.sha256(memoryview(a).cast("B") if a.size else b"").hexdigest()
                 != row["data_sha256"]
@@ -3556,8 +3556,8 @@ def load_original_inputs_v2(
                 a = np.fromfile(stream, dtype=dtype, count=size // dtype.itemsize)
             if a.size != size // dtype.itemsize:
                 _fail("file_changed", "truncated numerical data")
-            a = a.reshape(tuple(shape))
-            a.base.flags.writeable = False
+            a.shape = tuple(shape)
+            a.flags.writeable = False
             if (
                 hashlib.sha256(memoryview(a).cast("B") if a.size else b"").hexdigest()
                 != row["data_sha256"]

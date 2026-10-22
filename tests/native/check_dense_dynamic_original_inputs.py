@@ -139,3 +139,30 @@ def test_v1_entrypoints_still_refuse_dynamic_capture_and_v2_capsule(tmp_path, or
     with pytest.raises(oi.OriginalInputsError):
         oi.save_original_inputs(tmp_path / "v1", pack)
     assert not (tmp_path / "v1").exists()
+
+
+def test_decoded_terrain_owns_fromfile_allocation_and_passes_native_anchor(tmp_path, original):
+    from maple_syrup.checkpoint import _terrain_anchor_admission
+
+    _, pack = original
+    path, seal = saved(tmp_path, pack)
+    real_fromfile = np.fromfile
+    recorded = []
+
+    def track(*args, **kwargs):
+        result = real_fromfile(*args, **kwargs)
+        recorded.append((result, result.__array_interface__["data"][0]))
+        return result
+
+    with mock.patch.object(np, "fromfile", side_effect=track):
+        decoded = load(path, seal)
+    terrain = decoded.originals.water.terrain
+    for name in ("initial_full_elevation_m", "initial_committed_elevation_m",
+                 "export_receiver_full", "active_mask", "friction_factor"):
+        array = getattr(terrain, name)
+        match = [pointer for result, pointer in recorded if result is array]
+        assert len(match) == 1, name
+        assert array.__array_interface__["data"][0] == match[0], name
+    limit = oi.OriginalPackLimits().max_numeric_bytes
+    _ny, _nx, total = _terrain_anchor_admission(terrain, limit)
+    assert total <= limit
