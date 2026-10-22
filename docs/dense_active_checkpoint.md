@@ -1,12 +1,28 @@
 # Private default CPU water export and cold continuation
 
-This StageA component composes the independently Source-reviewed six-path
-implementation with private MASY13496d1, MAPLEfa2 and SYRUP603. It awaits
-Root changed-source runtime and numerical qualification. Historical
-in-memory and codec qualifications retain their exact original scopes.
+This StageA component is qualified for the bounded static default Dense NumPy
+water path on MASY038ed53, MAPLEfa2d5ef and SYRUP603f8ae under immutable CPU lock
+`e06046835406dee8da94c16820827a3b1bf21d243466ddfad09b33fb009a7649`.
+The qualification passed 58 unique tests and 51 subtests, plus one separately
+reaped checkpoint writer followed by a fresh reader. All 46 counted workers
+exited successfully and were reaped. Native state, clocks and accounting
+comparisons retain the existing exact requirements and native bounds.
+
+The accepted aggregate receipt is
+`fa0a4b62d868f78badd638d403e703ae754f55560aeb3827b2da92e5c95b0fd6`;
+its evidence remains local under task383. Two earlier whole-batch CPU-limit
+attempts and one invalid failure-test oracle remain recorded and unaccepted.
+The corrected oracle saves the actual lease before the runner clears its
+active slot; no product or physics change was needed. Partitioned checks used
+the original worker limits. This is no heap/peak-memory or scale qualification.
+
+StageA leaves C HEAD at the last accepted event boundary. Durable active-event
+publication, lost-acknowledgement recovery and combined active restart remain
+separate work. Historical wind, vegetation and other qualifications retain
+their exact source pairs and scopes.
 
 The separate original-input ownership correction is inherited from
-MASY13496d1. It preserves the fromfile allocation while supplying the
+MASY13496d1, which is included in MASY038ed53. It preserves the fromfile allocation while supplying the
 readonly owning terrain arrays required by the unchanged Native603
 anchor. Its actual CPU qualification is a separate prerequisite; Source
 composition alone does not establish provider support or cold restart.

@@ -393,17 +393,41 @@ class GenuineColdWater(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with store_at(root / "store") as (handle, runtime):
+                head, head_bytes = handle.report()["head_token"], (root / "store/HEAD").read_bytes()
                 with borrowed(handle) as (parent, runner):
                     sha, _token = export_in_context(parent, runner, runtime, root / "attempt")
                 with borrowed(handle) as (parent, runner):
                     token = a.load_water_pause(parent, runner, attempt=root / "attempt",
                         expected_export_sha256=sha, runtime_reference=runtime)
-                    with mock.patch.object(a, "_native_fields", side_effect=dr.DenseRunnerError("authored_accessor", "failure")), \
-                            mock.patch.object(dr, "_complete_event", side_effect=AssertionError("Native after accessor failure")):
+                    lease = pause._lease(runner, token)
+                    unchanged = q.snapshot(runner)
+                    failure = dr.DenseRunnerError("authored_accessor", "failure")
+                    with mock.patch.object(a, "_native_fields", side_effect=failure), \
+                            mock.patch.object(dr, "_complete_event", side_effect=AssertionError("Native after accessor failure")) as complete:
                         receipt = pause.resume_water(runner, token)
-                    self.assertNotEqual(receipt["status"], "accepted")
-                    self.assertEqual(runner._active_evidence.phase, "halted")
-                    self.assertIsNone(runner._active_evidence.token)
+                    complete.assert_not_called()
+                    self.assertEqual(receipt, {
+                        "schema": dr.RECEIPT_SCHEMA, "index": lease.index, "kind": "rain",
+                        "status": "runner_error", "code": "water_pause_failure",
+                        "detail": dr._detail(failure), "exception_type": "DenseRunnerError",
+                        "native_start": dr.encode_time(lease.origin), "unaccepted_elapsed_s": None,
+                        "accepted": unchanged["report"]["accepted"], "guarantee": dr._UNCHANGED})
+                    self.assertEqual(lease.phase, "halted")
+                    self.assertIsNone(lease.token)
+                    self.assertIsNone(lease.prepared)
+                    self.assertIsNone(lease.progress)
+                    self.assertIsNone(runner._active_evidence)
+                    self.assertEqual(runner.stop_receipt, receipt)
+                    with self.assertRaises(dr.DenseRunnerError) as caught:
+                        pause.resume_water(runner, token)
+                    self.assertEqual(caught.exception.code, "water_token")
+                    # A truthful stop changes only report status/stop; physical state,
+                    # accepted cursor, all clocks, receipts and totals remain exact.
+                    unchanged["report"]["status"] = "stopped"
+                    unchanged["report"]["stop"] = receipt
+                    self.assertEqual(q.snapshot(runner), unchanged)
+                self.assertEqual(handle.report()["head_token"], head)
+                self.assertEqual((root / "store/HEAD").read_bytes(), head_bytes)
 
 
 class FreshProcessReader(unittest.TestCase):
