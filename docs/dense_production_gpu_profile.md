@@ -137,7 +137,8 @@ such; they do not estimate a whole FFT/JIT/native peak. The read-only library
 checks the already-enforced CPU, core, file and descriptor limits, worker
 PID/start/boot, current device/stream, host RSS/global MemAvailable, actual pool
 cap and prospective device work. Before the first domain copy it rechecks
-post-context free memory against the admitted bytes and the 10 GiB floor.
+post-context free memory against the admitted bytes and the configured construction
+floor (10 GiB by default; an explicit 9 GiB profile requires separate qualification).
 Subsequent checkpoints apply incremental-work/current-free checks without
 reapplying the entry free floor. Device-driver virtual mappings are not treated
 as the CPU address-space budget. No resource setter is called by the library.
@@ -166,7 +167,8 @@ traceback, frame, driver, pool or unaccepted owner through this data.
 
 Absent, malformed or foreign data means `diagnostic_unavailable`. It never
 means zero free bytes, successful admission or permission to change a guard.
-The original error code/detail, 10 GiB entry floor, 8 GiB maximum pool cap,
+The original error code/detail, configured entry floor (10 GiB by default),
+8 GiB maximum pool cap,
 query/call order, cancellation and success records remain unchanged. Optional
 metadata failures preserve the primary refusal and cleanup. CPU scalar/cleanup
 tests do not establish genuine device-counter collection. New runtime source
@@ -184,3 +186,34 @@ scope are inherited controller source bindings, not an independently external
 root. Later paired production events need separate native comparisons, complete
 transfer/memory observations and ROOT execution admission. CPU metadata tests
 alone do not satisfy any of those device or transport gates.
+
+
+### Explicit 9 GiB construction floor
+
+A caller may explicitly set `DeviceProductionLimits.min_device_free_bytes` to
+9 GiB. The default stays 10 GiB, the upper range stays 1 TiB, and values below
+9 GiB refuse. This option requires separate engineering qualification; it is not a new
+scientific calibration or evidence of Native/driver/whole-heap/peak fit.
+
+The value comes from the original protected entry floor
+`max(pool_limit_bytes=8 GiB, driver_delta_bytes=9 GiB)=9 GiB`; it is not fitted
+to an observed shortage. The 8 GiB pool cap, monitored 9 GiB driver-delta ceiling,
+source-derived construction/upcoming bytes, all positive declared-unmeasured
+reserves, actual free>=upcoming, used+upcoming<=pool, held<=pool, exact pool cap,
+process/source/native checks, cancellation and throughout-work observations
+remain authoritative and unchanged. Construction still requires the full
+reserve/admitted request. Lowering a fixed free floor does not admit additional
+pool bytes or establish that the future Native allocation will fit.
+
+Only `checkpoint="constructing"` applies the selected floor; subsequent work
+keeps the original current-free/upcoming guards without reapplying an entry
+floor. The optional unchanged eight-counter refusal tuple carries the selected
+9 or 10 GiB policy value truthfully. Pure scalar tests are not genuine device
+counter, constructor, transport, runtime or performance qualification.
+
+The existing task512 event-control profile still requires exactly 10 GiB and
+refuses 9 GiB. Its Source and all old gates/evidence remain immutable. A later
+separately reviewed explicit named 9 GiB control derivative, genuine new Source
+commit/runtime profile and fresh CPU/GPU qualification are required before an
+actual attempt. No old profile, pass or failed attempt is relabelled; this
+library range change supplies no execution/device authority.

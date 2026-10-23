@@ -459,5 +459,84 @@ class DiagnosticAndOwnership(unittest.TestCase):
         self.assertEqual(made_seen, [{}])
 
 
+class ExplicitConstructionFreeFloor(unittest.TestCase):
+    """Actual pure policy predicates over synthetic scalar counter inputs.
+
+    No provider/device/process observation, physical owner or model succeeds
+    here. Root must separately qualify a new explicit named 9 GiB profile.
+    """
+
+    def _observe(self, policy, **changes):
+        counters = {"free": 9 << 30, "total": 24 << 30, "used": 0, "held": 0,
+                    "cap": 8 << 30, "upcoming": policy.reserve_total_bytes,
+                    "checkpoint": "constructing"}
+        counters.update(changes)
+        return production._check_observed_device_memory(policy, **counters)
+
+    def test_explicit_nine_default_ten_and_original_upper_bound(self):
+        nine, default = limits(min_device_free_bytes=9 << 30), limits()
+        self.assertEqual(nine.min_device_free_bytes, 9 << 30)
+        self.assertEqual(default.min_device_free_bytes, 10 << 30)
+        self.assertEqual(nine.as_record()["policy"]["min_device_free_bytes"], 9 << 30)
+        self.assertEqual(default.as_record()["policy"]["min_device_free_bytes"], 10 << 30)
+        self.assertEqual(limits(min_device_free_bytes=1 << 40).min_device_free_bytes, 1 << 40)
+        for value in ((9 << 30) - 1, (1 << 40) + 1):
+            with self.subTest(value=value), self.assertRaises(production.DenseProductionError) as caught:
+                limits(min_device_free_bytes=value)
+            self.assertEqual(caught.exception.code, "invalid_limits")
+
+    def test_nine_constructing_equality_uses_original_scalar_predicate(self):
+        policy = limits(min_device_free_bytes=9 << 30)
+        with patch.object(production, "_loaded_cupy", side_effect=AssertionError("no provider query")):
+            self.assertIsNone(self._observe(policy, free=9 << 30))
+
+    def test_below_nine_preserves_original_eight_counter_refusal(self):
+        policy = limits(min_device_free_bytes=9 << 30)
+        free = (9 << 30) - 1
+        with self.assertRaises(production.DenseProductionError) as caught:
+            self._observe(policy, free=free)
+        self.assertEqual(caught.exception.code, "device_free_floor")
+        expected = (free, 24 << 30, 0, 0, 8 << 30, policy.reserve_total_bytes, 9 << 30, 8 << 30)
+        self.assertEqual(caught.exception._device_memory_refusal, expected)
+        self.assertEqual(production._copy_device_memory_refusal(caught.exception), expected)
+
+    def test_default_ten_still_refuses_below_ten_and_accepts_equality(self):
+        default = limits()
+        for free in (9 << 30, (10 << 30) - 1):
+            with self.subTest(free=free), self.assertRaises(production.DenseProductionError) as caught:
+                self._observe(default, free=free)
+            self.assertEqual(caught.exception.code, "device_free_floor")
+            self.assertEqual(caught.exception._device_memory_refusal[6], 10 << 30)
+        self.assertIsNone(self._observe(default, free=10 << 30))
+
+    def test_nonconstructing_checkpoints_do_not_reapply_either_floor(self):
+        for policy in (limits(), limits(min_device_free_bytes=9 << 30)):
+            for checkpoint in ("event_entry", "wrapper_work", "after_native_wind",
+                               "after_native_rain", "before_publication"):
+                with self.subTest(minimum=policy.min_device_free_bytes, checkpoint=checkpoint):
+                    self.assertIsNone(self._observe(policy, free=0, upcoming=0, checkpoint=checkpoint))
+
+    def test_original_pool_and_upcoming_guards_still_refuse_with_nine(self):
+        policy = limits(min_device_free_bytes=9 << 30)
+        cases = (({"held": (8 << 30) + 1}, "device_pool_limit"),
+                 ({"cap": (8 << 30) - 1}, "device_pool_limit"),
+                 ({"used": 8 << 30, "held": 8 << 30, "upcoming": 1}, "device_budget"),
+                 ({"free": 1, "upcoming": 2, "checkpoint": "wrapper_work"}, "device_budget"))
+        for changes, code in cases:
+            with self.subTest(changes=changes), self.assertRaises(production.DenseProductionError) as caught:
+                self._observe(policy, **changes)
+            self.assertEqual(caught.exception.code, code)
+
+    def test_underreserve_constructing_refuses_before_any_observation(self):
+        policy = limits(min_device_free_bytes=9 << 30)
+        with patch.object(production, "_loaded_cupy", side_effect=AssertionError("no provider query")), \
+             patch.object(production, "process_identity", side_effect=AssertionError("no process query")), \
+             patch.object(production, "_read_bounded", side_effect=AssertionError("no host query")):
+            with self.assertRaises(production.DenseProductionError) as caught:
+                production.check_process(policy, {}, upcoming_wrapper_bytes=policy.reserve_total_bytes - 1,
+                                         checkpoint="constructing")
+        self.assertEqual(caught.exception.code, "invalid_process_request")
+
+
 if __name__ == "__main__":
     unittest.main()

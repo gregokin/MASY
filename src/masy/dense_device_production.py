@@ -303,7 +303,7 @@ DECLARED_UNMEASURED = ("fft_workspace_reserve_bytes", "jit_driver_reserve_bytes"
 _LIMIT_BOUNDS = {name: (1, _GIB) for name in DECLARED_UNMEASURED}
 _LIMIT_BOUNDS.update({"cpu_soft_s": (1, 480), "cpu_hard_s": (1, 540), "file_size_bytes": (1, 64 * _MIB),
                       "nofile": (1, 1024), "max_host_rss_bytes": (1, 5 * _GIB), "min_host_free_bytes": (_GIB, _TIB),
-                      "max_device_bytes": (1, 8 * _GIB), "min_device_free_bytes": (10 * _GIB, _TIB),
+                      "max_device_bytes": (1, 8 * _GIB), "min_device_free_bytes": (9 * _GIB, _TIB),
                       "max_separation_samples": (1, 128), "max_separation_owners": (1, 16), "max_events": (1, 8)})
 _RESERVE_TOTAL_MAX = 4 * _GIB
 # These are the actual unchanged gpu_runtime_worker.worker_env literals. Native imports may add only
