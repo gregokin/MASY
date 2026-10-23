@@ -245,5 +245,37 @@ class GenuineActiveWater(unittest.TestCase):
                                                   boundary_ordinal=ordinal), ack)
 
 
+
+
+class RuntimeValidationOwnership(unittest.TestCase):
+    def test_real_issuer_requires_entered_current_handle(self):
+        with tempfile.TemporaryDirectory() as temporary, store_at(Path(temporary) / "store") as (handle, reference):
+            self.assertEqual(reference["kind"], c._CL_KIND,
+                             "this new qualification requires the genuine committed CPU runtime")
+            self.assertIsNone(handle._runtime_validation)
+            with self.assertRaises(c.BoundaryStoreError) as error:
+                c._new_runtime_validation(handle)
+            self.assertEqual(error.exception.code, "runtime_scope")
+            self.assertIsNone(handle._runtime_validation)
+
+    def test_genuine_publication_leaves_no_runtime_scope(self):
+        with tempfile.TemporaryDirectory() as temporary, store_at(Path(temporary) / "store") as (handle, reference):
+            self.assertEqual(reference["kind"], c._CL_KIND)
+            first = handle.checkpoint_water(handle.head_token(), boundary_ordinal=1)
+            self.assertIs(type(first), aw.ActiveWaterAcknowledgement)
+            self.assertEqual(selected(handle)[0]["kind"], "water_paused")
+            self.assertIsNone(handle._runtime_validation)
+            self.assertFalse(handle._entered)
+
+    def test_prepublication_failure_has_no_live_scope_or_new_head(self):
+        with tempfile.TemporaryDirectory() as temporary, store_at(Path(temporary) / "store") as (handle, reference):
+            self.assertEqual(reference["kind"], c._CL_KIND)
+            before = (handle._root / "HEAD").read_bytes()
+            with mock.patch.object(c.DenseBoundaryStore, "_publish", side_effect=OSError("authored prepublish refusal")):
+                with self.assertRaisesRegex(OSError, "authored prepublish refusal"):
+                    handle.checkpoint_water(handle.head_token(), boundary_ordinal=1)
+            self.assertIsNone(handle._runtime_validation)
+            self.assertEqual((handle._root / "HEAD").read_bytes(), before)
+
 if __name__ == "__main__":
     unittest.main()

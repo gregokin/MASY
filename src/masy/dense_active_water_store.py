@@ -757,7 +757,7 @@ def _admit(handle, retained, max_work_bytes, *, initial=False):
     if (handle._limits.max_head_bytes, handle._limits.max_generation_bytes,
             handle._limits.max_intent_bytes) != (32 << 10, 128 << 10, 32 << 10):
         c._fail("metadata_cap", "unchanged complete finite control envelope required")
-    reservation = _reservation(handle._limits, max_work_bytes, _metadata_stat_charge(handle, inventory))
+    reservation = _reservation_for_handle(handle, max_work_bytes, _metadata_stat_charge(handle, inventory))
     if initial:
         reservation = {**reservation, "disk_bytes": reservation["disk_bytes"] + (72 << 20)}
     if (inventory["bytes"] + reservation["disk_bytes"] > handle._limits.max_store_bytes
@@ -1002,15 +1002,15 @@ def _stable(handle):
     _header_fields(handle._header, handle._limits)
     inventory = _inventory(handle)
     # Existing and maximum proposed metadata are charged before read/hash/parse.
-    _reservation(handle._limits, handle._header["native_work_bytes"],
-                 _metadata_stat_charge(handle, inventory))
+    _reservation_for_handle(handle, handle._header["native_work_bytes"],
+                            _metadata_stat_charge(handle, inventory))
     raw = c._read(handle._root / "STORE.json", 128 << 10,
                   links=c._published_links(handle._root, "STORE.json"))
     if raw != handle._store_raw:
         c._fail("identity_drift", "immutable actual STORE changed")
     handle._storage()
     _managed(handle)
-    source, environment = c._runtime_binding(handle._header["runtime_reference"], handle._limits)
+    source, environment = c._operation_runtime_binding(handle)
     if c.oi._json(source) != c.oi._json(handle._header["source_identity"]) or environment != handle._header["environment_sha256"]:
         c._fail("identity_drift", "actual current Source/environment differs")
     _temporary_heads(handle, inventory)
@@ -1021,7 +1021,7 @@ def _prepare_anchor(handle, anchor):
     if anchor["kind"] not in ("genesis", "event_accepted"):
         c._fail("active_anchor", "accepted anchor preparation only")
     inventory = _inventory(handle)
-    _reservation(handle._limits, handle._header["native_work_bytes"], _metadata_stat_charge(handle, inventory))
+    _reservation_for_handle(handle, handle._header["native_work_bytes"], _metadata_stat_charge(handle, inventory))
     chain = _generation_chain(handle._root, handle._header, c._sha(handle._store_raw), anchor, handle._limits)
     image = chain[0][1]["image"]
     prepared = c._prepare_for(handle._header, handle._root / image["relative_path"],
@@ -1038,7 +1038,7 @@ def _prepare_anchor(handle, anchor):
 
 def _load(handle, head):
     inventory = _inventory(handle)
-    _reservation(handle._limits, handle._header["native_work_bytes"], _metadata_stat_charge(handle, inventory))
+    _reservation_for_handle(handle, handle._header["native_work_bytes"], _metadata_stat_charge(handle, inventory))
     chain = _generation_chain(handle._root, handle._header, c._sha(handle._store_raw), head, handle._limits)
     prepared = _prepare_anchor(handle, _anchor_row(chain)[0])
     return prepared, chain
@@ -1246,11 +1246,13 @@ def recover_active_water_boundary_store(path, *, expected_store_file_sha256, lim
         del prepared, chain
         if head["kind"] == "water_paused":
             handle._entered = True
+            c._new_runtime_validation(handle)
             context = _borrow_parent(handle, None)
             context.__enter__()
             runner = context.take_runner()
             _load_selected_water(handle, context, runner, selected_generation)
             _close_parent(context)
+            c._drop_runtime_validation(handle)
             context = None
             del runner
             handle._entered = False
@@ -1264,6 +1266,7 @@ def recover_active_water_boundary_store(path, *, expected_store_file_sha256, lim
         handle._state = state
         return handle
     except BaseException as primary:
+        c._drop_runtime_validation(handle)
         unclosed = False
         if context is not None:
             try:
@@ -1439,6 +1442,7 @@ def _operate(handle, expected_parent, request_intent):
     work = reader = prepared = lease = None
     policy = False  # Error-origin classification only; never Native authority.
     try:
+        c._new_runtime_validation(handle)
         handle._stable()
         selected, selected_raw = handle._head()
         if selected != old.head:
@@ -1447,6 +1451,7 @@ def _operate(handle, expected_parent, request_intent):
                                   selected, handle._limits)
         policy = True
         if expected_parent != old.token:
+            c._drop_runtime_validation(handle)
             answer = _lookup(handle, expected_parent, request_intent, chain)
             handle._entered = False
             return answer
@@ -1532,12 +1537,15 @@ def _operate(handle, expected_parent, request_intent):
         _inventory(handle)
         c._sync_tree(_managed(handle))
         c._sync_tree(handle._root)
+        c._final_runtime_validation(handle)
         handle._stable()
+        c._drop_runtime_validation(handle)
         if handle._head()[1] != selected_raw:
             c._fail("parent_drift", "selected parent changed before publication")
         handle._state = halt
         handle._entered = False
     except BaseException as primary:
+        c._drop_runtime_validation(handle)
         unclosed = False
         for temporary in (reader_context, context):
             if temporary is not None:
@@ -1579,3 +1587,26 @@ def checkpoint_water(handle, expected_parent, *, boundary_ordinal):
 
 def step(handle, expected_parent):
     return _operate(handle, expected_parent, _intent("finish"))
+
+
+def _reservation_for_handle(handle, work_bytes, chain_charge=0):
+    original = _reservation(handle._limits, work_bytes, chain_charge)
+    owner = c._checked_runtime_validation(handle)
+    if owner is None:
+        return original
+    charge = c._runtime_validation_charge()
+    if charge is None:
+        c._drop_runtime_validation(handle)
+        return original
+    # Independent reference-admission and all modified/new AW frame roles.
+    extra = (charge['bytes'] + 2 * _parse_charge(c._RUNTIME_REUSE_REFERENCE_BYTES)
+             + c.rw._compiled_frame_charge((_reservation_for_handle, _stable, _admit,
+                                            _load, _prepare_anchor, _operate,
+                                            recover_active_water_boundary_store)))
+    if original['memory_bytes'] + extra > handle._limits.max_memory_bytes:
+        # Optional optimization only: no cache rows, full original validation.
+        c._drop_runtime_validation(handle)
+        return original
+    owner._charge = extra
+    # Admission is separate from the existing report/consumer record.
+    return original

@@ -42,6 +42,7 @@ import site
 import stat
 import sys
 import traceback
+import threading
 from typing import Any, Mapping
 
 __all__ = [
@@ -245,28 +246,8 @@ def compiled_identities(modules: Mapping[str, Any], *, max_count: int, max_bytes
     """sha256 of every loaded extension module plus every shared library mapped from the environment's site
     directories (e.g. NumPy's bundled BLAS), bounded in count and total bytes. Exceeding a bound refuses; nothing
     is silently truncated."""
-    suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
-    entries: dict[str, dict[str, Any]] = {}
-    for name in sorted(modules):
-        module = modules[name]
-        file = getattr(module, "__file__", None) if module is not None else None
-        if isinstance(file, str) and file.endswith(suffixes):
-            entry = entries.setdefault(os.path.realpath(file), {"kind": "extension_module", "modules": []})
-            if len(entry["modules"]) < 20:
-                entry["modules"].append(name)
-    if library_roots is None:
-        library_roots = sorted({os.path.realpath(p) for p in site.getsitepackages()})
-    for path in _mapped_libraries(maps_path, library_roots):
-        entries.setdefault(path, {"kind": "mapped_library", "modules": []})
-    if len(entries) > max_count:
-        raise WorkerRefusal("compiled_identity_bound_exceeded",
-                            f"{len(entries)} compiled files exceed max_compiled_files={max_count}")
-    records, total = [], 0
-    for path in sorted(entries):
-        digest, size = _sha256_file(path, max_bytes - total)
-        total += size
-        records.append({"path": path, **entries[path], "size": size, "sha256": digest})
-    return records
+    return _compiled_identities_body(modules, max_count=max_count, max_bytes=max_bytes,
+                                     maps_path=maps_path, library_roots=library_roots)
 
 
 def selected_distributions(specs: list[Mapping[str, Any]], *, path: list[str] | None = None
@@ -625,3 +606,372 @@ def main(request: Any, base_sys_path: list[str]) -> int:
         traceback.print_exc()
         return 1
     return STATUS_EXIT[result["status"]]
+
+
+def _compiled_identities_body(modules: Mapping[str, Any], *, max_count: int, max_bytes: int,
+                        maps_path: str = "/proc/self/maps", library_roots: list[str] | None = None, _reuse=None) -> list[dict]:
+    """sha256 of every loaded extension module plus every shared library mapped from the environment's site
+    directories (e.g. NumPy's bundled BLAS), bounded in count and total bytes. Exceeding a bound refuses; nothing
+    is silently truncated."""
+    suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
+    entries: dict[str, dict[str, Any]] = {}
+    for name in sorted(modules):
+        module = modules[name]
+        file = getattr(module, "__file__", None) if module is not None else None
+        if isinstance(file, str) and file.endswith(suffixes):
+            entry = entries.setdefault(os.path.realpath(file), {"kind": "extension_module", "modules": []})
+            if len(entry["modules"]) < 20:
+                entry["modules"].append(name)
+    if library_roots is None:
+        library_roots = sorted({os.path.realpath(p) for p in site.getsitepackages()})
+    for path in _mapped_libraries(maps_path, library_roots):
+        entries.setdefault(path, {"kind": "mapped_library", "modules": []})
+    if len(entries) > max_count:
+        raise WorkerRefusal("compiled_identity_bound_exceeded",
+                            f"{len(entries)} compiled files exceed max_compiled_files={max_count}")
+    if _reuse is not None:
+        _reuse._begin_scan(len(entries))
+    records, total = [], 0
+    for path in sorted(entries):
+        if _reuse is None:
+            digest, size = _sha256_file(path, max_bytes - total)
+        else:
+            digest, size = _reuse._hash(path, max_bytes - total)
+        total += size
+        records.append({"path": path, **entries[path], "size": size, "sha256": digest})
+    if _reuse is not None:
+        _reuse._complete_scan()
+    return records
+
+
+# Private operation-scoped optimization; no runtime or Native authority.
+_COMPILED_REUSE_KEY = object()
+_COMPILED_REUSE_MAX_COUNT = 4000
+_COMPILED_REUSE_MAX_BYTES = 4 << 30
+_COMPILED_REUSE_PATH_CHARS = 4096
+_COMPILED_REUSE_SCALAR = (1 << 64) - 1
+
+
+class _CompiledRow:
+    __slots__ = ('path', 'size', 'digest', 'identity')
+
+    def __init__(self, path, size, digest, identity):
+        object.__setattr__(self, 'path', path)
+        object.__setattr__(self, 'size', size)
+        object.__setattr__(self, 'digest', digest)
+        object.__setattr__(self, 'identity', identity)
+
+    def __setattr__(self, name, value):
+        raise AttributeError('compiled success row is immutable')
+
+    def __delattr__(self, name):
+        raise AttributeError('compiled success row is immutable')
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError('compiled success row is process-local and nonserializable')
+
+
+def _compiled_function_image(function):
+    """Fixed Python function metadata only, not an arbitrary object graph."""
+    if not isinstance(function, type(_sha256_file)) or function.__closure__ is not None:
+        return None
+    kw = function.__kwdefaults__
+    if kw is not None and (type(kw) is not dict or len(kw) > 4):
+        return None
+    return (function, function.__code__, function.__defaults__, kw,
+            tuple(sorted(kw.items())) if kw is not None else (), function.__globals__)
+
+
+def _compiled_reuse_image():
+    functions = (WorkerRefusal.__init__, _message, _file_identity, _sha256_file, _mapped_libraries,
+                 compiled_identities, _compiled_identities_body,
+                 _compiled_identities_scoped, _new_compiled_reuse,
+                 _compiled_function_image, _compiled_reuse_image,
+                 _same_compiled_image, _compiled_reuse_charge, _compiled_frame_charge,
+                 _compiled_image_charge,
+                 _CompiledRow.__init__, _CompiledRow.__setattr__, _CompiledRow.__delattr__,
+                 _CompiledRow.__reduce_ex__,
+                 _CompiledReuse.__init__, _CompiledReuse.__reduce_ex__,
+                 _CompiledReuse._check, _CompiledReuse._disable,
+                 _CompiledReuse._begin_scan, _CompiledReuse._candidate,
+                 _CompiledReuse._eligible, _CompiledReuse._remember,
+                 _CompiledReuse._full, _CompiledReuse._hash,
+                 _CompiledReuse._complete_scan, _CompiledReuse._discard_scan)
+    images = tuple(_compiled_function_image(f) for f in functions)
+    if any(x is None for x in images):
+        return None
+    operators = (os, os.path, hashlib, stat, site, importlib.machinery,
+                 os.lstat, os.open, os.fstat, os.read, os.close, os.path.realpath,
+                 os.getpid, threading.get_ident, hashlib.sha256, stat.S_ISREG,
+                 site.getsitepackages, sys.getsizeof, sys._getframe, os.stat_result,
+                 WorkerRefusal, _CompiledRow, _CompiledReuse)
+    constants = (_IDENTITY_FIELDS, _CHUNK, MAX_MAPS_BYTES, MAX_MESSAGE,
+                 tuple(importlib.machinery.EXTENSION_SUFFIXES),
+                 _COMPILED_REUSE_MAX_COUNT, _COMPILED_REUSE_MAX_BYTES,
+                 _COMPILED_REUSE_PATH_CHARS, _COMPILED_REUSE_SCALAR,
+                 os.O_RDONLY, getattr(os, 'O_NOFOLLOW', 0), getattr(os, 'O_NONBLOCK', 0))
+    return (images, operators, constants)
+
+
+def _same_compiled_image(before, after):
+    if before is None or after is None:
+        return False
+    if len(before[0]) != len(after[0]) or len(before[1]) != len(after[1]):
+        return False
+    for a, b in zip(before[0], after[0]):
+        if any(a[i] is not b[i] for i in (0, 1, 2, 3, 5)) or len(a[4]) != len(b[4]):
+            return False
+        if any(ka != kb or va is not vb for (ka, va), (kb, vb) in zip(a[4], b[4])):
+            return False
+    return all(a is b for a, b in zip(before[1], after[1])) and before[2] == after[2]
+
+
+def _compiled_frame_charge(functions):
+    """Charge every named/new nested code frame once; no alias subtraction."""
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    header = sys.getsizeof(sys._getframe())
+    # Actual input tuple, bounded traversal containers/scalars, and generator
+    # object headers are separate from the logical plain-frame projection.
+    generator = (None for _ in ())
+    try:
+        generator_header = sys.getsizeof(generator)
+    finally:
+        generator.close()
+    total = sys.getsizeof(functions) + generator_header
+    for function in functions:
+        pending = [function.__code__]
+        code_count = 0
+        while pending:
+            total += sys.getsizeof(pending)
+            code = pending.pop()
+            slots = (code.co_nlocals + code.co_stacksize
+                     + len(code.co_cellvars) + len(code.co_freevars))
+            total += header + slots * (pointer + sys.getsizeof(_COMPILED_REUSE_SCALAR))
+            if code.co_flags & 0x20:  # CPython CO_GENERATOR; full object header additive.
+                total += generator_header
+            code_count += 1
+            pending.extend(x for x in code.co_consts if type(x) is type(code))
+        # Each named finite Source-code tree contributes a traversal list and
+        # one pointer per visit without sharing/peak subtraction.
+        total += code_count * sys.getsizeof(_COMPILED_REUSE_SCALAR)
+    return total
+
+
+def _compiled_image_charge(image):
+    """Exact fixed image containers plus bounded constructor temporaries."""
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    total = sys.getsizeof(image) + sum(sys.getsizeof(x) for x in image)
+    for record in image[0]:
+        total += sys.getsizeof(record) + sys.getsizeof(record[4])
+        total += sum(sys.getsizeof(pair) for pair in record[4])
+        # Each real bounded kwdict is already admitted by the image builder.
+        # Count its items view, sorted list and independent item-pair roles.
+        kw = record[3]
+        if kw is not None:
+            ordered = sorted(kw.items())
+            total += sys.getsizeof(kw.items()) + sys.getsizeof(ordered)
+            total += sum(sys.getsizeof(pair) for pair in ordered)
+    # Source-fixed function tuple exists during image construction.
+    total += sys.getsizeof(()) + len(image[0]) * pointer
+    for value in image[2]:
+        if type(value) is tuple:
+            total += sys.getsizeof(value)
+    return total
+
+
+def _compiled_reuse_charge():
+    """Additive logical metadata projection, never a whole-heap fit claim."""
+    n, length = _COMPILED_REUSE_MAX_COUNT, _COMPILED_REUSE_PATH_CHARS
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    row = (sys.getsizeof(_CompiledRow(None, None, None, None))
+           + sys.getsizeof((None,) * 6) + 7 * sys.getsizeof(_COMPILED_REUSE_SCALAR)
+           + sys.getsizeof('\U00010000') + 4 * length + sys.getsizeof('0' * 64))
+    rows = 2 * (sys.getsizeof([]) + n * pointer) + (2 * n + 1) * row
+    # Two complete finite image occurrences, plus independently charged slots.
+    image = _compiled_reuse_image()
+    if image is None:
+        return None
+    image_bytes = _compiled_image_charge(image)
+    # Referenced code/functions/modules are retained, not copied or materialized.
+    fixed = (sys.getsizeof(object.__new__(_CompiledReuse))
+             + len(_CompiledReuse.__slots__) * (pointer + sys.getsizeof(_COMPILED_REUSE_SCALAR)))
+    stat_role = (sys.getsizeof(os.stat_result((0,) * 10))
+                 + (os.stat_result.n_fields - os.stat_result.n_sequence_fields) * pointer
+                 + os.stat_result.n_fields * (sys.getsizeof(_COMPILED_REUSE_SCALAR)
+                                              + sys.getsizeof(0.0)))
+    # Raw os.open only: two FS-encoded path roles, no buffered file object.
+    fixed += 2 * (sys.getsizeof(b'') + 4 * length + 1)
+    # Actual nine-field worker projection result; caller adds its own record.
+    fixed += sys.getsizeof(dict.fromkeys(('rows', 'fixed', 'bytes', 'max_count',
+             'max_path_chars', 'row_bytes', 'image_functions', 'image_operators',
+             'image_constants'))) + 9 * sys.getsizeof(_COMPILED_REUSE_SCALAR)
+    comparisons = 4 * (sys.getsizeof((None,) * 6)
+                       + 6 * sys.getsizeof(_COMPILED_REUSE_SCALAR))
+    fixed += 2 * stat_role + comparisons
+    # All named functions and their finite nested code objects are additive.
+    frames = _compiled_frame_charge(tuple(record[0] for record in image[0]))
+    return {'rows': rows, 'fixed': fixed + 2 * image_bytes + frames,
+            'bytes': rows + fixed + 2 * image_bytes + frames,
+            'max_count': n, 'max_path_chars': length,
+            'row_bytes': row, 'image_functions': len(image[0]),
+            'image_operators': len(image[1]), 'image_constants': len(image[2])}
+
+
+class _CompiledReuse:
+    __slots__ = ('_key', '_token', '_pid', '_thread', '_max_count', '_max_bytes',
+                 '_rows', '_next', '_at', '_cursor', '_image', '_image_builder',
+                 '_closed', '_disabled', '_force_full')
+
+    def __init__(self, key, token, max_count, max_bytes):
+        if key is not _COMPILED_REUSE_KEY or type(token) is not object or type(max_count) is not int or not 0 <= max_count <= 4000 \
+                or type(max_bytes) is not int or not 0 <= max_bytes <= 4 << 30:
+            raise WorkerRefusal('compiled_scope', 'private bounded compiled scope required')
+        self._key, self._token = key, token
+        self._pid, self._thread = os.getpid(), threading.get_ident()
+        self._max_count, self._max_bytes = max_count, max_bytes
+        self._rows, self._next = None, None
+        self._at = self._cursor = 0
+        self._closed = self._disabled = self._force_full = False
+        self._image_builder = _compiled_reuse_image
+        self._image = _compiled_reuse_image()
+        if self._image is None:
+            self._disabled = True
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError('compiled scope is process-local and nonserializable')
+
+    def _check(self, token):
+        if self._key is not _COMPILED_REUSE_KEY or self._token is not token or self._closed \
+                or os.getpid() != self._pid or threading.get_ident() != self._thread:
+            raise WorkerRefusal('compiled_scope', 'closed/foreign/fork/thread compiled scope')
+        if self._image_builder is not _compiled_reuse_image or not _same_compiled_image(
+                self._image, _compiled_reuse_image()):
+            self._disable()
+
+    def _disable(self):
+        self._disabled = True
+        self._rows = self._next = None
+
+    def _begin_scan(self, count):
+        if self._next is not None:
+            raise WorkerRefusal('compiled_scope', 'nested compiled scan is unsupported')
+        if not self._disabled:
+            self._next = [None] * count
+            self._at = self._cursor = 0
+
+    def _candidate(self, path):
+        rows = self._rows
+        if rows is None:
+            return None
+        while self._cursor < len(rows):
+            row = rows[self._cursor]
+            if row is None or row.path < path:
+                self._cursor += 1
+            elif row.path == path:
+                return row
+            else:
+                break
+        return None
+
+    def _eligible(self, path, info):
+        ident = _file_identity(info)
+        return (type(path) is str and len(path) <= _COMPILED_REUSE_PATH_CHARS
+                and all(type(x) is int and abs(x) <= _COMPILED_REUSE_SCALAR for x in ident))
+
+    def _remember(self, row):
+        if self._disabled:
+            return
+        if self._next is None or self._at >= len(self._next):
+            raise WorkerRefusal('compiled_scope', 'compiled roster occurrence differs')
+        self._next[self._at] = row
+        self._at += 1
+
+    def _full(self, path, budget):
+        pre = None
+        if not self._disabled:
+            try:
+                pre = os.lstat(path)
+            except OSError:
+                pass
+        digest, size = _sha256_file(path, budget)
+        row = None
+        if pre is not None and not self._disabled:
+            try:
+                post = os.lstat(path)
+            except OSError:
+                post = None
+            if post is not None and self._eligible(path, post) and pre.st_size == size \
+                    and _file_identity(pre) == _file_identity(post):
+                row = _CompiledRow(path, size, digest, _file_identity(post))
+        self._remember(row)
+        return digest, size
+
+    def _hash(self, path, budget):
+        self._check(self._token)
+        candidate = None if self._disabled or self._force_full else self._candidate(path)
+        if candidate is None:
+            return self._full(path, budget)
+        code, bound_code = 'compiled_identity_unreadable', 'compiled_identity_bound_exceeded'
+        try:
+            info = os.lstat(path)
+        except OSError as exc:
+            raise WorkerRefusal(code, f'cannot stat {path}: {_message(exc)}') from exc
+        if not stat.S_ISREG(info.st_mode):
+            raise WorkerRefusal(code, f'{path} is not a regular file')
+        if info.st_size > budget:
+            raise WorkerRefusal(bound_code, f'{path} ({info.st_size} bytes) exceeds the remaining byte budget {budget}')
+        identity = _file_identity(info)
+        try:
+            fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
+        except OSError as exc:
+            raise WorkerRefusal(code, f'cannot open {path}: {_message(exc)}') from exc
+        stale = False
+        try:
+            if _file_identity(os.fstat(fd)) != identity:
+                raise WorkerRefusal(code, f'{path} changed between lstat and open')
+            if candidate.identity != identity:
+                stale = True
+            elif _file_identity(os.fstat(fd)) != identity:
+                raise WorkerRefusal(code, f'{path} was modified while it was read')
+        finally:
+            os.close(fd)
+        if stale:
+            return self._full(path, budget)
+        try:
+            final = os.lstat(path)
+        except OSError as exc:
+            raise WorkerRefusal(code, f'{path} is missing or unreadable after it was read: {_message(exc)}') from exc
+        if _file_identity(final) != identity:
+            raise WorkerRefusal(code, f'{path} was replaced or modified while it was read')
+        self._remember(candidate)
+        return candidate.digest, info.st_size
+
+    def _complete_scan(self):
+        if self._disabled:
+            return
+        if self._next is None or self._at != len(self._next):
+            raise WorkerRefusal('compiled_scope', 'partial compiled roster cannot commit')
+        self._rows, self._next = self._next, None
+
+    def _discard_scan(self):
+        self._disable()
+
+
+def _new_compiled_reuse(token, *, max_count, max_bytes):
+    return _CompiledReuse(_COMPILED_REUSE_KEY, token, max_count, max_bytes)
+
+
+def _compiled_identities_scoped(scope, token, modules, *, max_count, max_bytes,
+                                maps_path='/proc/self/maps', library_roots=None):
+    if type(scope) is not _CompiledReuse:
+        raise WorkerRefusal('compiled_scope', 'actual private compiled scope required')
+    scope._check(token)
+    if (max_count, max_bytes) != (scope._max_count, scope._max_bytes):
+        raise WorkerRefusal('compiled_scope', 'compiled scope limits changed')
+    try:
+        return _compiled_identities_body(modules, max_count=max_count, max_bytes=max_bytes,
+                                         maps_path=maps_path, library_roots=library_roots,
+                                         _reuse=scope)
+    except BaseException:
+        scope._discard_scan()
+        raise

@@ -1556,329 +1556,21 @@ def _committed_process(lock, flags):
 
 def _committed_identity(lock, admitted, roots, flags):
     """Current interpreter/bootstrap/resolver and C environment; no child/write."""
-    _committed_process(lock, flags)
-    python = runtime.interpreter_identity(
-        sys.executable, runtime.RuntimeLimits(max_compiled_bytes=_CL_INTERPRETER_BYTES)
-    )
-    if (
-        runtime._python_stable(python) != lock["runtime"]["python"]
-        or python["venv"] is not None
-        and os.path.realpath(sys.prefix) != python["venv"]["dir"]
-    ):
-        _fail("committed_runtime", "actual interpreter/venv differs from lock")
-    bootstrap = runtime.sealed_bootstrap(lock["objects"]["sources"]["masy"]["path"])
-    if _sha(bootstrap.encode("utf-8")) != lock["runtime"]["bootstrap_sha256"]:
-        _fail("committed_runtime", "sealed bootstrap SHA differs from lock")
-    runtime.check_import_roots(lock["runtime"]["sys_path_prefix"])
-    rw.selected_distributions([
-        {"name": name, "dir": lock["distributions"][name]["overlay_dir"],
-         "files": lock["distributions"][name]["files"]}
-        for name in ("maple", "maple-syrup", "masy")
-    ], path=None)
-    environment = _environment_identity()
-    executable = environment["interpreter_identity"]
-    if (
-        executable["path"] != python["realpath"]
-        or executable["size"] != python["size"]
-        or executable["sha256"] != python["sha256"]
-    ):
-        _fail("environment_identity", "C executable observer differs from actual interpreter")
-    tables = {}
-    for package, kind in (("masy", "masy"), ("maple_syrup", "syrup"), ("maple", "maple")):
-        tables[package] = {
-            rel: {"size_bytes": size, "sha256": digest}
-            for rel, size, digest, _blob in admitted[kind][1]
-            if rel == "pyproject.toml" or rel.startswith("src/")
-        }
-    # Observers and native delegates may have imported additional modules.
-    for name, module in tuple(sys.modules.items()):
-        package = name.split(".")[0]
-        filename = getattr(module, "__file__", None)
-        if package in roots and filename:
-            path, expected = Path(filename), Path(roots[package])
-            if not path.is_absolute() or not path.is_relative_to(expected):
-                _fail("module_origin", name)
-            if str(path.relative_to(expected.parent)) not in tables[package]:
-                _fail("module_origin", "loaded module absent from committed source table")
-    ids = {
-        "kind": "source_manifest_prototype",
-        "masy": _sha(oi._json(tables["masy"])),
-        "syrup": _sha(oi._json(tables["maple_syrup"])),
-        "maple": lock["objects"]["maple_bundle"]["bundle_id"],
-    }
-    oi._source_identity(ids)
-    return ids, _sha(oi._json(environment))
+    return _committed_identity_common(lock, admitted, roots, flags)
 
 
 def _committed_binding(reference, limits):
     """Read-only opt-in committed provenance for the existing v1 digest tuple."""
-    cap = min(limits.max_runtime_metadata_bytes, _CL_LOCK_BYTES)
-    for key in ("source_manifest_path", "source_manifest_file_sha256"):
-        if reference[key] is not None:
-            _fail("runtime_reference", "committed source-manifest slots must be null")
-    store = _canonical_path(reference["cpu_store"], "cpu store")
-    lock_id = _digest(reference["cpu_lock_id"], "cpu lock id")
-    _digest(reference["cpu_lock_file_sha256"], "cpu lock raw hash")
-    _keys(reference["module_roots"], ("masy", "maple", "maple_syrup"), "module roots")
-    for value in reference["module_roots"].values():
-        _canonical_path(value, "module root")
-    _canonical_path(reference["native_bundle_manifest_path"], "native manifest")
-    _digest(reference["native_bundle_manifest_file_sha256"], "native manifest SHA")
-    flags = _committed_cpu_flags()
-    # This fixed cap covers referenced sealed artifacts, not a new allocation or
-    # materialization. The unchanged environment observer has its separate caps.
-    with _HeldInventory(512 << 20) as held:
-        lock_path = os.path.join(store, "locks", lock_id + ".json")
-        raw = held.read(lock_path, cap)
-        if _sha(raw) != reference["cpu_lock_file_sha256"]:
-            _fail("committed_lock", "retained CPU lock raw SHA differs")
-        _committed_json(raw, cap, "cpu lock")
-        try:
-            lock, loaded_path = runtime.load_lock_ref(store, lock_id, cap)
-            if str(loaded_path) != lock_path or runtime._canonical_bytes(lock) != raw:
-                _fail("committed_lock", "actual strict lock loader returned different bytes")
-            if committed_runtime_reference(
-                cpu_store=store, cpu_lock_id=lock_id,
-                cpu_lock_file_sha256=reference["cpu_lock_file_sha256"], lock=lock,
-            ) != reference:
-                _fail("runtime_reference", "reference does not derive exactly from committed lock")
-            _committed_process(lock, flags)
-            admitted, controls = _committed_sources(lock, held, cap)
-            from maple_syrup import dependency_bundle as native
-
-            record, native_limits, native_controls = _committed_native(
-                lock, reference, admitted, held, cap, native
-            )
-            controls.update(native_controls)
-            controls[lock_path] = raw
-            held.check()
-            _committed_verify_sources(lock, admitted, held, min(cap, _CL_OBJECT_BYTES))
-            checked = native.verify_bundle(
-                lock["objects"]["maple_bundle"]["path"], limits=native_limits
-            )
-            if native._canonical(checked) + b"\n" != native_controls[
-                reference["native_bundle_manifest_path"]
-            ]:
-                _fail("native_binding", "actual verified native manifest differs")
-            held.check()
-            binding = native.check_runtime(
-                lock["objects"]["maple_materialized"]["path"], limits=native_limits
-            )
-            if (
-                binding["bundle_id"] != record["bundle_id"]
-                or binding["package_source_digest"]
-                != lock["objects"]["maple_bundle"]["package_digest"]
-            ):
-                _fail("native_binding", "actual native in-process binding differs")
-            held.check()
-            result = _committed_identity(lock, admitted, reference["module_roots"], flags)
-            for filename, original in controls.items():
-                if held.read(filename, cap) != original:
-                    _fail("identity_drift", "closing control metadata differs")
-            held.check()
-            return copy.deepcopy(result[0]), result[1]
-        except (runtime.RuntimeRefusal, rw.WorkerRefusal) as exc:
-            raise BoundaryStoreError(exc.code, exc.detail) from exc
-        except oi.OriginalInputsError as exc:
-            raise BoundaryStoreError(exc.code, exc.detail) from exc
-        except (KeyError, TypeError, ValueError) as exc:
-            # Native BundleError is a ValueError with no code/detail attributes.
-            # Keep our already bounded component refusals intact.
-            if isinstance(exc, BoundaryStoreError):
-                raise
-            raise BoundaryStoreError("committed_binding", str(exc)) from exc
+    return _committed_binding_common(reference, limits)
 
 
 def _environment_identity():
     """Reuse operational/compiled observers; do not select or change a runtime."""
-    from masy.importcheck import environment_record
-    from masy.runtime_worker import ENVIRONMENT_DISTRIBUTIONS, compiled_identities
-
-    observed = environment_record()
-    versions = {}
-    for name in ENVIRONMENT_DISTRIBUTIONS:
-        try:
-            versions[name] = importlib.metadata.version(name)
-        except importlib.metadata.PackageNotFoundError:
-            versions[name] = None
-    return {
-        "interpreter_identity": observed["executable_identity"],
-        "python_version": observed["python_version"],
-        "implementation": observed["implementation"],
-        "numpy": observed["numpy"],
-        "optional_distribution_versions": observed["optional_distribution_versions"],
-        "distribution_versions": versions,
-        "compiled": compiled_identities(
-            dict(sys.modules), max_count=4000, max_bytes=4 << 30
-        ),
-    }
+    return _environment_identity_common()
 
 
 def _runtime_binding(reference, limits):
-    _keys(reference, _RUNTIME, "runtime reference")
-    if reference["schema"] != SCHEMA + ".runtime":
-        _fail("runtime_reference", "schema")
-    if reference["kind"] == _CL_KIND:
-        return _committed_binding(reference, limits)
-    if reference["kind"] != "source_manifest_prototype":
-        _fail("runtime_kind_unsupported_v1", "v1 has no committed-lock success branch")
-    if any(
-        reference[k] is not None
-        for k in ("cpu_store", "cpu_lock_id", "cpu_lock_file_sha256")
-    ):
-        _fail("runtime_reference", "prototype CPU lock slots must be null")
-    roots = reference["module_roots"]
-    _keys(roots, ("masy", "maple", "maple_syrup"), "module roots")
-    for value in [
-        *roots.values(),
-        reference["source_manifest_path"],
-        reference["native_bundle_manifest_path"],
-    ]:
-        if (
-            type(value) is not str
-            or not Path(value).is_absolute()
-            or str(Path(value)) != value
-            or os.path.normpath(value) != value
-        ):
-            _fail(
-                "runtime_reference", "canonical absolute retained runtime path required"
-            )
-    for field in ("source_manifest_file_sha256", "native_bundle_manifest_file_sha256"):
-        _digest(reference[field], field)
-    # Complete source metadata is finite and raw-admitted before parsing.
-    raw = _read(reference["source_manifest_path"], limits.max_runtime_metadata_bytes)
-    if _sha(raw) != reference["source_manifest_file_sha256"]:
-        _fail("source_identity", "retained source manifest changed")
-    manifest = oi._strict_json(
-        raw,
-        SimpleNamespace(
-            max_metadata_bytes=limits.max_runtime_metadata_bytes,
-            max_nodes=100000,
-            max_depth=24,
-        ),
-    )
-    _keys(
-        manifest,
-        ("schema", "source_identity", "module_roots", "files", "environment"),
-        "source manifest",
-    )
-    if manifest["schema"] != SCHEMA + ".sources" or manifest["module_roots"] != roots:
-        _fail("source_identity", "source schema/root mismatch")
-    oi._source_identity(manifest["source_identity"])
-    _keys(manifest["files"], roots, "complete package tables")
-    admitted, total = [], 0
-    for package, table in manifest["files"].items():
-        if type(table) is not dict or not 1 <= len(table) <= 2000:
-            _fail("source_cap", "finite source file count")
-        base = Path(roots[package]).parent
-        observed = set()
-        # Reuse existing source scope selection; no second export/selection engine.
-        scoped, _directories = runtime._walk_object(base / "src", max_entries=4000)
-        observed.update("src/" + rel for rel in scoped)
-        observed.add("pyproject.toml")
-        if observed != set(table):
-            _fail("source_identity", "complete scoped runtime file set differs")
-        for rel, row in table.items():
-            _keys(row, ("size_bytes", "sha256"), "source file")
-            if type(rel) is not str or not (
-                rel == "pyproject.toml" or rel.startswith("src/")
-            ):
-                _fail("source_identity", "outside source scope")
-            runtime._check_relpath(rel, launcher_allowed=False)
-            _integer(row["size_bytes"], 64 << 20, "source bytes")
-            _digest(row["sha256"], "source SHA")
-            path = base / rel
-            parent = oi._open_dir(path.parent)
-            try:
-                info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
-                if (
-                    not stat.S_ISREG(info.st_mode)
-                    or info.st_size != row["size_bytes"]
-                    or info.st_nlink != 1
-                    or info.st_mode & 0o222
-                ):
-                    _fail("source_identity", "source type/size differs")
-            finally:
-                os.close(parent)
-            total += row["size_bytes"]
-            if total > 128 << 20:
-                _fail("source_cap", "complete source serialized budget")
-            admitted.append((path, row))
-    for path, row in admitted:
-        parent = oi._open_dir(path.parent)
-        try:
-            actual, _blob, size, _data = runtime._hash_path(
-                path, budget=row["size_bytes"]
-            )
-            _same_directory(path.parent, parent)
-            if actual != row["sha256"] or size != row["size_bytes"]:
-                _fail("source_identity", "source content differs")
-        except runtime.RuntimeRefusal as exc:
-            raise BoundaryStoreError(exc.code, exc.detail) from exc
-        finally:
-            os.close(parent)
-    from maple_syrup import dependency_bundle
-
-    if (
-        Path(reference["native_bundle_manifest_path"]).name
-        != dependency_bundle.MANIFEST_NAME
-    ):
-        _fail("native_binding", "literal native bundle manifest required")
-    native_raw = _read(
-        reference["native_bundle_manifest_path"], limits.max_runtime_metadata_bytes
-    )
-    if _sha(native_raw) != reference["native_bundle_manifest_file_sha256"]:
-        _fail("native_binding", "retained native bundle manifest changed")
-    native = dependency_bundle.verify_bundle(
-        Path(reference["native_bundle_manifest_path"]).parent
-    )
-    binding = dependency_bundle.check_runtime(Path(roots["maple"]).parent.parent)
-    if (
-        binding["bundle_id"] != native["bundle_id"]
-        or _read(
-            reference["native_bundle_manifest_path"], limits.max_runtime_metadata_bytes
-        )
-        != native_raw
-        or dependency_bundle._canonical(native) + b"\n" != native_raw
-    ):
-        _fail(
-            "native_binding", "actual checked bundle/materialized/manifest bytes differ"
-        )
-    native_table = {
-        row["path"].removeprefix("source/"): {
-            "size_bytes": row["size"],
-            "sha256": row["sha256"],
-        }
-        for row in native["files"]
-        if row["path"].startswith("source/")
-    }
-    if native_table != manifest["files"]["maple"]:
-        _fail("native_binding", "MAPLE source table is not exact native bundle source")
-    ids = manifest["source_identity"]
-    if ids["maple"] != native["bundle_id"]:
-        _fail("native_binding", "native source identity is not actual bundle")
-    for package, slot in (("masy", "masy"), ("maple_syrup", "syrup")):
-        if _sha(oi._json(manifest["files"][package])) != ids[slot]:
-            _fail("source_identity", "source table digest mismatch")
-    environment = _environment_identity()
-    if oi._json(environment) != oi._json(manifest["environment"]):
-        _fail(
-            "environment_identity",
-            "retained interpreter/distribution/compiled identity differs",
-        )
-    # Import observers/native helpers before the final module-origin sweep.
-    for name, module in tuple(sys.modules.items()):
-        package = name.split(".")[0]
-        filename = getattr(module, "__file__", None)
-        if package in roots and filename:
-            path = Path(filename)
-            expected = Path(roots[package])
-            if not path.is_absolute() or not path.is_relative_to(expected):
-                _fail("module_origin", name)
-            rel = str(path.relative_to(expected.parent))
-            if rel not in manifest["files"][package]:
-                _fail("module_origin", "loaded module absent from frozen manifest")
-    return copy.deepcopy(ids), _sha(oi._json(environment))
+    return _runtime_binding_common(reference, limits)
 
 
 def _limits_record(limits):
@@ -2254,6 +1946,7 @@ class DenseBoundaryStore:
         "_pid",
         "_publication_uncertain",
         "_reservation_record",
+        "_runtime_validation",
         "_root",
         "_root_identity",
         "_rootfd",
@@ -2326,6 +2019,7 @@ class DenseBoundaryStore:
             )
             handle._entered, handle._failed_owner, handle._closed = False, None, False
             handle._reservation_record = None
+            handle._runtime_validation = None
             handle._publication_uncertain = None
             handle._attempt_halt = None
             handle._evidence_write_error = None
@@ -4127,3 +3821,482 @@ def create_active_water_boundary_store(path, *, runner, originals, runtime_refer
 def recover_active_water_boundary_store(path, *, expected_store_file_sha256, limits=_DEFAULT):
     return _active_module().recover_active_water_boundary_store(path,
         expected_store_file_sha256=expected_store_file_sha256, limits=limits)
+
+
+def _committed_binding_common(reference, limits, *, _reuse=None):
+    """Read-only opt-in committed provenance for the existing v1 digest tuple."""
+    cap = min(limits.max_runtime_metadata_bytes, _CL_LOCK_BYTES)
+    for key in ("source_manifest_path", "source_manifest_file_sha256"):
+        if reference[key] is not None:
+            _fail("runtime_reference", "committed source-manifest slots must be null")
+    store = _canonical_path(reference["cpu_store"], "cpu store")
+    lock_id = _digest(reference["cpu_lock_id"], "cpu lock id")
+    _digest(reference["cpu_lock_file_sha256"], "cpu lock raw hash")
+    _keys(reference["module_roots"], ("masy", "maple", "maple_syrup"), "module roots")
+    for value in reference["module_roots"].values():
+        _canonical_path(value, "module root")
+    _canonical_path(reference["native_bundle_manifest_path"], "native manifest")
+    _digest(reference["native_bundle_manifest_file_sha256"], "native manifest SHA")
+    flags = _committed_cpu_flags()
+    # This fixed cap covers referenced sealed artifacts, not a new allocation or
+    # materialization. The unchanged environment observer has its separate caps.
+    with _HeldInventory(512 << 20) as held:
+        lock_path = os.path.join(store, "locks", lock_id + ".json")
+        raw = held.read(lock_path, cap)
+        if _sha(raw) != reference["cpu_lock_file_sha256"]:
+            _fail("committed_lock", "retained CPU lock raw SHA differs")
+        _committed_json(raw, cap, "cpu lock")
+        try:
+            lock, loaded_path = runtime.load_lock_ref(store, lock_id, cap)
+            if str(loaded_path) != lock_path or runtime._canonical_bytes(lock) != raw:
+                _fail("committed_lock", "actual strict lock loader returned different bytes")
+            if committed_runtime_reference(
+                cpu_store=store, cpu_lock_id=lock_id,
+                cpu_lock_file_sha256=reference["cpu_lock_file_sha256"], lock=lock,
+            ) != reference:
+                _fail("runtime_reference", "reference does not derive exactly from committed lock")
+            _committed_process(lock, flags)
+            admitted, controls = _committed_sources(lock, held, cap)
+            from maple_syrup import dependency_bundle as native
+
+            record, native_limits, native_controls = _committed_native(
+                lock, reference, admitted, held, cap, native
+            )
+            controls.update(native_controls)
+            controls[lock_path] = raw
+            held.check()
+            _committed_verify_sources(lock, admitted, held, min(cap, _CL_OBJECT_BYTES))
+            checked = native.verify_bundle(
+                lock["objects"]["maple_bundle"]["path"], limits=native_limits
+            )
+            if native._canonical(checked) + b"\n" != native_controls[
+                reference["native_bundle_manifest_path"]
+            ]:
+                _fail("native_binding", "actual verified native manifest differs")
+            held.check()
+            binding = native.check_runtime(
+                lock["objects"]["maple_materialized"]["path"], limits=native_limits
+            )
+            if (
+                binding["bundle_id"] != record["bundle_id"]
+                or binding["package_source_digest"]
+                != lock["objects"]["maple_bundle"]["package_digest"]
+            ):
+                _fail("native_binding", "actual native in-process binding differs")
+            held.check()
+            result = (_committed_identity(lock, admitted, reference["module_roots"], flags)
+                      if _reuse is None else _committed_identity_common(
+                          lock, admitted, reference["module_roots"], flags, _reuse=_reuse))
+            for filename, original in controls.items():
+                if held.read(filename, cap) != original:
+                    _fail("identity_drift", "closing control metadata differs")
+            held.check()
+            return copy.deepcopy(result[0]), result[1]
+        except (runtime.RuntimeRefusal, rw.WorkerRefusal) as exc:
+            raise BoundaryStoreError(exc.code, exc.detail) from exc
+        except oi.OriginalInputsError as exc:
+            raise BoundaryStoreError(exc.code, exc.detail) from exc
+        except (KeyError, TypeError, ValueError) as exc:
+            # Native BundleError is a ValueError with no code/detail attributes.
+            # Keep our already bounded component refusals intact.
+            if isinstance(exc, BoundaryStoreError):
+                raise
+            raise BoundaryStoreError("committed_binding", str(exc)) from exc
+
+
+def _committed_identity_common(lock, admitted, roots, flags, *, _reuse=None):
+    """Current interpreter/bootstrap/resolver and C environment; no child/write."""
+    _committed_process(lock, flags)
+    python = runtime.interpreter_identity(
+        sys.executable, runtime.RuntimeLimits(max_compiled_bytes=_CL_INTERPRETER_BYTES)
+    )
+    if (
+        runtime._python_stable(python) != lock["runtime"]["python"]
+        or python["venv"] is not None
+        and os.path.realpath(sys.prefix) != python["venv"]["dir"]
+    ):
+        _fail("committed_runtime", "actual interpreter/venv differs from lock")
+    bootstrap = runtime.sealed_bootstrap(lock["objects"]["sources"]["masy"]["path"])
+    if _sha(bootstrap.encode("utf-8")) != lock["runtime"]["bootstrap_sha256"]:
+        _fail("committed_runtime", "sealed bootstrap SHA differs from lock")
+    runtime.check_import_roots(lock["runtime"]["sys_path_prefix"])
+    rw.selected_distributions([
+        {"name": name, "dir": lock["distributions"][name]["overlay_dir"],
+         "files": lock["distributions"][name]["files"]}
+        for name in ("maple", "maple-syrup", "masy")
+    ], path=None)
+    environment = (_environment_identity() if _reuse is None
+                   else _environment_identity_common(_reuse=_reuse))
+    executable = environment["interpreter_identity"]
+    if (
+        executable["path"] != python["realpath"]
+        or executable["size"] != python["size"]
+        or executable["sha256"] != python["sha256"]
+    ):
+        _fail("environment_identity", "C executable observer differs from actual interpreter")
+    tables = {}
+    for package, kind in (("masy", "masy"), ("maple_syrup", "syrup"), ("maple", "maple")):
+        tables[package] = {
+            rel: {"size_bytes": size, "sha256": digest}
+            for rel, size, digest, _blob in admitted[kind][1]
+            if rel == "pyproject.toml" or rel.startswith("src/")
+        }
+    # Observers and native delegates may have imported additional modules.
+    for name, module in tuple(sys.modules.items()):
+        package = name.split(".")[0]
+        filename = getattr(module, "__file__", None)
+        if package in roots and filename:
+            path, expected = Path(filename), Path(roots[package])
+            if not path.is_absolute() or not path.is_relative_to(expected):
+                _fail("module_origin", name)
+            if str(path.relative_to(expected.parent)) not in tables[package]:
+                _fail("module_origin", "loaded module absent from committed source table")
+    ids = {
+        "kind": "source_manifest_prototype",
+        "masy": _sha(oi._json(tables["masy"])),
+        "syrup": _sha(oi._json(tables["maple_syrup"])),
+        "maple": lock["objects"]["maple_bundle"]["bundle_id"],
+    }
+    oi._source_identity(ids)
+    return ids, _sha(oi._json(environment))
+
+
+def _environment_identity_common(*, _reuse=None):
+    """Reuse operational/compiled observers; do not select or change a runtime."""
+    from masy.importcheck import environment_record
+    from masy.runtime_worker import ENVIRONMENT_DISTRIBUTIONS, compiled_identities
+
+    observed = environment_record()
+    versions = {}
+    for name in ENVIRONMENT_DISTRIBUTIONS:
+        try:
+            versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[name] = None
+    return {
+        "interpreter_identity": observed["executable_identity"],
+        "python_version": observed["python_version"],
+        "implementation": observed["implementation"],
+        "numpy": observed["numpy"],
+        "optional_distribution_versions": observed["optional_distribution_versions"],
+        "distribution_versions": versions,
+        "compiled": (compiled_identities(
+            dict(sys.modules), max_count=4000, max_bytes=4 << 30
+        ) if _reuse is None else rw._compiled_identities_scoped(
+            _reuse._worker, _reuse._nonce, dict(sys.modules), max_count=4000, max_bytes=4 << 30)),
+    }
+
+
+def _runtime_binding_common(reference, limits, *, _reuse=None):
+    _keys(reference, _RUNTIME, "runtime reference")
+    if reference["schema"] != SCHEMA + ".runtime":
+        _fail("runtime_reference", "schema")
+    if reference["kind"] == _CL_KIND:
+        return (_committed_binding(reference, limits) if _reuse is None
+                else _committed_binding_common(reference, limits, _reuse=_reuse))
+    if reference["kind"] != "source_manifest_prototype":
+        _fail("runtime_kind_unsupported_v1", "v1 has no committed-lock success branch")
+    if any(
+        reference[k] is not None
+        for k in ("cpu_store", "cpu_lock_id", "cpu_lock_file_sha256")
+    ):
+        _fail("runtime_reference", "prototype CPU lock slots must be null")
+    roots = reference["module_roots"]
+    _keys(roots, ("masy", "maple", "maple_syrup"), "module roots")
+    for value in [
+        *roots.values(),
+        reference["source_manifest_path"],
+        reference["native_bundle_manifest_path"],
+    ]:
+        if (
+            type(value) is not str
+            or not Path(value).is_absolute()
+            or str(Path(value)) != value
+            or os.path.normpath(value) != value
+        ):
+            _fail(
+                "runtime_reference", "canonical absolute retained runtime path required"
+            )
+    for field in ("source_manifest_file_sha256", "native_bundle_manifest_file_sha256"):
+        _digest(reference[field], field)
+    # Complete source metadata is finite and raw-admitted before parsing.
+    raw = _read(reference["source_manifest_path"], limits.max_runtime_metadata_bytes)
+    if _sha(raw) != reference["source_manifest_file_sha256"]:
+        _fail("source_identity", "retained source manifest changed")
+    manifest = oi._strict_json(
+        raw,
+        SimpleNamespace(
+            max_metadata_bytes=limits.max_runtime_metadata_bytes,
+            max_nodes=100000,
+            max_depth=24,
+        ),
+    )
+    _keys(
+        manifest,
+        ("schema", "source_identity", "module_roots", "files", "environment"),
+        "source manifest",
+    )
+    if manifest["schema"] != SCHEMA + ".sources" or manifest["module_roots"] != roots:
+        _fail("source_identity", "source schema/root mismatch")
+    oi._source_identity(manifest["source_identity"])
+    _keys(manifest["files"], roots, "complete package tables")
+    admitted, total = [], 0
+    for package, table in manifest["files"].items():
+        if type(table) is not dict or not 1 <= len(table) <= 2000:
+            _fail("source_cap", "finite source file count")
+        base = Path(roots[package]).parent
+        observed = set()
+        # Reuse existing source scope selection; no second export/selection engine.
+        scoped, _directories = runtime._walk_object(base / "src", max_entries=4000)
+        observed.update("src/" + rel for rel in scoped)
+        observed.add("pyproject.toml")
+        if observed != set(table):
+            _fail("source_identity", "complete scoped runtime file set differs")
+        for rel, row in table.items():
+            _keys(row, ("size_bytes", "sha256"), "source file")
+            if type(rel) is not str or not (
+                rel == "pyproject.toml" or rel.startswith("src/")
+            ):
+                _fail("source_identity", "outside source scope")
+            runtime._check_relpath(rel, launcher_allowed=False)
+            _integer(row["size_bytes"], 64 << 20, "source bytes")
+            _digest(row["sha256"], "source SHA")
+            path = base / rel
+            parent = oi._open_dir(path.parent)
+            try:
+                info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or info.st_size != row["size_bytes"]
+                    or info.st_nlink != 1
+                    or info.st_mode & 0o222
+                ):
+                    _fail("source_identity", "source type/size differs")
+            finally:
+                os.close(parent)
+            total += row["size_bytes"]
+            if total > 128 << 20:
+                _fail("source_cap", "complete source serialized budget")
+            admitted.append((path, row))
+    for path, row in admitted:
+        parent = oi._open_dir(path.parent)
+        try:
+            actual, _blob, size, _data = runtime._hash_path(
+                path, budget=row["size_bytes"]
+            )
+            _same_directory(path.parent, parent)
+            if actual != row["sha256"] or size != row["size_bytes"]:
+                _fail("source_identity", "source content differs")
+        except runtime.RuntimeRefusal as exc:
+            raise BoundaryStoreError(exc.code, exc.detail) from exc
+        finally:
+            os.close(parent)
+    from maple_syrup import dependency_bundle
+
+    if (
+        Path(reference["native_bundle_manifest_path"]).name
+        != dependency_bundle.MANIFEST_NAME
+    ):
+        _fail("native_binding", "literal native bundle manifest required")
+    native_raw = _read(
+        reference["native_bundle_manifest_path"], limits.max_runtime_metadata_bytes
+    )
+    if _sha(native_raw) != reference["native_bundle_manifest_file_sha256"]:
+        _fail("native_binding", "retained native bundle manifest changed")
+    native = dependency_bundle.verify_bundle(
+        Path(reference["native_bundle_manifest_path"]).parent
+    )
+    binding = dependency_bundle.check_runtime(Path(roots["maple"]).parent.parent)
+    if (
+        binding["bundle_id"] != native["bundle_id"]
+        or _read(
+            reference["native_bundle_manifest_path"], limits.max_runtime_metadata_bytes
+        )
+        != native_raw
+        or dependency_bundle._canonical(native) + b"\n" != native_raw
+    ):
+        _fail(
+            "native_binding", "actual checked bundle/materialized/manifest bytes differ"
+        )
+    native_table = {
+        row["path"].removeprefix("source/"): {
+            "size_bytes": row["size"],
+            "sha256": row["sha256"],
+        }
+        for row in native["files"]
+        if row["path"].startswith("source/")
+    }
+    if native_table != manifest["files"]["maple"]:
+        _fail("native_binding", "MAPLE source table is not exact native bundle source")
+    ids = manifest["source_identity"]
+    if ids["maple"] != native["bundle_id"]:
+        _fail("native_binding", "native source identity is not actual bundle")
+    for package, slot in (("masy", "masy"), ("maple_syrup", "syrup")):
+        if _sha(oi._json(manifest["files"][package])) != ids[slot]:
+            _fail("source_identity", "source table digest mismatch")
+    environment = _environment_identity()
+    if oi._json(environment) != oi._json(manifest["environment"]):
+        _fail(
+            "environment_identity",
+            "retained interpreter/distribution/compiled identity differs",
+        )
+    # Import observers/native helpers before the final module-origin sweep.
+    for name, module in tuple(sys.modules.items()):
+        package = name.split(".")[0]
+        filename = getattr(module, "__file__", None)
+        if package in roots and filename:
+            path = Path(filename)
+            expected = Path(roots[package])
+            if not path.is_absolute() or not path.is_relative_to(expected):
+                _fail("module_origin", name)
+            rel = str(path.relative_to(expected.parent))
+            if rel not in manifest["files"][package]:
+                _fail("module_origin", "loaded module absent from frozen manifest")
+    return copy.deepcopy(ids), _sha(oi._json(environment))
+
+
+# Exact operation owner; never stores a binding/environment/Native result.
+_RUNTIME_VALIDATION_KEY = object()
+_RUNTIME_REUSE_REFERENCE_BYTES = 128 << 10
+
+
+class _RuntimeValidationOwner:
+    __slots__ = ('_key', '_handle', '_nonce', '_pid', '_thread', '_start', '_boot',
+                 '_reference_raw', '_limits', '_worker', '_phase', '_image', '_charge')
+
+    def __init__(self, key, handle):
+        if key is not _RUNTIME_VALIDATION_KEY:
+            _fail('runtime_scope', 'private operation owner required')
+        self._key, self._handle, self._nonce = key, handle, object()
+        self._pid, self._thread, self._start, self._boot = (
+            handle._pid, handle._thread, handle._start, handle._boot)
+        self._reference_raw, self._worker, self._charge = None, None, None
+        self._limits, self._phase = handle._limits, 'pending'
+        self._image = _runtime_scope_image()
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError('runtime validation owner is operation-local')
+
+
+def _runtime_scope_image():
+    functions = (_runtime_binding, _runtime_binding_common,
+                 _committed_binding, _committed_binding_common,
+                 _committed_identity, _committed_identity_common,
+                 _environment_identity, _environment_identity_common,
+                 _RuntimeValidationOwner.__init__, _RuntimeValidationOwner.__reduce_ex__,
+                 _new_runtime_validation, _checked_runtime_validation,
+                 _drop_runtime_validation, _final_runtime_validation,
+                 _runtime_validation_charge, _operation_runtime_binding,
+                 _runtime_scope_image)
+    images = tuple(rw._compiled_function_image(f) for f in functions)
+    if any(x is None for x in images):
+        return None
+    return (images, (rw, rw._compiled_function_image, rw._same_compiled_image,
+                     rw._compiled_reuse_charge, rw._compiled_image_charge, rw._new_compiled_reuse,
+                     rw._compiled_identities_scoped, _RuntimeValidationOwner,
+                     _RUNTIME_VALIDATION_KEY, os.getpid, threading.get_ident),
+            (_RUNTIME_REUSE_REFERENCE_BYTES,))
+
+
+def _new_runtime_validation(handle):
+    if type(handle) is not DenseBoundaryStore:
+        _fail('runtime_scope', 'actual entered active-water handle required')
+    if handle._runtime_validation is not None:
+        _fail('runtime_scope', 'nested runtime validation owner')
+    # No optimization for a prototype, default C, dynamic C or other profile.
+    if (not _active_water_store(handle._header)
+            or handle._header['runtime_reference']['kind'] != _CL_KIND):
+        return
+    if type(handle) is not DenseBoundaryStore or not handle._entered:
+        _fail('runtime_scope', 'actual entered active-water handle required')
+    handle._binding()
+    owner = _RuntimeValidationOwner(_RUNTIME_VALIDATION_KEY, handle)
+    if owner._image is not None:
+        handle._runtime_validation = owner
+
+
+def _drop_runtime_validation(handle):
+    owner, handle._runtime_validation = handle._runtime_validation, None
+    if type(owner) is _RuntimeValidationOwner:
+        owner._phase = 'closed'
+        worker = owner._worker
+        if type(worker) is rw._CompiledReuse:
+            worker._closed = True
+            worker._rows = worker._next = worker._image = None
+        owner._worker = owner._reference_raw = owner._image = owner._charge = None
+        owner._handle = owner._limits = None
+
+
+def _checked_runtime_validation(handle):
+    owner = handle._runtime_validation
+    if owner is None:
+        return None
+    if (type(owner) is not _RuntimeValidationOwner or owner._key is not _RUNTIME_VALIDATION_KEY
+            or owner._handle is not handle or owner._limits is not handle._limits
+            or owner._phase not in ('pending', 'live', 'final') or not handle._entered
+            or os.getpid() != owner._pid or threading.get_ident() != owner._thread
+            or handle._start != owner._start or handle._boot != owner._boot):
+        _fail('runtime_scope', 'foreign/closed/fork/thread runtime validation owner')
+    if not rw._same_compiled_image(owner._image, _runtime_scope_image()):
+        _drop_runtime_validation(handle)
+        return None
+    return owner
+
+
+def _final_runtime_validation(handle):
+    owner = _checked_runtime_validation(handle)
+    if owner is not None:
+        owner._phase = 'final'
+        if owner._worker is not None:
+            owner._worker._force_full = True
+
+
+def _runtime_validation_charge():
+    worker = rw._compiled_reuse_charge()
+    image = _runtime_scope_image()
+    if worker is None or image is None:
+        return None
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    image_bytes = rw._compiled_image_charge(image)
+    fixed = (sys.getsizeof(object.__new__(_RuntimeValidationOwner))
+             + len(_RuntimeValidationOwner.__slots__) * (pointer + sys.getsizeof((1 << 64) - 1))
+             + sys.getsizeof(object()) + 2 * image_bytes
+             + 2 * (_RUNTIME_REUSE_REFERENCE_BYTES + sys.getsizeof(b''))
+             + rw._compiled_frame_charge(tuple(record[0] for record in image[0])))
+    # Worker nine-field dict and this actual twelve-field expansion can overlap.
+    fixed += sys.getsizeof(dict.fromkeys(('rows', 'fixed', 'bytes', 'max_count',
+             'max_path_chars', 'row_bytes', 'image_functions', 'image_operators',
+             'image_constants', 'owner_fixed_bytes', 'owner_image_functions',
+             'owner_image_operators'))) + 12 * sys.getsizeof((1 << 64) - 1)
+    return {**worker, 'owner_fixed_bytes': fixed,
+            'bytes': worker['bytes'] + fixed,
+            'owner_image_functions': len(image[0]),
+            'owner_image_operators': len(image[1])}
+
+
+def _operation_runtime_binding(handle):
+    owner = _checked_runtime_validation(handle)
+    reference, limits = handle._header['runtime_reference'], handle._limits
+    if owner is None:
+        return _runtime_binding(reference, limits)
+    if owner._charge is None:
+        _drop_runtime_validation(handle)
+        return _runtime_binding(reference, limits)
+    try:
+        _plain_metadata(reference, _RUNTIME_REUSE_REFERENCE_BYTES, 'runtime reuse reference')
+    except BoundaryStoreError:
+        # Eligibility failure cannot make the physical/runtime domain wider.
+        _drop_runtime_validation(handle)
+        return _runtime_binding(reference, limits)
+    current = oi._json(reference)
+    if owner._reference_raw is None:
+        owner._reference_raw = current
+        owner._worker = rw._new_compiled_reuse(owner._nonce, max_count=4000, max_bytes=4 << 30)
+        if owner._phase == 'final':
+            owner._worker._force_full = True
+        else:
+            owner._phase = 'live'
+    elif owner._reference_raw != current:
+        _drop_runtime_validation(handle)
+        return _runtime_binding(reference, limits)
+    return _runtime_binding_common(reference, limits, _reuse=owner)
