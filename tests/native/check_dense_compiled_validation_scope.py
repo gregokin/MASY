@@ -265,6 +265,42 @@ class CompiledFileScope(unittest.TestCase):
         self.assertEqual(records[0]['sha256'], hashlib.sha256(self.path.read_bytes()).hexdigest())
 
 
+class CompiledFunctionImage(unittest.TestCase):
+    def test_original_refusal_class_cell_has_a_complete_live_image(self):
+        image = rw._compiled_reuse_image()
+        self.assertIsNotNone(image)
+        record = next(row for row in image[0] if row[0] is rw.WorkerRefusal.__init__)
+        closure = rw.WorkerRefusal.__init__.__closure__
+        self.assertIs(record[6], closure)
+        self.assertEqual(len(record[7]), 1)
+        self.assertIs(record[7][0][0], closure[0])
+        self.assertIs(record[7][0][1], rw.WorkerRefusal)
+        self.assertTrue(rw._same_compiled_image(image, rw._compiled_reuse_image()))
+        self.assertIsNotNone(rw._compiled_reuse_charge())
+
+    def test_unknown_callable_closure_and_changed_owned_cell_are_ineligible(self):
+        def outer():
+            value = object()
+            def foreign():
+                return value
+            return foreign
+        for function in (mock.MagicMock(wraps=rw._sha256_file), object(), outer()):
+            with self.subTest(type=type(function).__name__):
+                self.assertIsNone(rw._compiled_function_image(function))
+        function = rw.WorkerRefusal.__init__
+        cell, original = function.__closure__[0], rw.WorkerRefusal
+        before = rw._compiled_reuse_image()
+        try:
+            cell.cell_contents = object()
+            self.assertIsNone(rw._compiled_function_image(function))
+            self.assertFalse(rw._same_compiled_image(before, rw._compiled_reuse_image()))
+            del cell.cell_contents
+            self.assertIsNone(rw._compiled_function_image(function))
+        finally:
+            cell.cell_contents = original
+        self.assertTrue(rw._same_compiled_image(before, rw._compiled_reuse_image()))
+
+
 class GenuineLoadedRuntimeMetadata(unittest.TestCase):
     def test_actual_loaded_full_scoped_full_records_agree(self):
         # Root must first establish the genuine immutable runtime/origin guards.

@@ -43,6 +43,7 @@ import stat
 import sys
 import traceback
 import threading
+from types import FunctionType
 from typing import Any, Mapping
 
 __all__ = [
@@ -650,6 +651,10 @@ _COMPILED_REUSE_MAX_COUNT = 4000
 _COMPILED_REUSE_MAX_BYTES = 4 << 30
 _COMPILED_REUSE_PATH_CHARS = 4096
 _COMPILED_REUSE_SCALAR = (1 << 64) - 1
+# Only the Source-owned zero-argument-super constructor may retain a closure.
+_COMPILED_REUSE_REFUSAL_IMAGE = (
+    WorkerRefusal, WorkerRefusal.__init__, WorkerRefusal.__init__.__code__,
+    WorkerRefusal.__init__.__closure__, WorkerRefusal.__init__.__closure__[0])
 
 
 class _CompiledRow:
@@ -673,13 +678,31 @@ class _CompiledRow:
 
 def _compiled_function_image(function):
     """Fixed Python function metadata only, not an arbitrary object graph."""
-    if not isinstance(function, type(_sha256_file)) or function.__closure__ is not None:
+    if type(function) is not FunctionType:
         return None
+    closure, cells = function.__closure__, ()
+    if closure is not None:
+        owner = _COMPILED_REUSE_REFUSAL_IMAGE
+        if (type(owner) is not tuple or len(owner) != 5
+                or WorkerRefusal is not owner[0] or function is not owner[1]
+                or function is not WorkerRefusal.__init__ or function.__code__ is not owner[2]
+                or function.__code__.co_freevars != ('__class__',)
+                or closure is not owner[3] or len(closure) != 1 or closure[0] is not owner[4]):
+            return None
+        try:
+            contents = closure[0].cell_contents
+        except ValueError:  # An emptied real cell is ineligible, never a cache hit.
+            return None
+        if contents is not owner[0]:
+            return None
+        cells = ((closure[0], contents),)
     kw = function.__kwdefaults__
-    if kw is not None and (type(kw) is not dict or len(kw) > 4):
+    if kw is not None and (type(kw) is not dict or len(kw) > 4
+                           or any(type(name) is not str for name in kw)):
         return None
     return (function, function.__code__, function.__defaults__, kw,
-            tuple(sorted(kw.items())) if kw is not None else (), function.__globals__)
+            tuple(sorted(kw.items())) if kw is not None else (), function.__globals__,
+            closure, cells)
 
 
 def _compiled_reuse_image():
@@ -704,7 +727,8 @@ def _compiled_reuse_image():
                  os.lstat, os.open, os.fstat, os.read, os.close, os.path.realpath,
                  os.getpid, threading.get_ident, hashlib.sha256, stat.S_ISREG,
                  site.getsitepackages, sys.getsizeof, sys._getframe, os.stat_result,
-                 WorkerRefusal, _CompiledRow, _CompiledReuse)
+                 WorkerRefusal, _CompiledRow, _CompiledReuse,
+                 FunctionType, _COMPILED_REUSE_REFUSAL_IMAGE)
     constants = (_IDENTITY_FIELDS, _CHUNK, MAX_MAPS_BYTES, MAX_MESSAGE,
                  tuple(importlib.machinery.EXTENSION_SUFFIXES),
                  _COMPILED_REUSE_MAX_COUNT, _COMPILED_REUSE_MAX_BYTES,
@@ -719,9 +743,12 @@ def _same_compiled_image(before, after):
     if len(before[0]) != len(after[0]) or len(before[1]) != len(after[1]):
         return False
     for a, b in zip(before[0], after[0]):
-        if any(a[i] is not b[i] for i in (0, 1, 2, 3, 5)) or len(a[4]) != len(b[4]):
+        if any(a[i] is not b[i] for i in (0, 1, 2, 3, 5, 6)) or len(a[4]) != len(b[4]):
             return False
         if any(ka != kb or va is not vb for (ka, va), (kb, vb) in zip(a[4], b[4])):
+            return False
+        if len(a[7]) != len(b[7]) or any(ca is not cb or va is not vb
+                for (ca, va), (cb, vb) in zip(a[7], b[7])):
             return False
     return all(a is b for a, b in zip(before[1], after[1])) and before[2] == after[2]
 
@@ -764,6 +791,12 @@ def _compiled_image_charge(image):
     for record in image[0]:
         total += sys.getsizeof(record) + sys.getsizeof(record[4])
         total += sum(sys.getsizeof(pair) for pair in record[4])
+        # At most one exact owned cell; charge every retained tuple/pair/cell
+        # occurrence without traversing or materializing its class contents.
+        total += sys.getsizeof(record[7])
+        if record[6] is not None:
+            total += sys.getsizeof(record[6])
+            total += sum(sys.getsizeof(pair) + sys.getsizeof(pair[0]) for pair in record[7])
         # Each real bounded kwdict is already admitted by the image builder.
         # Count its items view, sorted list and independent item-pair roles.
         kw = record[3]
@@ -771,6 +804,9 @@ def _compiled_image_charge(image):
             ordered = sorted(kw.items())
             total += sys.getsizeof(kw.items()) + sys.getsizeof(ordered)
             total += sum(sys.getsizeof(pair) for pair in ordered)
+    for operator in image[1]:
+        if operator is _COMPILED_REUSE_REFUSAL_IMAGE:
+            total += sys.getsizeof(operator)
     # Source-fixed function tuple exists during image construction.
     total += sys.getsizeof(()) + len(image[0]) * pointer
     for value in image[2]:
