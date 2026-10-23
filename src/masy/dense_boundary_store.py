@@ -1310,13 +1310,31 @@ class _HeldInventory:
         )
         self._bytes += declared_size
 
+    def _check_held_file(self, path):
+        """Recheck one file through its held parent between check() passes."""
+        parent, name, _size, ident, links, mode = self._files[path]
+        descriptor = self._parents[parent][0]
+        info = self._lstat(parent, name, descriptor)
+        if (
+            oi._stat_id(info) != ident
+            or info.st_nlink != links
+            or info.st_mode != mode
+        ):
+            _fail("identity_drift", f"{path}: admitted file changed")
+
     def check(self):
-        """Exact recheck of every held parent and admitted file stat."""
+        """Recheck parents, held-file stats, then current parent paths again.
+
+        This is a quiescent owned-source batch, not an atomic hostile-writer
+        snapshot. Ordinary per-file read/admit checks retain their own guards.
+        """
         self._live()
         for parent in self._parents:
             self._check_parent(parent)
         for path in self._files:
-            self._check_file(path)
+            self._check_held_file(path)
+        for parent in self._parents:
+            self._check_parent(parent)
 
     def read(self, path, cap, declared_size=None):
         """Bounded read of an admitted (or now admitted control) file."""
