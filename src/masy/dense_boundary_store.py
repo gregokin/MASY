@@ -1736,7 +1736,7 @@ def _image_metadata(root, image, limits):
 
 def _generation_chain(root, header, store_sha, head, limits):
     """Metadata/byte-bound ancestry; selected full native preparation is separate."""
-    if _active_water_store(header):
+    if _active_store(header):
         return _active_module()._generation_chain(root, header, store_sha, head, limits)
     _inventory(
         root,
@@ -2112,7 +2112,7 @@ class DenseBoundaryStore:
             _fail("storage_observation", "bound probe receipt differs")
 
     def _stable(self):
-        if _active_water_store(self._header):
+        if _active_store(self._header):
             return _active_module()._stable(self)
         self._binding()
         inventory = _inventory(
@@ -2138,7 +2138,7 @@ class DenseBoundaryStore:
 
     def _temporary_heads(self, inventory):
         # Aggregate raw admission has completed before parsing any retained temp.
-        if _active_water_store(self._header):
+        if _active_store(self._header):
             return _active_module()._temporary_heads(self, inventory)
         for nonce in inventory["temps"]:
             head, _raw = _record(
@@ -2175,7 +2175,7 @@ class DenseBoundaryStore:
                 _fail("head_temporary", "temp generation raw identity differs")
 
     def _head(self):
-        if _active_water_store(self._header):
+        if _active_store(self._header):
             return _active_module()._head(self)
         record, raw = _record(self._root / "HEAD", self._limits.max_head_bytes)
         _check_seal(record, _HEAD, "head_sha256", _store_schema(self._header) + ".head")
@@ -2183,7 +2183,7 @@ class DenseBoundaryStore:
         return record, raw
 
     def _admit(self, accepted_names, max_work_bytes, *, initial=False):
-        if _active_water_store(self._header):
+        if _active_store(self._header):
             return _active_module()._admit(self, accepted_names, max_work_bytes, initial=initial)
         if not initial and len(accepted_names) >= self._limits.max_accepted:
             _fail(
@@ -2231,7 +2231,7 @@ class DenseBoundaryStore:
         self._reservation_record = reservation
 
     def _load(self, head):
-        if _active_water_store(self._header):
+        if _active_store(self._header):
             return _active_module()._load(self, head)
         chain = _generation_chain(
             self._root, self._header, _sha(self._store_raw), head, self._limits
@@ -2262,7 +2262,7 @@ class DenseBoundaryStore:
         return prepared, chain
 
     def _idle_state(self, head, prepared, generation):
-        if _active_water_store(self._header):
+        if _active_store(self._header):
             return _active_module()._idle_state(self, head, prepared, generation)
         owner = _owner_for(self._header, prepared)
         report, diagnostics = owner.report(), prepared.diagnostics()
@@ -2525,7 +2525,7 @@ class DenseBoundaryStore:
         return self._state.token
 
     def report(self):
-        if _active_water_store(self._header):
+        if _active_store(self._header):
             return _active_module().report(self)
         self._binding()
         return {
@@ -2544,7 +2544,7 @@ class DenseBoundaryStore:
         }
 
     def step(self, expected_parent):
-        if _active_water_store(self._header):
+        if _active_store(self._header):
             return _active_module().step(self, expected_parent)
         self._binding()
         if self._entered:
@@ -2644,12 +2644,17 @@ class DenseBoundaryStore:
             self._entered = False
 
     def checkpoint_water(self, expected_parent, *, boundary_ordinal):
-        if not _active_water_store(self._header):
+        if not _active_store(self._header):
             _fail("store_profile", "explicit active-water format required")
         return _active_module().checkpoint_water(self, expected_parent, boundary_ordinal=boundary_ordinal)
 
+    def checkpoint_wind(self, expected_parent, *, boundary_ordinal):
+        if not _active_process_store(self._header):
+            _fail("store_profile", "explicit active-process format required")
+        return _active_module().checkpoint_wind(self, expected_parent, boundary_ordinal=boundary_ordinal)
+
     def acknowledge(self, expected_parent, *, request_kind, boundary_ordinal=None):
-        if not _active_water_store(self._header):
+        if not _active_store(self._header):
             _fail("store_profile", "explicit active-water format required")
         return _active_module().acknowledge(self, expected_parent, request_kind=request_kind,
                                             boundary_ordinal=boundary_ordinal)
@@ -2944,6 +2949,8 @@ def _store_schema(header):
         return SCHEMA_V2
     if schema == SCHEMA_ACTIVE_WATER and profile == PROFILE_ACTIVE_WATER:
         return SCHEMA_ACTIVE_WATER
+    if schema == SCHEMA_ACTIVE_PROCESS and profile == PROFILE_ACTIVE_PROCESS:
+        return SCHEMA_ACTIVE_PROCESS
     _fail("store_profile", "unknown or mixed schema/profile pair")
 
 
@@ -3600,7 +3607,7 @@ def _water_parent_ready(handle, parent):
     if type(handle) is not DenseBoundaryStore:
         _fail("water_parent", "exact DenseBoundaryStore required")
     handle._binding()
-    if _active_water_store(handle._header):
+    if _active_store(handle._header):
         _fail("water_parent", "active-water stores issue their own reserved parent context")
     state = handle._state
     if handle._entered is not False:
@@ -3619,6 +3626,21 @@ def _abandon_issued(runner):
     lease = runner._active_evidence
     try:
         if type(lease) is not pause._WaterLease:
+            # A genuine wind lease already imported its owning pause module.
+            # Cleanup never introduces a new Native import/audit on old paths.
+            wind = sys.modules.get("masy.dense_wind_pause")
+            if wind is not None and type(lease) is wind._WindLease:
+                if lease.owner() is not runner:
+                    _fail("wind_cleanup", "issued runner carries a foreign wind lease")
+                if lease.phase in ("busy", "finishing", "exporting"):
+                    _fail("wind_busy", "issued runner has active wind work")
+                if lease.phase == "paused":
+                    if lease.token is None:
+                        _fail("wind_cleanup", "paused wind lease has no token")
+                    wind.abandon_wind(runner, lease.token)
+                    return "abandoned"
+                if lease.phase not in ("closed", "halted"):
+                    _fail("wind_cleanup", "unknown wind lease phase")
             return "released"
         if lease.owner() is not runner:
             _fail("water_cleanup", "issued runner carries a foreign water lease")
@@ -3745,6 +3767,11 @@ class _WaterParent:
             from masy import dense_water_pause as pause
             live = self._issued()
             active = None if live is None else live._active_evidence
+            wind = sys.modules.get("masy.dense_wind_pause")
+            if (wind is not None and type(active) is wind._WindLease
+                    and active.phase in ("busy", "finishing", "exporting")):
+                self._cleanup = ("BoundaryStoreError", "wind_busy")
+                _fail("wind_busy", "active close is non-consuming; parent guard remains held")
             if type(active) is pause._WaterLease and active.phase in ("busy", "finishing", "exporting"):
                 self._cleanup = ("BoundaryStoreError", "water_busy")
                 _fail("water_busy", "active close is non-consuming; parent guard remains held")
@@ -4300,3 +4327,27 @@ def _operation_runtime_binding(handle):
         _drop_runtime_validation(handle)
         return _runtime_binding(reference, limits)
     return _runtime_binding_common(reference, limits, _reuse=owner)
+
+
+# Separate new opt-in format; every existing old selector remains a closed pair.
+SCHEMA_ACTIVE_PROCESS = "masy.dense_boundary_store.activeprocess.v1"
+PROFILE_ACTIVE_PROCESS = "default_dense_numpy_activeprocess_v1"
+
+
+def _active_process_store(header):
+    return type(header) is dict and header.get("schema") == SCHEMA_ACTIVE_PROCESS and header.get("profile") == PROFILE_ACTIVE_PROCESS
+
+
+def _active_store(header):
+    return _active_water_store(header) or _active_process_store(header)
+
+
+def create_active_process_boundary_store(path, *, runner, originals, runtime_reference,
+                                         limits=_DEFAULT, storage_contract):
+    return _active_module().create_active_process_boundary_store(path, runner=runner, originals=originals,
+        runtime_reference=runtime_reference, limits=limits, storage_contract=storage_contract)
+
+
+def recover_active_process_boundary_store(path, *, expected_store_file_sha256, limits=_DEFAULT):
+    return _active_module().recover_active_process_boundary_store(path,
+        expected_store_file_sha256=expected_store_file_sha256, limits=limits)

@@ -50,6 +50,121 @@ _WATER = ("attempt_name", "export_sha256", "ordinal", "pauses", "origin_s",
           "native_time_s", "plan_sha256")
 _SELECTION_KEY = object()
 
+# Closed opt-in sibling format. The old constants and old intent arithmetic are
+# unchanged; selectors below have only these two Source-owned specializations.
+SCHEMA_PROCESS = "masy.dense_boundary_store.activeprocess.v1"
+PROFILE_PROCESS = "default_dense_numpy_activeprocess_v1"
+_PROCESS_SCHEMAS = tuple(SCHEMA_PROCESS + suffix for suffix in
+    ("", ".head", ".intent", ".generation", ".ack", ".request", ".storage", ".report"))
+_PROCESS_KINDS = (*_KINDS, "wind_paused")
+_PROCESS_STORE = (*tuple("managed_active" if x == "managed_water" else x for x in _STORE[:-1]),
+                  "event_kinds", _STORE[-1])
+_PROCESS_GENERATION = tuple("active_ref" if x == "water_ref" else x for x in _GENERATION)
+_PROCESS_REF = ("process_kind", *_WATER)
+
+
+def _combined(value):
+    return type(value) is dict and type(value.get("schema")) is str and value["schema"] in _PROCESS_SCHEMAS
+
+
+def _schema(value):
+    return SCHEMA_PROCESS if _combined(value) else SCHEMA
+
+
+def _profile_name(value):
+    return PROFILE_PROCESS if _combined(value) else PROFILE
+
+
+def _kinds(value):
+    return _PROCESS_KINDS if _combined(value) else _KINDS
+
+
+def _store_fields(value):
+    return _PROCESS_STORE if _combined(value) else _STORE
+
+
+def _generation_fields_list(value):
+    return _PROCESS_GENERATION if _combined(value) else _GENERATION
+
+
+def _water_fields(value):
+    return _PROCESS_REF if _combined(value) else _WATER
+
+
+def _ref_key(value):
+    return "active_ref" if _combined(value) else "water_ref"
+
+
+def _managed_key(value):
+    return "managed_active" if _combined(value) else "managed_water"
+
+
+def _progress_key(value):
+    return "active_process" if _combined(value) else "active_water"
+
+
+def _sibling_prefix(value):
+    return ".masy-active-" if _combined(value) else ".masy-water-"
+
+
+def _paused(value):
+    return value["kind"] == "water_paused" or (_combined(value) and value["kind"] == "wind_paused")
+
+
+def _same_format(header, *values):
+    if any(_combined(value) != _combined(header) for value in values):
+        c._fail("active_format", "every selected control belongs to its actual STORE format")
+
+
+def _pause_fields_for(value):
+    kind = "water_paused" if _combined(value) and value["kind"] == "wind_paused" else value["kind"]
+    return _pause_fields(kind, value["pause_ordinal"], value["pause_count"])
+
+
+def _intent_for(kind, ordinal, header):
+    if not _combined(header) or kind != "checkpoint_wind":
+        return _intent(kind, ordinal)
+    # Same bounded original-plan ordinal law, a distinct closed process tag.
+    answer = _intent("checkpoint_water", ordinal)
+    return {**answer, "kind": "checkpoint_wind"}
+
+
+def _check_intent_for(value, header):
+    if not _combined(header):
+        return _check_intent(value)
+    c._keys(value, ("kind", "boundary_ordinal"), "active process request intent")
+    expected = _intent_for(value["kind"], value["boundary_ordinal"], header)
+    if c.oi._json(value) != c.oi._json(expected):
+        c._fail("active_request", "canonical closed process request required")
+    return expected
+
+
+def _active_reference(root, header, limits, head, generation):
+    if _combined(header) and head["kind"] == "wind_paused":
+        from masy import dense_active_wind_checkpoint as wind
+        identity = (header["storage_contract"]["root_dev"], header["storage_contract"]["root_ino"])
+        return wind.validate_retained_reference(root, header, limits, head, generation,
+                                                _managed_at(root, header, identity))
+    return _water_reference(root, header, limits, head, generation)
+
+
+def _declare_for(header):
+    _declare()
+    if _combined(header):
+        from masy import dense_active_wind_checkpoint as wind
+        wind._declare()
+
+
+def _next_kind(owner):
+    return None if owner._next == len(owner._schedule.events) else owner._schedule.events[owner._next].kind
+
+
+def _wind_profile(runner, reference):
+    from masy import dense_wind_pause as wind
+    api = wind._declare()
+    wind._profile(runner, api)
+    wind._runtime(api, reference)
+
 
 @dataclasses.dataclass(frozen=True)
 class ActiveWaterAcknowledgement:
@@ -90,9 +205,10 @@ def _check_intent(value):
 def _request_id(header, anchor, selected, parent_raw, intent, schedule):
     """Validated accepted A fixes event operation; canonical selected R fixes request."""
     limits = c._limits_load(header["limits"])
-    _head_fields(anchor, limits)
-    _head_fields(selected, limits)
-    _check_intent(intent)
+    _head_fields(anchor, limits, header=header)
+    _head_fields(selected, limits, header=header)
+    _check_intent_for(intent, header)
+    _same_format(header, anchor, selected)
     c._digest(schedule, "schedule_sha256")
     if (anchor["kind"] not in ("genesis", "event_accepted")
             or anchor["store_id"] != header["store_id"]
@@ -103,14 +219,14 @@ def _request_id(header, anchor, selected, parent_raw, intent, schedule):
         c._fail("active_request", "stat-admitted canonical selected raw HEAD required")
     operation = c._operation(header["store_id"], anchor,
                              anchor["accepted_sequence"], schedule)
-    if selected["kind"] == "water_paused":
+    if _paused(selected):
         if (selected["anchor_generation"] != anchor["generation_name"]
                 or selected["accepted_sequence"] != anchor["accepted_sequence"]
                 or selected["event_operation_id"] != operation):
             c._fail("active_anchor", "selected pause differs from actual event anchor")
     elif parent_raw != c.oi._json(anchor):
         c._fail("active_anchor", "selected accepted HEAD must itself be the anchor")
-    request = c._sha(c.oi._json({"schema": SCHEMA + ".request",
+    request = c._sha(c.oi._json({"schema": _schema(header) + ".request",
         "store_id": header["store_id"], "event_operation_id": operation,
         "selected_parent_head_file_sha256": c._sha(parent_raw),
         "request_intent": intent}))
@@ -133,15 +249,16 @@ def _pause_fields(kind, ordinal, count):
         c._fail("active_pause", "only water_paused carries original ordinal/count")
 
 
-def _head_fields(value, limits):
-    c._check_seal(value, _HEAD, "head_sha256", SCHEMA + ".head")
+def _head_fields(value, limits, *, header=None):
+    descriptor = value if header is None else header
+    c._check_seal(value, _HEAD, "head_sha256", _schema(descriptor) + ".head")
     if type(value["store_id"]) is not str or not c._NONCE.fullmatch(value["store_id"]):
         c._fail("metadata_nonce", "active store id")
     revision = c._integer(value["revision"], _MAX_REVISION, "active revision")
     sequence = c._integer(value["accepted_sequence"], min(8, limits.max_accepted - 1),
                           "active accepted sequence")
     kind = value["kind"]
-    if type(kind) is not str or kind not in _KINDS or sequence > revision:
+    if type(kind) is not str or kind not in _kinds(descriptor) or sequence > revision:
         c._fail("active_head", "kind/cursor/revision")
     _name(value["generation_name"], revision)
     for field in ("store_file_sha256", "generation_file_sha256", "generation_sha256",
@@ -149,23 +266,24 @@ def _head_fields(value, limits):
         c._digest(value[field], field)
     if type(value["anchor_generation"]) is not str or not c._GEN.fullmatch(value["anchor_generation"]):
         c._fail("active_anchor", "bounded generation path required")
-    _pause_fields(kind, value["pause_ordinal"], value["pause_count"])
+    _pause_fields_for(value)
     if kind == "genesis":
         if revision != 0 or sequence != 0:
             c._fail("active_head", "genesis is revision/cursor zero")
     elif revision == 0 or (kind == "event_accepted" and sequence == 0):
         c._fail("active_head", "non-genesis revision/cursor")
-    if kind == "water_paused":
+    if _paused(value):
         anchor_match = c._GEN.fullmatch(value["anchor_generation"])
         if int(anchor_match[1]) >= revision:
             c._fail("active_anchor", "paused anchor must be a strict prior generation")
-    if kind != "water_paused" and value["anchor_generation"] != value["generation_name"]:
+    if not _paused(value) and value["anchor_generation"] != value["generation_name"]:
         c._fail("active_anchor", "accepted HEAD is its next event anchor")
     return value
 
 
-def _intent_fields(value, limits):
-    c._check_seal(value, _INTENT, "intent_sha256", SCHEMA + ".intent")
+def _intent_fields(value, limits, *, header=None):
+    descriptor = value if header is None else header
+    c._check_seal(value, _INTENT, "intent_sha256", _schema(descriptor) + ".intent")
     if (type(value["store_id"]) is not str or not c._NONCE.fullmatch(value["store_id"])
             or type(value["attempt_id"]) is not str or not c._NONCE.fullmatch(value["attempt_id"])):
         c._fail("metadata_nonce", "actual active store/attempt nonce")
@@ -185,15 +303,15 @@ def _intent_fields(value, limits):
             c._fail("active_intent", "original selected parent generation")
         for field in ("expected_parent_head_file_sha256", "entry_anchor_head_file_sha256"):
             c._digest(value[field], field)
-        _check_intent(value["request_intent"])
+        _check_intent_for(value["request_intent"], descriptor)
     return value
 
 
 def _head_record(header, store_sha, name, generation, file_sha):
-    water = generation["water_ref"]
+    water = generation[_ref_key(header)]
     anchor_name = (generation["entry_anchor_head_record"]["generation_name"]
-                   if generation["kind"] == "water_paused" else name)
-    result = _seal_control({"schema": SCHEMA + ".head", "store_id": header["store_id"],
+                   if _paused(generation) else name)
+    result = _seal_control({"schema": _schema(header) + ".head", "store_id": header["store_id"],
         "store_file_sha256": store_sha, "revision": generation["revision"],
         "accepted_sequence": generation["accepted_sequence"], "kind": generation["kind"],
         "generation_name": name, "generation_file_sha256": file_sha,
@@ -202,12 +320,13 @@ def _head_record(header, store_sha, name, generation, file_sha):
         "pause_ordinal": None if water is None else water["ordinal"],
         "pause_count": None if water is None else water["pauses"]}, "head_sha256",
         c._limits_load(header["limits"]).max_head_bytes, "active HEAD")
-    return _head_fields(result, c._limits_load(header["limits"]))
+    return _head_fields(result, c._limits_load(header["limits"]), header=header)
 
 
-def _ack_fields(value, head, parent):
+def _ack_fields(value, head, parent, *, header=None):
+    descriptor = head if header is None else header
     c._keys(value, _ACK, "active ACK core")
-    if (value["schema"] != SCHEMA + ".ack" or value["store_id"] != head["store_id"]
+    if (value["schema"] != _schema(descriptor) + ".ack" or value["store_id"] != head["store_id"]
             or value["event_operation_id"] != head["event_operation_id"]
             or value["request_id"] != head["request_id"]
             or value["returned_kind"] != head["kind"]):
@@ -230,8 +349,8 @@ def _ack_fields(value, head, parent):
         if value["request_intent"] is not None or value["completion_receipt_sha256"] is not None:
             c._fail("active_ack", "genesis has no request/completion")
     else:
-        intent = _check_intent(value["request_intent"])
-        if head["kind"] == "water_paused" and (intent["kind"] != "checkpoint_water"
+        intent = _check_intent_for(value["request_intent"], descriptor)
+        if _paused(head) and (intent["kind"] != ("checkpoint_wind" if head["kind"] == "wind_paused" else "checkpoint_water")
                 or intent["boundary_ordinal"] != head["pause_ordinal"]):
             c._fail("active_ack", "wet ACK must match requested original boundary")
         receipt = value["completion_receipt_sha256"]
@@ -295,7 +414,7 @@ def _selection(parent):
 def _parent_light(parent, handle):
     parent._own()
     selection = _selection(parent)
-    if type(handle) is not c.DenseBoundaryStore or not c._active_water_store(handle._header):
+    if type(handle) is not c.DenseBoundaryStore or not c._active_store(handle._header):
         c._fail("active_parent", "exact active C handle required")
     handle._binding()
     if (handle._entered is not True or handle._state is not selection.state
@@ -322,7 +441,7 @@ def _parent_light(parent, handle):
             c._fail("active_parent", "bounded retained intent bytes required before parser")
         intent = c._plain_metadata(c.oi._strict_json(selection.intent_raw, c._JSON),
                                     handle._limits.max_intent_bytes, "reserved active intent")
-        _intent_fields(intent, handle._limits)
+        _intent_fields(intent, handle._limits, header=handle._header)
         path = handle._root / "generations" / f"g-{intent['revision']:04d}-{intent['attempt_id']}" / "intent.json"
         if (intent["attempt_id"] != handle._state.attempt_id
                 or intent["expected_parent_head_file_sha256"] != c._sha(selected_raw)
@@ -356,7 +475,7 @@ def _parent_record(parent, runner):
 
 
 def _borrow_parent(handle, intent):
-    if type(handle) is not c.DenseBoundaryStore or not c._active_water_store(handle._header):
+    if type(handle) is not c.DenseBoundaryStore or not c._active_store(handle._header):
         c._fail("active_parent", "exact active C handle required")
     handle._binding()
     if (handle._entered is not True or type(handle._state) is not c._State
@@ -434,9 +553,9 @@ def _managed(handle):
 
 
 def _managed_at(root, header, root_identity):
-    value = header["managed_water"]
+    value = header[_managed_key(header)]
     c._keys(value, _MANAGED, "managed sibling")
-    expected = root.parent / (".masy-water-" + header["store_id"])
+    expected = root.parent / ((_sibling_prefix(header)) + header["store_id"])
     if (type(value["path"]) is not str or len(value["path"]) > _PATH_CHARS
             or value["path"] != str(expected) or os.path.realpath(expected) != str(expected)
             or value["parent_path"] != str(root.parent)):
@@ -498,6 +617,8 @@ def _inventory_at(root, header, limits, root_identity, *, sibling=True):
                 if pieces[1] == "entry" and name == "capsule.json":
                     return False, 1 << 20
                 if (pieces[1] == "native" or re.fullmatch(r"\.native\.partial-[A-Za-z0-9_-]{1,64}", pieces[1])):
+                    if _combined(header) and pieces[1] == "native" and name == "continuation.bin":
+                        return False, 8 << 20
                     if name == "checkpoint.json":
                         return False, 2 << 20
                     if name in ("maple_state.npz", "continuation.npz"):
@@ -606,7 +727,7 @@ def _inventory_at(root, header, limits, root_identity, *, sibling=True):
     walk(root, "", False, root_identity)
     if sibling:
         managed = _managed_at(root, header, root_identity)
-        walk(managed, "", True, (header["managed_water"]["dev"], header["managed_water"]["ino"]))
+        walk(managed, "", True, (header[_managed_key(header)]["dev"], header[_managed_key(header)]["ino"]))
         if not water <= generations:
             c._fail("active_inventory", "Native attempt has no retained owning C intent generation")
     if not temps <= {n.rsplit("-", 1)[1] for n in generations}:
@@ -717,6 +838,8 @@ def _metadata_stat_charge(handle, inventory):
             # constructor/wire occurrence. Native arrays/codec stay under W.
             future = min(1 << 20, info.st_size + 3)
             existing += 2 * _parse_charge(future)
+            if _combined(handle._header):
+                existing += _parse_charge(info.st_size)
     # _load -> _prepare_anchor can retain a caller chain while validating a
     # second. _operate -> _borrow_parent -> _parent_light, including the
     # temporary-HEAD validation within _stable, has at most THREE chain
@@ -725,16 +848,21 @@ def _metadata_stat_charge(handle, inventory):
     return 3 * existing
 
 
-def _reservation(limits, work_bytes, chain_charge=0):
+def _reservation(limits, work_bytes, chain_charge=0, *, combined=False):
     original = c._reservation(limits, work_bytes)
     if type(chain_charge) is not int or chain_charge < 0:
         c._fail("active_memory", "actual bounded chain charge required")
     memory = (original["memory_bytes"] + 2 * work_bytes + chain_charge
               + _context_charge(limits) + _parse_charge(limits.image.max_metadata_bytes)
               + (2 << 20))
+    extra = 0
+    if combined:
+        from masy import dense_active_wind_checkpoint as wind
+        extra = wind.reservation_increment()["required_bytes"]
+        memory += extra
     if memory > limits.max_memory_bytes:
         c._fail("memory_cap", "complete C+two active W+chain/context/future-B reservation")
-    return {**original, "memory_bytes": memory,
+    answer = {**original, "memory_bytes": memory,
             "disk_bytes": original["disk_bytes"] + _ACTIVE_RAW_BYTES,
             "entries": original["entries"] + _ACTIVE_ENTRIES,
             "active_native_work_roles": 2,
@@ -743,6 +871,9 @@ def _reservation(limits, work_bytes, chain_charge=0):
             "active_context_metadata_bytes": _context_charge(limits),
             "active_future_image_metadata_bytes": _parse_charge(limits.image.max_metadata_bytes),
             "logical_Source_reservation_not_heap_fit": True}
+    if combined:
+        answer["active_wind_codec_increment_bytes"] = extra
+    return answer
 
 
 def _admit(handle, retained, max_work_bytes, *, initial=False):
@@ -772,12 +903,14 @@ def _admit(handle, retained, max_work_bytes, *, initial=False):
 
 
 def _water_reference(root, header, limits, head, generation):
-    water = generation["water_ref"]
+    water = generation[_ref_key(header)]
     if head["kind"] != "water_paused":
         if water is not None:
             c._fail("active_water_reference", "only a wet generation has a Native child")
         return
-    c._keys(water, _WATER, "native water reference")
+    c._keys(water, _water_fields(header), "native water reference")
+    if _combined(header) and water["process_kind"] != "water":
+        c._fail("active_water_reference", "actual water tag required")
     if (water["attempt_name"] != head["generation_name"]
             or type(water["ordinal"]) is not int or water["ordinal"] != head["pause_ordinal"]
             or type(water["pauses"]) is not int or water["pauses"] != head["pause_count"]):
@@ -810,8 +943,9 @@ def _water_reference(root, header, limits, head, generation):
 
 
 def _generation_fields(value, head, header, limits):
-    c._check_seal(value, _GENERATION, "generation_sha256", SCHEMA + ".generation")
-    _head_fields(head, limits)
+    c._check_seal(value, _generation_fields_list(header), "generation_sha256", _schema(header) + ".generation")
+    _head_fields(head, limits, header=header)
+    _same_format(header, head, value)
     if any(type(value[k]) is not type(head[k]) or value[k] != head[k] for k in
            ("store_id", "store_file_sha256", "revision", "accepted_sequence", "kind",
             "event_operation_id", "request_id")):
@@ -827,26 +961,26 @@ def _generation_fields(value, head, header, limits):
                 "parent_generation", "entry_anchor_head_record", "request_intent")):
             c._fail("active_generation", "genesis has no previous revision or request")
     else:
-        _head_fields(parent, limits)
+        _head_fields(parent, limits, header=header)
         if (parent["revision"] + 1 != head["revision"]
                 or value["parent_generation"] != parent["generation_name"]
                 or c._sha(c.oi._json(parent)) != value["parent_head_file_sha256"]):
             c._fail("active_generation", "exact direct selected-parent bytes")
-        _check_intent(value["request_intent"])
+        _check_intent_for(value["request_intent"], head)
         anchor = value["entry_anchor_head_record"]
-        _head_fields(anchor, limits)
+        _head_fields(anchor, limits, header=header)
         if anchor["kind"] not in ("genesis", "event_accepted"):
             c._fail("active_anchor", "input anchor must be genuinely accepted")
-        expected_anchor = (anchor["generation_name"] if head["kind"] == "water_paused"
+        expected_anchor = (anchor["generation_name"] if _paused(head)
                            else head["generation_name"])
         if (head["anchor_generation"] != expected_anchor
                 or anchor["store_id"] != head["store_id"]
-                or (head["kind"] == "water_paused"
+                or (_paused(head)
                     and anchor["accepted_sequence"] != head["accepted_sequence"])):
             c._fail("active_anchor", "HEAD anchor differs from recorded entry anchor")
     if head["store_id"] != header["store_id"]:
         c._fail("active_generation", "foreign store")
-    core = _ack_fields(value["ack_core"], head, parent)
+    core = _ack_fields(value["ack_core"], head, parent, header=header)
     if (c.oi._json(core["request_intent"]) != c.oi._json(value["request_intent"])
             or c._sha(c.oi._json(core)) != value["ack_core_sha256"]):
         c._fail("active_ack", "exact canonical request/ACK bytes")
@@ -868,7 +1002,7 @@ def _generation_chain(root, header, store_sha, head, limits):
     while True:
         if len(chain) >= _MAX_CHAIN:
             c._fail("active_chain", "derived25-row chain before append")
-        _head_fields(current, limits)
+        _head_fields(current, limits, header=header)
         name = current["generation_name"]
         if name in seen or current["store_id"] != header["store_id"] or current["store_file_sha256"] != store_sha:
             c._fail("active_chain", "cycle or foreign store")
@@ -880,7 +1014,7 @@ def _generation_chain(root, header, store_sha, head, limits):
         if c._sha(raw) != current["generation_file_sha256"] or generation["generation_sha256"] != current["generation_sha256"]:
             c._fail("active_chain", "actual generation file/semantic seal differs")
         intent, intent_raw = c._record(path / "intent.json", limits.max_intent_bytes)
-        _intent_fields(intent, limits)
+        _intent_fields(intent, limits, header=header)
         if c._sha(intent_raw) != generation["intent_file_sha256"]:
             c._fail("active_chain", "actual reserved intent differs")
         for field in ("store_id", "attempt_id", "revision", "event_operation_id", "request_id", "request_intent"):
@@ -899,7 +1033,7 @@ def _generation_chain(root, header, store_sha, head, limits):
         if intent["entry_anchor_head_file_sha256"] != (None if entry_anchor is None else c._sha(c.oi._json(entry_anchor))):
             c._fail("active_chain", "input accepted-anchor bytes differ")
         image = generation["image"]
-        owner_name = current["anchor_generation"] if current["kind"] == "water_paused" else name
+        owner_name = current["anchor_generation"] if _paused(current) else name
         if type(image) is not dict or image.get("relative_path") != f"generations/{owner_name}/image":
             c._fail("active_chain", "image must belong to genuine accepted anchor")
         manifest, wrapper_raw = c._image_for(header, root, image, limits)
@@ -917,6 +1051,10 @@ def _generation_chain(root, header, store_sha, head, limits):
         finally:
             artifacts.close()
         sequence = current["accepted_sequence"]
+        if _combined(header) and _paused(current):
+            expected_kind = "wind" if current["kind"] == "wind_paused" else "rain"
+            if sequence >= len(header["event_kinds"]) or header["event_kinds"][sequence] != expected_kind:
+                c._fail("active_process_kind", "selected pause differs from the STORE-bound original event kind")
         if (manifest["state"]["next_index"] != sequence or manifest["state"]["n_accepted"] != sequence
                 or len(manifest["receipts"]) != sequence
                 or c.oi._json(generation["accepted_summary"]) != c.oi._json(c._summary(manifest))):
@@ -934,20 +1072,22 @@ def _generation_chain(root, header, store_sha, head, limits):
                     or c.oi._json(child_manifest["receipts"][:-1] if advance else child_manifest["receipts"])
                         != c.oi._json(manifest["receipts"])):
                 c._fail("active_chain", "exact accepted prefix across paused/accepted revisions")
-            anchor = current if current["kind"] != "water_paused" else generation["entry_anchor_head_record"]
+            anchor = current if not _paused(current) else generation["entry_anchor_head_record"]
             if c.oi._json(child_gen["entry_anchor_head_record"]) != c.oi._json(anchor):
                 c._fail("active_anchor", "nearest genuine accepted input anchor differs")
             operation, request = _request_id(header, anchor, current, c.oi._json(current),
                                              child_gen["request_intent"], header["schedule_sha256"])
             if (child_gen["event_operation_id"] != operation or child_gen["request_id"] != request):
                 c._fail("active_request", "actual schedule/parent/request identity differs")
-            if child_head["kind"] == "water_paused":
-                previous_count = current["pause_count"] if current["kind"] == "water_paused" else 0
+            if _paused(child_head):
+                if _combined(header) and _paused(current) and child_head["kind"] != current["kind"]:
+                    c._fail("active_process_kind", "one unaccepted event cannot switch Native process")
+                previous_count = current["pause_count"] if _paused(current) else 0
                 if child_head["pause_count"] != previous_count + 1:
                     c._fail("active_pause", "pause count must advance independently of original ordinal")
-                if current["kind"] == "water_paused" and child_head["pause_ordinal"] <= current["pause_ordinal"]:
+                if _paused(current) and child_head["pause_ordinal"] <= current["pause_ordinal"]:
                     c._fail("active_pause", "original pause ordinal must increase")
-        _water_reference(root, header, limits, current, generation)
+        _active_reference(root, header, limits, current, generation)
         chain.append((current, generation, manifest))
         child = chain[-1]
         if current["kind"] == "genesis":
@@ -959,8 +1099,8 @@ def _generation_chain(root, header, store_sha, head, limits):
 
 
 def _header_fields(header, limits):
-    c._check_seal(header, _STORE, "store_sha256", SCHEMA)
-    if (type(header["profile"]) is not str or header["profile"] != PROFILE
+    c._check_seal(header, _store_fields(header), "store_sha256", _schema(header))
+    if (type(header["profile"]) is not str or header["profile"] != _profile_name(header)
             or type(header["store_id"]) is not str or not c._NONCE.fullmatch(header["store_id"])):
         c._fail("store_identity", "actual explicit active-water store/profile")
     if c._limits_record(c._limits_load(header["limits"])) != c._limits_record(limits):
@@ -976,13 +1116,19 @@ def _header_fields(header, limits):
             or not re.fullmatch(r"generations/g-0000-[0-9a-f]{32}/physical",
                                  header["genesis_physical"]["relative_path"])):
         c._fail("store_identity", "actual original/genesis paths")
-    c._keys(header["managed_water"], _MANAGED, "managed sibling")
+    c._keys(header[_managed_key(header)], _MANAGED, "managed sibling")
+    if _combined(header):
+        kinds = header["event_kinds"]
+        if (type(kinds) is not list or not 1 <= len(kinds) <= min(8, limits.image.max_events)
+                or any(type(kind) is not str or kind not in ("wind", "rain") for kind in kinds)):
+            c._fail("active_process_kind", "bounded actual original event-kind list required")
     return header
 
 
 def _head(handle):
     value, raw = c._record(handle._root / "HEAD", handle._limits.max_head_bytes)
-    _head_fields(value, handle._limits)
+    _head_fields(value, handle._limits, header=handle._header)
+    _same_format(handle._header, value)
     if value["store_id"] != handle._header["store_id"] or value["store_file_sha256"] != c._sha(handle._store_raw):
         c._fail("active_head", "actual selected store identity")
     return value, raw
@@ -991,7 +1137,7 @@ def _head(handle):
 def _temporary_heads(handle, inventory):
     for nonce in inventory["temps"]:
         head, _raw = c._record(handle._root / f"HEAD.{nonce}.tmp", handle._limits.max_head_bytes)
-        _head_fields(head, handle._limits)
+        _head_fields(head, handle._limits, header=handle._header)
         if _name(head["generation_name"], head["revision"]) != nonce or head["generation_name"] not in inventory["generations"]:
             c._fail("head_temporary", "exact own retained generation/nonce")
         _generation_chain(handle._root, handle._header, c._sha(handle._store_raw), head, handle._limits)
@@ -1017,7 +1163,7 @@ def _stable(handle):
 
 
 def _prepare_anchor(handle, anchor):
-    _head_fields(anchor, handle._limits)
+    _head_fields(anchor, handle._limits, header=handle._header)
     if anchor["kind"] not in ("genesis", "event_accepted"):
         c._fail("active_anchor", "accepted anchor preparation only")
     inventory = _inventory(handle)
@@ -1033,6 +1179,8 @@ def _prepare_anchor(handle, anchor):
             or owner._schedule.digest != handle._header["schedule_sha256"]
             or c.oi._json(prepared.diagnostics()["accepted"]) != c.oi._json(chain[0][1]["accepted_summary"])):
         c._fail("readback_identity", "actual Native/original owner limits/schedule/accepted state differ")
+    if _combined(handle._header) and [event.kind for event in owner._schedule.events] != handle._header["event_kinds"]:
+        c._fail("active_process_kind", "genuine original schedule differs from STORE-bound event kinds")
     return prepared
 
 
@@ -1047,7 +1195,7 @@ def _load(handle, head):
 def _acknowledgement(header, head, generation, manifest):
     core_raw = _metadata_bytes(generation["ack_core"], 128 << 10, "bounded actual ACK")
     receipt = c._receipt(manifest) if head["kind"] == "event_accepted" else None
-    return ActiveWaterAcknowledgement(SCHEMA + ".ack", header["store_id"],
+    return ActiveWaterAcknowledgement(_schema(header) + ".ack", header["store_id"],
         head["event_operation_id"], head["request_id"], head["revision"],
         head["accepted_sequence"], c._token(head), core_raw, receipt)
 
@@ -1055,7 +1203,9 @@ def _acknowledgement(header, head, generation, manifest):
 def _idle_state(handle, head, prepared, generation):
     owner = c._owner_for(handle._header, prepared)
     diagnostics = prepared.diagnostics()
-    diagnostics["active_water"] = copy.deepcopy(generation["water_ref"])
+    diagnostics[_progress_key(handle._header)] = copy.deepcopy(generation[_ref_key(handle._header)])
+    if _combined(handle._header):
+        diagnostics["next_event_kind"] = _next_kind(owner)
     # Keep only immutable bounded metadata on the facade, no live Native owner.
     ack = _acknowledgement(handle._header, head, generation,
                            c._image_for(handle._header, handle._root, generation["image"], handle._limits)[0])
@@ -1069,19 +1219,21 @@ def _idle_state(handle, head, prepared, generation):
 def report(handle):
     handle._binding()
     head = handle._state.head
-    progress = None if head is None or head["kind"] != "water_paused" else {
+    progress = None if head is None or not _paused(head) else {
         "revision": head["revision"], "original_boundary_ordinal": head["pause_ordinal"],
         "pause_count": head["pause_count"], "accepted_sequence": head["accepted_sequence"],
-        "native_time_s": handle._state.diagnostics["active_water"]["native_time_s"],
-        "native_origin_s": handle._state.diagnostics["active_water"]["origin_s"],
+        "native_time_s": handle._state.diagnostics[_progress_key(handle._header)]["native_time_s"],
+        "native_origin_s": handle._state.diagnostics[_progress_key(handle._header)]["origin_s"],
         "scope": "unaccepted Native progress; no accepted elapsed/cursor increment"}
-    return {"schema": SCHEMA + ".report", "phase": handle._state.phase,
+    return {"schema": _schema(handle._header) + ".report", "phase": handle._state.phase,
         "head_token": handle._state.token, "intended_token": handle._state.intended,
         "store_file_sha256": None if handle._store_raw is None else c._sha(handle._store_raw),
         "accepted": copy.deepcopy(handle._state.report), "diagnostics": copy.deepcopy(handle._state.diagnostics),
-        "active_water": progress, "reservation": copy.deepcopy(handle._reservation_record),
+        _progress_key(handle._header): progress, "reservation": copy.deepcopy(handle._reservation_record),
         "failure_evidence_error": handle._evidence_write_error,
-        "scope": "opt-in static Dense CPU active-water; default/dynamic/wind-active/GPU/windowed separate"}
+        "scope": ("opt-in static Dense CPU active-process; production/dynamic/GPU/windowed separate"
+                  if _combined(handle._header) else
+                  "opt-in static Dense CPU active-water; default/dynamic/wind-active/GPU/windowed separate")}
 
 
 def _declare():
@@ -1092,8 +1244,8 @@ def _declare():
     c.oi._registry()
 
 
-def _make_managed(handle, store_id, probe):
-    path = handle._root.parent / (".masy-water-" + store_id)
+def _make_managed(handle, store_id, probe, *, combined=False):
+    path = handle._root.parent / ((".masy-active-" if combined else ".masy-water-") + store_id)
     if len(str(path)) > _PATH_CHARS:
         c._fail("active_sibling", "bounded canonical final sibling path")
     parent = c.oi._open_dir(handle._root.parent)
@@ -1117,17 +1269,21 @@ def _make_managed(handle, store_id, probe):
         os.close(parent)
 
 
-def create_active_water_boundary_store(path, *, runner, originals, runtime_reference,
-                                       limits=c._DEFAULT, storage_contract):
+def _create_active_store(path, *, runner, originals, runtime_reference,
+                         limits=c._DEFAULT, storage_contract, combined=False):
     """Create the new opt-in format from an untouched genuine static runner only."""
+    _protocol = {"schema": SCHEMA_PROCESS if combined else SCHEMA,
+                 "profile": PROFILE_PROCESS if combined else PROFILE}
     c.BoundaryStoreLimits.__post_init__(limits)
     c.StorageContract.__post_init__(storage_contract)
     if type(runner) is not c.dr.DenseRunner:
         c._fail("runner_profile", "exact static Dense CPU genesis runner required")
     c.dr.DenseRunnerLimits.__post_init__(runner._limits)
-    _reservation(limits, runner._limits.max_work_bytes)
-    _declare()
+    _reservation(limits, runner._limits.max_work_bytes, combined=combined)
+    _declare_for(_protocol)
     c.b._runner_admission(runner, limits.image)
+    if combined:
+        _wind_profile(runner, runtime_reference)
     if (runner._next != 0 or runner._n_accepted != 0 or runner._receipts
             or runner._stop_receipt is not None or runner._active_evidence is not None):
         c._fail("fresh_runner_required", "no store migration or progressed runner import")
@@ -1142,17 +1298,19 @@ def create_active_water_boundary_store(path, *, runner, originals, runtime_refer
         os.mkdir(handle._root / "originals", 0o700)
         os.mkdir(handle._root / "generations", 0o700)
         store_id = uuid.uuid4().hex
-        managed = _make_managed(handle, store_id, probe)
-        handle._header = {"schema": SCHEMA, "store_id": store_id, "profile": PROFILE,
+        managed = _make_managed(handle, store_id, probe, combined=combined)
+        handle._header = {"schema": _schema(_protocol), "store_id": store_id, "profile": _profile_name(_protocol),
             "source_identity": source, "runtime_reference": copy.deepcopy(runtime_reference),
             "environment_sha256": environment,
-            "storage_contract": {"schema": SCHEMA + ".storage", "operator_declares_local": True,
+            "storage_contract": {"schema": _schema(_protocol) + ".storage", "operator_declares_local": True,
                 "operator_declares_fsync_durable": True,
                 "observed_fs_type": probe["observation"]["fs_type"], "observed_fs_id": probe["f_fsid"],
                 "root_path": str(handle._root), "root_dev": probe["root_dev"], "root_ino": probe["root_ino"],
                 "probe_file_sha256": probe_sha}, "limits": c._limits_record(limits),
-            "originals": None, "genesis_physical": None, "managed_water": managed,
+            "originals": None, "genesis_physical": None, _managed_key(_protocol): managed,
             "native_work_bytes": runner._limits.max_work_bytes, "schedule_sha256": runner._schedule.digest}
+        if combined:
+            handle._header["event_kinds"] = [event.kind for event in runner._schedule.events]
         _admit(handle, [], runner._limits.max_work_bytes, initial=True)
         # Both memory and combined free/disk/inodes were admitted before recapture.
         captured = c.oi.capture_original_inputs(runner, source_identity=originals.source_identity)
@@ -1170,7 +1328,7 @@ def create_active_water_boundary_store(path, *, runner, originals, runtime_refer
         handle._header["originals"] = c._reference(original_path, c.oi.SCHEMA,
                                                    originals.content_sha256, handle._root)
         operation = c._operation(store_id, None, 0, runner._schedule.digest)
-        request = c._sha(c.oi._json([SCHEMA + ".genesis", store_id, runner._schedule.digest]))
+        request = c._sha(c.oi._json([_schema(_protocol) + ".genesis", store_id, runner._schedule.digest]))
         directory, intent, halt = _reserve_attempt(handle, None, None, None, operation, request)
         physical = handle._save_physical(directory / "physical", runner, originals)
         handle._header["genesis_physical"] = physical
@@ -1203,7 +1361,7 @@ def create_active_water_boundary_store(path, *, runner, originals, runtime_refer
 
 def _load_selected_water(handle, context, runner, generation):
     from masy import dense_active_checkpoint as a
-    water = generation["water_ref"]
+    water = generation[_ref_key(handle._header)]
     path = _managed(handle) / water["attempt_name"]
     token = a.load_water_pause(context, runner, attempt=path,
         expected_export_sha256=water["export_sha256"], runtime_reference=handle._header["runtime_reference"])
@@ -1217,14 +1375,37 @@ def _load_selected_water(handle, context, runner, generation):
     return token
 
 
-def recover_active_water_boundary_store(path, *, expected_store_file_sha256, limits=c._DEFAULT):
+def _load_selected_wind(handle, context, runner, generation):
+    from masy import dense_active_wind_checkpoint as wind, dense_wind_pause as pause
+    from masy.clock import decode_time
+    ref = generation["active_ref"]
+    token = wind.load_wind_pause(context, runner, attempt=_managed(handle) / ref["attempt_name"],
+        expected_export_sha256=ref["export_sha256"], runtime_reference=handle._header["runtime_reference"])
+    lease = pause._lease(runner, token)
+    if (lease.ordinal != ref["ordinal"] or lease.pauses != ref["pauses"]
+            or lease.origin.hex() != ref["origin_s"]
+            or decode_time(lease.progress["native_time"]).hex() != ref["native_time_s"]
+            or c._sha(c.oi._json([x.hex() for x in lease.prepared.plan])) != ref["plan_sha256"]):
+        c._fail("active_wind_reference", "genuine Native restore progress differs from selected metadata")
+    return token
+
+
+def _load_selected(handle, context, runner, generation):
+    if _combined(handle._header) and generation["active_ref"]["process_kind"] == "wind":
+        return _load_selected_wind(handle, context, runner, generation)
+    return _load_selected_water(handle, context, runner, generation)
+
+
+def _recover_active_store(path, *, expected_store_file_sha256, limits=c._DEFAULT, combined=False):
     """Validate exactly selected revision, with real wet LOAD and zero transport."""
     c.BoundaryStoreLimits.__post_init__(limits)
     c._digest(expected_store_file_sha256, "external exact active STORE SHA")
     # Unknown stored W is not used until typed header admission; this fixed
     # metadata prefix is admitted against the original independent C bound.
-    _reservation(limits, 0)
-    _declare()
+    _protocol = {"schema": SCHEMA_PROCESS if combined else SCHEMA,
+                 "profile": PROFILE_PROCESS if combined else PROFILE}
+    _reservation(limits, 0, combined=combined)
+    _declare_for(_protocol)
     handle = c.DenseBoundaryStore._open(path, limits, create=False)
     context = None
     try:
@@ -1234,6 +1415,8 @@ def recover_active_water_boundary_store(path, *, expected_store_file_sha256, lim
         if c._sha(raw) != expected_store_file_sha256:
             c._fail("store_identity", "actual externally selected STORE differs")
         _header_fields(header, limits)
+        if _combined(header) is not combined:
+            c._fail("store_identity", "explicit recovery format differs from stored profile")
         handle._header, handle._store_raw = header, raw
         handle._stable()
         head, head_raw = handle._head()
@@ -1244,13 +1427,13 @@ def recover_active_water_boundary_store(path, *, expected_store_file_sha256, lim
         state = _idle_state(handle, head, prepared, chain[0][1])
         selected_generation = chain[0][1]
         del prepared, chain
-        if head["kind"] == "water_paused":
+        if _paused(head):
             handle._entered = True
             c._new_runtime_validation(handle)
             context = _borrow_parent(handle, None)
             context.__enter__()
             runner = context.take_runner()
-            _load_selected_water(handle, context, runner, selected_generation)
+            _load_selected(handle, context, runner, selected_generation)
             _close_parent(context)
             c._drop_runtime_validation(handle)
             context = None
@@ -1302,7 +1485,7 @@ def _reserve_attempt(handle, selected, anchor, request_intent, operation, reques
             os.fsync(directory)
         finally:
             os.close(directory)
-        intent = _seal_control({"schema": SCHEMA + ".intent", "store_id": handle._header["store_id"],
+        intent = _seal_control({"schema": _schema(handle._header) + ".intent", "store_id": handle._header["store_id"],
             "attempt_id": attempt, "revision": revision, "accepted_sequence": sequence,
             "expected_parent_head_file_sha256": None if selected is None else c._sha(c.oi._json(selected)),
             "expected_parent_generation": None if selected is None else selected["generation_name"],
@@ -1312,7 +1495,7 @@ def _reserve_attempt(handle, selected, anchor, request_intent, operation, reques
             "source_identity": handle._header["source_identity"],
             "environment_sha256": handle._header["environment_sha256"]}, "intent_sha256",
             handle._limits.max_intent_bytes, "active reserved intent")
-        _intent_fields(intent, handle._limits)
+        _intent_fields(intent, handle._limits, header=handle._header)
         c._write(path / "intent.json", c.oi._json(intent))
         fd = c.oi._open_dir(path)
         try:
@@ -1330,7 +1513,7 @@ def _seal_generation(handle, directory, intent, selected, anchor, image, kind, w
     manifest, _raw = c._image_for(header, handle._root, image, limits)
     receipt = c._receipt(manifest)
     sequence = manifest["state"]["next_index"]
-    if (kind not in _KINDS
+    if (kind not in _kinds(header)
             or intent["revision"] != (0 if selected is None else selected["revision"] + 1)
             or intent["expected_parent_generation"] != (None if selected is None else selected["generation_name"])
             or intent["expected_parent_head_file_sha256"] != (None if selected is None else c._sha(c.oi._json(selected)))
@@ -1339,7 +1522,7 @@ def _seal_generation(handle, directory, intent, selected, anchor, image, kind, w
             or sequence != intent["accepted_sequence"] + (kind == "event_accepted")):
         c._fail("active_generation", "sealed intent/selected/anchor/output cursor")
     store_sha = c._sha(handle._store_raw)
-    ack = {"schema": SCHEMA + ".ack", "store_id": header["store_id"],
+    ack = {"schema": _schema(header) + ".ack", "store_id": header["store_id"],
         "event_operation_id": intent["event_operation_id"], "request_id": intent["request_id"],
         "request_intent": copy.deepcopy(intent["request_intent"]), "returned_kind": kind,
         "revision": intent["revision"], "accepted_sequence": sequence,
@@ -1348,7 +1531,7 @@ def _seal_generation(handle, directory, intent, selected, anchor, image, kind, w
         "pause_count": None if water_ref is None else water_ref["pauses"],
         "completion_receipt_sha256": (c._sha(receipt) if kind == "event_accepted" and receipt is not None
                                       else None)}
-    generation = _seal_control({"schema": SCHEMA + ".generation", "store_id": header["store_id"],
+    generation = _seal_control({"schema": _schema(header) + ".generation", "store_id": header["store_id"],
         "store_file_sha256": store_sha, "attempt_id": intent["attempt_id"],
         "revision": intent["revision"], "accepted_sequence": sequence, "kind": kind,
         "parent_head_record": copy.deepcopy(selected),
@@ -1360,7 +1543,7 @@ def _seal_generation(handle, directory, intent, selected, anchor, image, kind, w
         "intent_file_sha256": c._sha(c.oi._json(intent)), "image": image,
         "accepted_summary": c._summary(manifest),
         "accepted_receipt_sha256": None if receipt is None else c._sha(receipt),
-        "water_ref": copy.deepcopy(water_ref), "ack_core": ack,
+        _ref_key(header): copy.deepcopy(water_ref), "ack_core": ack,
         "ack_core_sha256": c._sha(c.oi._json(ack))}, "generation_sha256",
         limits.max_generation_bytes, "active generation")
     raw = _metadata_bytes(generation, limits.max_generation_bytes, "active generation")
@@ -1390,7 +1573,7 @@ def acknowledge(handle, expected_parent, *, request_kind, boundary_ordinal=None)
     """Metadata-only lost-ACK query; no Native LOAD, transport or implicit retry."""
     handle._binding()
     c._digest(expected_parent, "expected selected parent token")
-    intent = _intent(request_kind, boundary_ordinal)
+    intent = _intent_for(request_kind, boundary_ordinal, handle._header)
     if handle._entered:
         c._fail("handle_reentrant", "one store operation at a time")
     if handle._state.phase != "idle":
@@ -1411,7 +1594,9 @@ def _paused_state(handle, head, work, diagnostics_raw, generation):
     # Actual B diagnostics were captured from the real loaded accepted A before
     # Native work. Actual export checks reverified A before/after writer IO.
     diagnostics = c.oi._strict_json(diagnostics_raw, c._JSON)
-    diagnostics["active_water"] = copy.deepcopy(generation["water_ref"])
+    diagnostics[_progress_key(handle._header)] = copy.deepcopy(generation[_ref_key(handle._header)])
+    if _combined(handle._header):
+        diagnostics["next_event_kind"] = _next_kind(work)
     report_ = work.report()
     if c.oi._json(report_["accepted"]) != c.oi._json(generation["accepted_summary"]):
         c._fail("readback_identity", "unaccepted water changed actual accepted A")
@@ -1428,7 +1613,7 @@ def _operate(handle, expected_parent, request_intent):
     from masy import dense_active_checkpoint as a, dense_water_pause as pause
     handle._binding()
     c._digest(expected_parent, "expected selected parent token")
-    request_intent = _check_intent(request_intent)
+    request_intent = _check_intent_for(request_intent, handle._header)
     if handle._entered:
         c._fail("handle_reentrant", "one store operation at a time")
     if handle._state.phase != "idle":
@@ -1457,7 +1642,19 @@ def _operate(handle, expected_parent, request_intent):
             return answer
         if old.report["status"] == "complete" or selected["accepted_sequence"] >= handle._limits.image.max_events:
             c._fail("schedule_complete", "all original events accepted")
-        if request_intent["kind"] == "checkpoint_water" and selected["kind"] == "water_paused":
+        if _combined(handle._header):
+            expected_kind = old.diagnostics["next_event_kind"]
+            requested_kind = {"checkpoint_water": "rain", "checkpoint_wind": "wind"}.get(request_intent["kind"])
+            if requested_kind is not None and requested_kind != expected_kind:
+                c._fail("active_process_kind", "request differs from the actual next accepted-anchor event")
+            if _paused(selected) and request_intent["kind"] != "finish":
+                if selected["pause_count"] >= _MAX_PAUSES:
+                    c._fail("wind_pause_limit" if selected["kind"] == "wind_paused" else "water_pause_limit",
+                            "unchanged at most two pauses per event")
+                if request_intent["boundary_ordinal"] <= selected["pause_ordinal"]:
+                    c._fail("wind_pause_ordinal" if selected["kind"] == "wind_paused" else "water_pause_ordinal",
+                            "original ordinal must strictly increase")
+        if request_intent["kind"] == "checkpoint_water" and _paused(selected):
             if selected["pause_count"] >= _MAX_PAUSES:
                 c._fail("water_pause_limit", "unchanged at most two wet pauses per event")
             if request_intent["boundary_ordinal"] <= selected["pause_ordinal"]:
@@ -1475,18 +1672,36 @@ def _operate(handle, expected_parent, request_intent):
         work = context.take_runner()
         diagnostics_raw = _selection(context).diagnostics_raw
         handle._failed_owner = work
-        token = (_load_selected_water(handle, context, work, chain[0][1])
-                 if selected["kind"] == "water_paused" else None)
+        token = (_load_selected(handle, context, work, chain[0][1])
+                 if _paused(selected) else None)
         # Drop old full metadata rows before Native work; all accepted versions
         # remain retained on disk and revalidated by actual parent checks.
         chain = None
-        if request_intent["kind"] == "checkpoint_water":
+        wind = None
+        if _combined(handle._header):
+            from masy import dense_wind_pause as wind
+            actual_kind = _next_kind(work)
+            if actual_kind != old.diagnostics["next_event_kind"]:
+                c._fail("active_process_kind", "actual loaded anchor schedule differs from preflight metadata")
+            if actual_kind == "wind" and request_intent["kind"] == "finish" and token is None:
+                # Checkpoint/resume already perform their unchanged owning
+                # profile/runtime checks. Ordinary step has no pause entry.
+                _wind_profile(work, handle._header["runtime_reference"])
+        if request_intent["kind"] == "checkpoint_wind":
+            ordinal = request_intent["boundary_ordinal"]
+            result = (wind.pause_wind(work, runtime_reference=handle._header["runtime_reference"],
+                                      boundary_ordinal=ordinal) if token is None
+                      else wind.resume_wind(work, token, boundary_ordinal=ordinal))
+        elif request_intent["kind"] == "checkpoint_water":
             ordinal = request_intent["boundary_ordinal"]
             result = (pause.pause_water(work, runtime_reference=handle._header["runtime_reference"],
                                       boundary_ordinal=ordinal) if token is None
                       else pause.resume_water(work, token, boundary_ordinal=ordinal))
         else:
-            result = work.step() if token is None else pause.resume_water(work, token)
+            if wind is not None and selected["kind"] == "wind_paused":
+                result = wind.resume_wind(work, token)
+            else:
+                result = work.step() if token is None else pause.resume_water(work, token)
         if type(result) is pause._WaterToken:
             lease = pause._lease(work, result)
             export_path = _managed(handle) / directory.name
@@ -1495,18 +1710,45 @@ def _operate(handle, expected_parent, request_intent):
                      "ordinal": lease.ordinal, "pauses": lease.pauses,
                      "origin_s": lease.origin.hex(), "native_time_s": float(lease.progress.result.state.t_s).hex(),
                      "plan_sha256": c._sha(c.oi._json([x.hex() for x in lease.plan]))}
+            if _combined(handle._header):
+                water = {"process_kind": "water", **water}
             # A second real accepted-A parent and actual anchored Native LOAD
             # prove the new child; metadata-only hash checks never replace it.
             reader_context = _borrow_parent(handle, intent)
             reader_context.__enter__()
             reader = reader_context.take_runner()
-            _load_selected_water(handle, reader_context, reader, {"water_ref": water})
+            _load_selected_water(handle, reader_context, reader, {_ref_key(handle._header): water})
             _close_parent(reader_context)
             reader_context = None
             reader = None
             image = anchor_generation["image"]
             head = _seal_generation(handle, directory, intent, selected, anchor,
                                      image, "water_paused", water)
+            generation = c._record(directory / "generation.json", handle._limits.max_generation_bytes,
+                                    links=c._published_links(directory, "generation.json"))[0]
+            state = _paused_state(handle, head, work, diagnostics_raw, generation)
+        elif wind is not None and type(result) is wind._WindToken:
+            from masy import dense_active_wind_checkpoint as checkpoint
+            from masy.clock import decode_time
+            lease = wind._lease(work, result)
+            export_sha = checkpoint.export_wind_pause(context, work, result,
+                                                       attempt=_managed(handle) / directory.name)
+            active = {"process_kind": "wind", "attempt_name": directory.name,
+                "export_sha256": export_sha, "ordinal": lease.ordinal, "pauses": lease.pauses,
+                "origin_s": lease.origin.hex(),
+                "native_time_s": decode_time(lease.progress["native_time"]).hex(),
+                "plan_sha256": c._sha(c.oi._json([x.hex() for x in lease.prepared.plan]))}
+            # Exactly the same fresh accepted-A context discipline as wet LOAD:
+            # real codec restore/progress, then genuine abandon before HEAD.
+            reader_context = _borrow_parent(handle, intent)
+            reader_context.__enter__()
+            reader = reader_context.take_runner()
+            _load_selected_wind(handle, reader_context, reader, {"active_ref": active})
+            _close_parent(reader_context)
+            reader_context = None
+            reader = None
+            head = _seal_generation(handle, directory, intent, selected, anchor,
+                                     anchor_generation["image"], "wind_paused", active)
             generation = c._record(directory / "generation.json", handle._limits.max_generation_bytes,
                                     links=c._published_links(directory, "generation.json"))[0]
             state = _paused_state(handle, head, work, diagnostics_raw, generation)
@@ -1563,7 +1805,8 @@ def _operate(handle, expected_parent, request_intent):
                 and primary.code in ("schedule_complete", "water_pause_limit",
                     "water_pause_ordinal", "request_conflict", "request_not_published",
                     "stale_parent", "memory_cap", "store_cap", "storage_cap",
-                    "orphan_cap", "metadata_cap")):
+                    "orphan_cap", "metadata_cap") + (("active_process_kind", "wind_pause_limit",
+                    "wind_pause_ordinal") if _combined(handle._header) else ())):
             # Closed known policy refusal: no reservation/Native work/file
             # mutation occurred. Identity/source/IO/unknown failures still halt.
             handle._state = old
@@ -1589,8 +1832,36 @@ def step(handle, expected_parent):
     return _operate(handle, expected_parent, _intent("finish"))
 
 
+def checkpoint_wind(handle, expected_parent, *, boundary_ordinal):
+    if not _combined(handle._header):
+        c._fail("store_profile", "wind pause requires the explicit active-process format")
+    return _operate(handle, expected_parent, _intent_for("checkpoint_wind", boundary_ordinal, handle._header))
+
+
+def create_active_water_boundary_store(path, *, runner, originals, runtime_reference,
+                                       limits=c._DEFAULT, storage_contract):
+    return _create_active_store(path, runner=runner, originals=originals,
+        runtime_reference=runtime_reference, limits=limits, storage_contract=storage_contract)
+
+
+def recover_active_water_boundary_store(path, *, expected_store_file_sha256, limits=c._DEFAULT):
+    return _recover_active_store(path, expected_store_file_sha256=expected_store_file_sha256, limits=limits)
+
+
+def create_active_process_boundary_store(path, *, runner, originals, runtime_reference,
+                                         limits=c._DEFAULT, storage_contract):
+    return _create_active_store(path, runner=runner, originals=originals,
+        runtime_reference=runtime_reference, limits=limits, storage_contract=storage_contract, combined=True)
+
+
+def recover_active_process_boundary_store(path, *, expected_store_file_sha256, limits=c._DEFAULT):
+    return _recover_active_store(path, expected_store_file_sha256=expected_store_file_sha256,
+                                  limits=limits, combined=True)
+
+
 def _reservation_for_handle(handle, work_bytes, chain_charge=0):
-    original = _reservation(handle._limits, work_bytes, chain_charge)
+    original = _reservation(handle._limits, work_bytes, chain_charge,
+                            combined=_combined(handle._header))
     owner = c._checked_runtime_validation(handle)
     if owner is None:
         return original
@@ -1598,11 +1869,25 @@ def _reservation_for_handle(handle, work_bytes, chain_charge=0):
     if charge is None:
         c._drop_runtime_validation(handle)
         return original
-    # Independent reference-admission and all modified/new AW frame roles.
+    # Independent reference admission and a conservative finite union of
+    # actual modified/new old-water metadata frame roles. Existing native
+    # arrays/codec admission is unchanged; this is not a heap/CPU-fit law.
     extra = (charge['bytes'] + 2 * _parse_charge(c._RUNTIME_REUSE_REFERENCE_BYTES)
-             + c.rw._compiled_frame_charge((_reservation_for_handle, _stable, _admit,
-                                            _load, _prepare_anchor, _operate,
-                                            recover_active_water_boundary_store)))
+             + c.rw._compiled_frame_charge((
+                 _reservation_for_handle, _reservation, _stable, _admit,
+                 _load, _prepare_anchor, _operate, _recover_active_store,
+                 recover_active_water_boundary_store, _load_selected, _load_selected_water, _combined,
+                 _schema, _profile_name, _kinds, _store_fields,
+                 _generation_fields_list, _water_fields, _ref_key, _managed_key,
+                 _progress_key, _sibling_prefix, _paused, _same_format,
+                 _pause_fields_for, _intent_for, _check_intent_for, _active_reference,
+                 _generation_chain, _generation_fields, _head, _head_fields,
+                 _head_record, _header_fields, _idle_state, _intent_fields,
+                 _inventory_at, _managed_at, _metadata_stat_charge, _parent_light,
+                 _paused_state, _request_id, _reserve_attempt, _seal_generation,
+                 _temporary_heads, _water_reference, _borrow_parent, _ack_fields,
+                 _acknowledgement, report, acknowledge,
+             )))
     if original['memory_bytes'] + extra > handle._limits.max_memory_bytes:
         # Optional optimization only: no cache rows, full original validation.
         c._drop_runtime_validation(handle)

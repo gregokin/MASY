@@ -66,6 +66,7 @@ class _WindLease:
     entry_metadata_sha256: str = ""
     entry_ids: tuple = ()
     reservation: Any = None
+    cold_binding: Any = None
 
 
 def _fail(code: str, detail: str) -> None:
@@ -359,6 +360,7 @@ def _halt(runner: Any, lease: _WindLease, stop: Any, api: Any):
         return runner._stop(lease.index, "wind", lease.origin, closed)
     finally:
         lease.prepared = lease.native_token = None
+        lease.cold_binding = None
 
 
 def _outcome(runner: Any, lease: _WindLease, item: Any, ordinal: int | None, api: Any):
@@ -375,9 +377,13 @@ def _outcome(runner: Any, lease: _WindLease, item: Any, ordinal: int | None, api
             actual = (item.advanced_start_time_s, item.advanced_duration_s, item.advanced_end_time_s)
             if tuple(lease.prepared.ops.scalar(v).hex() for v in actual) != tuple(lease.progress['advanced_hex']):
                 _fail("wind_progress_changed", "native original advanced anchors changed")
+        if lease.cold_binding is not None:
+            from masy import dense_active_wind_checkpoint as checkpoint
+            item = checkpoint.bind_completed_result(runner, lease, item)
         lease.phase = "finishing"
         result = dr._wind_accept(runner, lease.index, lease.event, lease.resolved, lease.prepared, item)
         lease.phase, lease.prepared, lease.native_token, lease.token = "closed", None, None, None
+        lease.cold_binding = None
         return result
     if type(item) is not api.continuation.WindContinuationToken or ordinal is None:
         _fail("wind_pause_result", "only genuine native completion or requested paused token is accepted")
