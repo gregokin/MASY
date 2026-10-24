@@ -61,6 +61,12 @@ _PROCESS_STORE = (*tuple("managed_active" if x == "managed_water" else x for x i
                   "event_kinds", _STORE[-1])
 _PROCESS_GENERATION = tuple("active_ref" if x == "water_ref" else x for x in _GENERATION)
 _PROCESS_REF = ("process_kind", *_WATER)
+# Cold wind re-export changes the encoded native/local/global clocks and step
+# index as well as ordinal.  A signed finite binary64 difference has at most
+# 632 numerator digits and 324 denominator digits: two quoted rational values
+# (960 each), one encoded native time (1006), step index (4), and ordinal growth
+# (3).  This bounds constructor bytes BEFORE the unchanged 1 MiB wire refusal.
+_COMBINED_CAPSULE_GROWTH_BYTES = 2933
 
 
 def _combined(value):
@@ -780,6 +786,7 @@ def _metadata_stat_charge(handle, inventory):
     metadata_sizes = []
     image_max = 0
     generation_count = 0
+    combined_future_peak = 0
     root = handle._root
     directory = c.oi._open_dir(root / "generations")
     try:
@@ -831,21 +838,28 @@ def _metadata_stat_charge(handle, inventory):
             info = capsule.lstat()
             if not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= 1 << 20:
                 c._fail("active_memory", "actual raw capsule cap before future capture metadata")
-            # A cold re-export preserves every original capsule field except
-            # ordinal (at most four digits), pause count and fixed-length SHAs.
-            # Its canonical wire can grow by at most three ordinal bytes.
-            # Charge both a whole new capsule graph and its schedule-comparison
-            # constructor/wire occurrence. Native arrays/codec stay under W.
-            future = min(1 << 20, info.st_size + 3)
-            existing += 2 * _parse_charge(future)
             if _combined(handle._header):
+                # Keep EVERY current capsule occurrence.  Only one selected
+                # cold child can be exported by an operation; its future two
+                # constructor/comparison families are bounded by the maximum
+                # over all candidates, including orphans.  Do not clamp a
+                # constructor to the wire cap: it may exist before refusal.
                 existing += _parse_charge(info.st_size)
+                combined_future_peak = max(combined_future_peak, _parse_charge(
+                    info.st_size + _COMBINED_CAPSULE_GROWTH_BYTES))
+            else:
+                # Preserve the original water-only arithmetic and wire domain.
+                future = min(1 << 20, info.st_size + 3)
+                existing += 2 * _parse_charge(future)
     # _load -> _prepare_anchor can retain a caller chain while validating a
     # second. _operate -> _borrow_parent -> _parent_light, including the
     # temporary-HEAD validation within _stable, has at most THREE chain
     # receiver families. Charge every row/parse/hash occurrence at all three
     # roles without alias credit; current early local drops do not lower U.
-    return 3 * existing
+    # Preserve all three current history/descriptor/capsule receiver families.
+    # The two prospective families are still paid at EACH of those three
+    # roles, including primary/export-close OR primary/reader/work-close errors.
+    return 3 * existing + 6 * combined_future_peak
 
 
 def _reservation(limits, work_bytes, chain_charge=0, *, combined=False):

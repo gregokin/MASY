@@ -41,3 +41,27 @@ A pre-HEAD error retains old selected authority plus truthful unselected evidenc
 The new Source tests use the original C6/V3/K6 Tiny constructors, explicit dormancy OFF,1s wind at0.025s outer intervals and the existing rain/recession fixture. They are synthetic interface coverage, not production calibration. Positives use genuine constructors, C, Native codecs and continuation APIs. Negative tripwires and forged control DATA never certify a physical run.
 
 Proposed first codec node is `GenuineColdWind.test_first_genuine_codec_cold_resume_exactly_matches_native`; proposed first store node is `GenuineActiveProcess.test_first_genuine_active_wind_publication`. Root must collect/freeze actual nodes under a genuinely new compatible immutable runtime before execution. Larger Source-defined cases include two pauses/re-export, exact uninterrupted parity, both process tags and four events, control-shell identity, raw refusal, old-water regression, selected recovery and exactly-once ACKs. They may require separate singleton gates under unchanged CPU/wall limits. The fixed writer never spawns; Root must reap/pin it and launch a separate fresh reader. Real pre/post-HEAD process death, full default regressions, current-pair runtime and any production/GPU/windowed use remain separate qualifications.
+
+
+### Cold-capsule memory reservation
+
+The combined process store retains every current generation, image, export
+descriptor and capsule charge, including repeated receivers and orphan files.
+One operation exports at most one selected cold child. Its two prospective
+capsule/comparison families are reserved at each of the three existing receiver
+roles using the largest candidate extent, rather than a future export for every
+historical capsule. The old water-only formula is unchanged.
+
+The prospective combined constructor uses the actual saved capsule size plus
+2,933 bytes, without clamping to the unchanged 1 MiB wire limit. This includes
+changing native/local/global clock representations, step index and ordinal;
+the old three-byte ordinal allowance alone did not cover wind progress. The
+bound follows finite binary64 rational/hex representation lengths and changes
+no clock or timestep. Oversized actual wire files still refuse.
+
+All original C, two active-work, codec, context, future-image, hash, disk,
+entry, headroom and 6 GiB store-memory limits remain in force. The bound grants
+no fit or completion guarantee. Native continuation and candidate files can
+precede a later validation refusal; HEAD remains the accepted authority and all
+old and unadopted versions remain retained. New Source requires a fresh runtime
+and store; existing stores are never silently upgraded.
