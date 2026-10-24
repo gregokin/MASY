@@ -611,6 +611,8 @@ def _inventory_at(root, header, limits, root_identity, *, sibling=True):
                 _name(name, int(c._GEN.fullmatch(name)[1]) if type(name) is str and c._GEN.fullmatch(name) else -1)
                 if int(c._GEN.fullmatch(name)[1]) > _MAX_REVISION:
                     c._fail("active_inventory", "water attempt revision")
+                if _MIXED_OPERATION_SLOT is not None and _mixed_v2_active():
+                    _mixed_v2_insert(root, limits, 'water', water, name)
                 water.add(name)
                 return True, 0
             pieces = relative.split("/")
@@ -633,6 +635,8 @@ def _inventory_at(root, header, limits, root_identity, *, sibling=True):
         if not relative:
             match = c._TEMP.fullmatch(name)
             if match:
+                if _MIXED_OPERATION_SLOT is not None and _mixed_v2_active():
+                    _mixed_v2_insert(root, limits, 'temps', temps, match[1])
                 temps.add(match[1]);return False, limits.max_head_bytes
             if name in ("originals", "generations", ".storage_probe"):
                 return True, 0
@@ -645,6 +649,8 @@ def _inventory_at(root, header, limits, root_identity, *, sibling=True):
         elif relative == "generations":
             match = c._GEN.fullmatch(name)
             if match and int(match[1]) <= _MAX_REVISION:
+                if _MIXED_OPERATION_SLOT is not None and _mixed_v2_active():
+                    _mixed_v2_insert(root, limits, 'generations', generations, name)
                 generations.add(name);return True, 0
         elif re.fullmatch(r"generations/g-[0-9]{4}-[0-9a-f]{32}", relative):
             if name in ("physical", "image"):
@@ -1144,6 +1150,8 @@ def _compact_generation_chain(root, header, store_sha, head, limits):
     while True:
         if len(chain) >= _MAX_CHAIN:
             c._fail('active_chain','derived25-row chain before append')
+        if _mixed_v2_active():
+            _mixed_v2_row_check(root, limits, len(chain))
         row = _validated_compact_chain_row(root, header, store_sha, current, limits, child, seen)
         chain.append(row)
         child = row
@@ -1580,7 +1588,10 @@ def _recover_active_store(path, *, expected_store_file_sha256, limits=c._DEFAULT
     # metadata prefix is admitted against the original independent C bound.
     _protocol = {"schema": SCHEMA_PROCESS if combined else SCHEMA,
                  "profile": PROFILE_PROCESS if combined else PROFILE}
-    _reservation(limits, 0, combined=combined)
+    if combined and _MIXED_OPERATION_SLOT is not None and _mixed_v2_active():
+        _reservation(limits, 0, _mixed_v2_prefix_charge(path, limits), combined=combined)
+    else:
+        _reservation(limits, 0, combined=combined)
     _declare_for(_protocol)
     handle = c.DenseBoundaryStore._open(path, limits, create=False)
     context = None
@@ -2374,11 +2385,15 @@ class _MixedMetadataOperation:
             reference = dict(zip(('path', 'size', 'sha256'), self._reference, strict=True))
             raw = _mixed_read_ref(reference, 'Root implementation proof')
             record = c.oi._strict_json(raw, c._JSON)
-            c._keys(record, ('schema', 'root', 'runtime_reference_sha256', 'source_identity',
-                'environment_sha256', 'process', 'nonce', 'ordinal', 'implementation_files',
-                'selected_ids', 'public_CPython_Source', 'linkage', 'Source_census',
-                'units', 'observer'), 'Root mixed metadata implementation')
+            if type(record) is dict and record.get('schema') == _MIXED_V2_SCHEMA:
+                c._keys(record, _MIXED_V2_TOP_FIELDS, 'Root mixed metadata implementation v2')
+            else:
+                c._keys(record, ('schema', 'root', 'runtime_reference_sha256', 'source_identity',
+                    'environment_sha256', 'process', 'nonce', 'ordinal', 'implementation_files',
+                    'selected_ids', 'public_CPython_Source', 'linkage', 'Source_census',
+                    'units', 'observer'), 'Root mixed metadata implementation')
             if (record['schema'] != 'masy.mixed_metadata_Root_implementation.v1'
+                    and record['schema'] != _MIXED_V2_SCHEMA
                     or record['root'] != str(self._root)
                     or record['runtime_reference_sha256'] != c._sha(self._runtime_raw)):
                 c._fail('mixed_implementation', 'exact Root proof/runtime/store subject')
@@ -2415,6 +2430,8 @@ class _MixedMetadataOperation:
             self._nonce, self._ordinal = record['nonce'], record['ordinal']
             self._raw, self._record = raw, record
             self._image = _mixed_scope_image()
+            if record['schema'] == _MIXED_V2_SCHEMA:
+                self._counts['typed_image'] = _mixed_v2_admit(record, self._limits, self._image)
             if not c.rw._same_compiled_image(initial_image, self._image):
                 c._fail('mixed_implementation', 'entry Source image changed')
             self._fixed = _mixed_operation_charge(self)
@@ -2597,6 +2614,8 @@ def _mixed_operation_charge(owner):
     bootstrap = _mixed_pre_entry_charge(owner._limits, owner._image)
     header = (sys.getsizeof(owner) + len(owner.__slots__) * (units['pointer'] + units['integer'])
               + 8 * (units['dict'] + units['list'] + units['tuple']))
+    if owner._record['schema'] == _MIXED_V2_SCHEMA:
+        return bootstrap + cycles + runtime_cycles + header + _mixed_v2_charge(owner)
     return bootstrap + cycles + runtime_cycles + header
 
 
@@ -2606,7 +2625,9 @@ def _mixed_entry(root, kind, *, request_kind=None):
         return None
     if (type(owner) is not _MixedMetadataOperation or owner._key is not _MIXED_OWNER_KEY
             or owner._phase != 'entered' or Path(root).absolute() != owner._root
-            or owner._entry_kind is not None or kind not in ('recover', 'operate', 'ack')):
+            or owner._entry_kind is not None
+            or (kind not in ('recover', 'operate', 'ack')
+                and not _mixed_v2_readonly_kind(owner, kind))):
         c._fail('mixed_implementation', 'one genuine public operation in the owning context')
     if kind == 'operate' and request_kind not in ('finish', 'checkpoint_water', 'checkpoint_wind'):
         c._fail('mixed_implementation', 'typed original request before any forecast')
@@ -2618,7 +2639,9 @@ def _mixed_entry(root, kind, *, request_kind=None):
 def _mixed_context_check(root, header, limits, *, where):
     owner = _MIXED_OPERATION_SLOT
     if (type(owner) is not _MixedMetadataOperation or owner._key is not _MIXED_OWNER_KEY
-            or owner._phase != 'entered' or owner._entry_kind not in ('recover', 'operate', 'ack')
+            or owner._phase != 'entered'
+            or (owner._entry_kind not in ('recover', 'operate', 'ack')
+                and not _mixed_v2_readonly_kind(owner, owner._entry_kind))
             or owner._root != Path(root).absolute() or owner._limits is not limits):
         c._fail('mixed_implementation', 'same unescaped operation PID/birth/thread/root')
     _mixed_process_check(owner)
@@ -2636,6 +2659,9 @@ def _mixed_context_check(root, header, limits, *, where):
             or _mixed_implementation_files() != owner._files
             or _mixed_observer_record() != owner._observer):
         c._fail('mixed_implementation', 'Source/function/dispatch/compiled/observer currentness')
+    if owner._record['schema'] == _MIXED_V2_SCHEMA:
+        if not c.rw._same_compiled_image(owner._counts['typed_image'], _mixed_v2_external_image()):
+            c._fail('mixed_implementation', 'current typed constructor/provider/observer image')
     reference = dict(zip(('path', 'size', 'sha256'), owner._reference, strict=True))
     if _mixed_read_ref(reference, 'Root implementation proof') != owner._raw:
         c._fail('mixed_implementation', 'immutable Root evidence changed')
@@ -2814,6 +2840,8 @@ def _mixed_before_native(handle, request_intent):
     if owner._ticket['request_kind'] != request_intent['kind']:
         c._fail('mixed_implementation', 'same typed request outcome alternatives')
     inventory = _inventory(handle)
+    if _mixed_v2_active() and inventory['temps']:
+        c._fail('mixed_implementation', 'v2 mutation refuses existing HEAD temporaries')
     _reservation_for_handle(handle, handle._header['native_work_bytes'],
                             _metadata_stat_charge(handle, inventory))
 
@@ -2891,3 +2919,283 @@ def _mixed_assign_attempt(handle, directory, intent):
         c._fail('mixed_implementation', 'actual reserved C intent path required')
     owner._ticket['revision'] = intent['revision']
     owner._ticket['attempt'] = intent['attempt_id']
+
+
+# --- v2 typed/backing lane; ephemeral only, no persistent wire-format change ---
+_MIXED_V2_SCHEMA = 'masy.mixed_metadata_Root_implementation.v2'
+_MIXED_V2_TOP_FIELDS = ('schema', 'root', 'runtime_reference_sha256', 'source_identity',
+    'environment_sha256', 'process', 'nonce', 'ordinal', 'implementation_files',
+    'selected_ids', 'public_CPython_Source', 'linkage', 'Source_census', 'units',
+    'observer', 'typed_ownership')
+_MIXED_V2_DOMAIN = (['generations', 9], ['temps', 1], ['water', 4], ['revision', 8], ['rows', 9])
+_MIXED_V2_COEFFICIENTS = (('Gamma_NS', 7358), ('Gamma_Image', 1468), ('Gamma_Original', 7), ('Gamma_Heap', 12), ('Gamma_plain', 3774), ('Gamma_I', 265), ('Gamma_H', 2), ('Gamma_A', 3), ('Gamma_T', 29), ('Gamma_D', 146), ('Gamma_F', 192), ('Gamma_L', 2), ('Gamma_E', 9), ('Gamma_Observer', 1))
+_MIXED_V2_EXPRESSIONS = (('Gamma_NS', 'Fun_visit+Tuple_3+Cells_3+complete_three_field_namespace_holder+bounded_nodes_and_limit_scalars'), ('Gamma_Image', 'Fun_visit+Tuple_3+Cells_3+complete_BoundaryImageLimits_holder+bounded_nodes_and_limit_scalars'), ('Gamma_Original', 'Fun_visit+Tuple_3+Cells_3+complete_OriginalPackLimits_holder+bounded_nodes_and_limit_scalars'), ('Gamma_Heap', 'Fun_visit+Tuple_3+Cells_3+complete_fresh_ReferenceLimits_type_and_instance+bounded_nodes_and_limit_scalars'), ('Gamma_plain', 'Fun_visit+Tuple_8+Cells_8+Set_33+five_bounded_integer_owners+Text_4096+all_captured_scalar_reference_slots'), ('Gamma_I', 'Fun_role+Fun_walk+Tuple_5+Tuple_5+Cells_10+Set_9_names39+Set_1_names32+Set_4_names39+complete_captured_header+complete_captured_limits+bounded_count_used_scalars'), ('Gamma_H', 'Fun_count_states+Tuple_2+Cells_2+bounded_state_counter'), ('Gamma_A', 'Fun_array+Fun_replace+Tuple_2+Tuple_3+Cells_5+complete_Native_encoded_array_registry+complete_hash_cache+all_registry_Root_R_occurrences+complete_captured_native_namespace'), ('Gamma_T', 'Fun_mark+Fun_walk+Tuple_1+Tuple_11+Cells_12+four_counters+hash_owner+complete_schema_and_bounds_metadata+Set_33+Dict_1024_array_registry+Tuple_1024_return+all_registry_and_return_Root_R_occurrences'), ('Gamma_D', 'Fun_charge+Fun_text+Fun_visit+Tuple_4+Tuple_1+Tuple_7+Cells_12+complete_scalar_hash_module_control_owners'), ('Gamma_F', 'Fun_frame+Fun_visit+Tuple_1+Tuple_2+Cells_3+complete_hash_control_owner'), ('Gamma_L', 'Fun_decode+Tuple_9+Cells_9+complete_snapshot_and_terrain_anchor+complete_registry_used_names+complete_closed_archive_and_provider_residual+all_retained_Root_R_occurrences+bounded_decode_scalars'), ('Gamma_E', 'Fun_iterencode_list+Fun_iterencode_dict+Fun_iterencode+Fun_floatstr+Tuple_18+Tuple_21+Tuple_17+Cells_56+floatstr_defaults_Tuple_4+complete_markers_table_and_control_defaults+owned_indent_separator_text+all_captured_bound_default_owners'), ('Gamma_Observer', 'complete unchanged passive snapshot observer factory/template/array-copy/canonical/JSON/digest/returned-record/read/temporary/backing owners plus primary/close errors'), ('X_SchemaAdmission', 'complete v2 admission frame and all fixed 22 component-law records, 32 external owner rows, key/canonical/hash/control temporaries, two bounded3x8 cell and3x4 keyword-prepasses, missing/current Source refusals and ordinary errors'), ('X_ScalarPolynomial', 'complete polynomial/charge frames, 22 uint checks, 14 typed products, 8 independent X products, 22-term validation and key tuples, image/frame-charge traversals, current external-image constructors and bounded 128-bit scalar intermediates'), ('X_InsertCheck', 'complete active/owner/insert frames, genuine PID/thread/root/limits/key/phase checks, Path4096 owner, fixed role/domain tuple and prospective count/name/revision/refusal temporaries'), ('X_RowCheck', 'complete active/owner/row frames, genuine PID/thread/root/limits/key/phase checks, Path4096 owner, row integer and refusal temporaries'), ('X_EntryGate', 'complete prefix or readonly entry/owner frames including existing entry call, Path4096, header/head/read-only intent checks and all scalar/return/error reference slots'), ('X_OwnerRoster', 'complete new fixed schema/domain/22 expression/capacity/law/14-local/32-external/3-type image tables, owner counts entries and all owned names/code/default/global/provider/Source fields; no borrowed-pointer discount'), ('X_InventoryCapture', 'one additional role closure cell and tuple slot plus complete retained root Path and its bounded4096-character path/parts/metadata owners per inventory constructor, with no alias credit'), ('X_Error', 'complete independent new primary/reader-close/work-close exception and traceback/input graph families, including typed proof/source/image/owner descendants; no release or alias credit'))
+_MIXED_V2_EXTERNAL = (('masy.dense_original_inputs', '_strict_json'), ('masy.dense_original_inputs', '_json'), ('masy.dense_boundary_store', '_plain_metadata'), ('masy.dense_water_pause', '_runtime'), ('masy.dense_water_pause', '_bounds'), ('masy.dense_water_pause', '_scan'), ('masy.dense_active_checkpoint', '_native_projection'), ('masy.dense_active_checkpoint', '_header_admission'), ('masy.dense_checkpoint', '_budget'), ('maple.aeolian.scheduler.physical_checkpoint', '_fingerprint'), ('maple_syrup.checkpoint', 'load_checkpoint'), ('maple_syrup.checkpoint', '_terrain_anchor_admission'), ('json.encoder', '_make_iterencode'), ('json.encoder', 'JSONEncoder.iterencode'), ('copy', 'deepcopy'), ('copy', '_deepcopy_dict'), ('copy', '_deepcopy_list'), ('copy', '_deepcopy_tuple'), ('check_dense_active_process_store', 'selected'), ('check_dense_active_process_store', 'retained_child'), ('check_dense_active_process_store', 'accepted_snapshot'), ('check_dense_active_process_checkpoint', 'snapshot'), ('check_dense_water_pause', 'snapshot'), ('masy.dense_runner', '_canonical_input'), ('masy.dense_runner', '_canonical_json'), ('masy.dense_runner_checkpoint', '_cache_fingerprint'), ('masy.dense_runner_checkpoint', '_native_types'), ('masy.dense_runner', '_native'), ('masy.dense_runner', 'DenseRunner.report'), ('masy.dense_bed', 'DenseBed.identity_sha256'), ('masy.dense_bed', '_sha256'), ('maple_syrup.storm', 'initial_state'))
+_MIXED_V2_TYPES = (('masy.dense_original_inputs', 'OriginalPackLimits'), ('masy.dense_runner_checkpoint', 'BoundaryImageLimits'), ('maple_syrup.sediment_event', 'SedimentEventState'))
+_MIXED_V2_LOCAL_NAMES = ('_inventory_at', '_mixed_v2_active', '_mixed_v2_readonly_kind', '_mixed_v2_uint', '_mixed_v2_external_image', '_mixed_v2_owner_rows', '_mixed_v2_admit', '_mixed_v2_polynomial', '_mixed_v2_charge', '_mixed_v2_owner', '_mixed_v2_insert', '_mixed_v2_row_check', '_mixed_v2_prefix_charge', '_mixed_readonly_entry')
+_MIXED_V2_CENSUS_SHA256 = '66157ba2263974669b248d0df6b8e4535b11ce74e255025db8d43c42399805c8'
+
+
+def _mixed_v2_active():
+    owner = _MIXED_OPERATION_SLOT
+    return (type(owner) is _MixedMetadataOperation and type(owner._record) is dict
+            and owner._record.get('schema') == _MIXED_V2_SCHEMA)
+
+
+def _mixed_v2_readonly_kind(owner, kind):
+    return (type(owner._record) is dict and owner._record.get('schema') == _MIXED_V2_SCHEMA
+            and type(kind) is str and kind in ('inspect_metadata', 'inspect_passive_snapshot'))
+
+
+def _mixed_v2_uint(value):
+    if type(value) is not int or not 1 <= value or value.bit_length() > 64:
+        c._fail('mixed_implementation', 'positive plain-int complete typed ownership bound')
+    return value
+
+
+def _mixed_v2_external_image():
+    # Fixed exact loaded owners ONLY. Missing owners refuse; no import, provider
+    # probe, namespace traversal, function replacement or generated wrapper.
+    functions, modules = [], []
+    module = sys.modules[__name__]
+    for name in _MIXED_V2_LOCAL_NAMES:
+        value = globals().get(name)
+        image = c.rw._compiled_function_image(value)
+        if image is None:
+            c._fail('mixed_implementation', 'complete actual v2 local Source image')
+        functions.append(image)
+        modules.append(module)
+    for module_name, path in _MIXED_V2_EXTERNAL:
+        module = sys.modules.get(module_name)
+        if module is None:
+            c._fail('mixed_implementation', 'missing Root-qualified typed Source owner')
+        value = vars(module).get(path.split('.')[0])
+        for part in path.split('.')[1:]:
+            value = vars(value).get(part) if type(value) is type else None
+        image = c.rw._compiled_function_image(value)
+        if image is None:
+            c._fail('mixed_implementation', 'unsupported exact typed function/default/closure owner')
+        functions.append(image)
+        modules.append(module)
+    positions = []
+    for module_name, name in _MIXED_V2_TYPES:
+        module = sys.modules.get(module_name)
+        value = None if module is None else vars(module).get(name)
+        if type(value) is not type:
+            c._fail('mixed_implementation', 'missing exact loaded typed constructor class')
+        initializer = vars(value).get('__init__')
+        if type(initializer) is not c.rw.FunctionType:
+            c._fail('mixed_implementation', 'genuine generated Python constructor required')
+        closure, kw = initializer.__closure__, initializer.__kwdefaults__
+        if ((closure is not None and (type(closure) is not tuple or len(closure) > 8))
+                or (kw is not None and (type(kw) is not dict or len(kw) > 4))):
+            c._fail('mixed_implementation', 'bounded selected constructor controls')
+        positions.append(len(modules))
+        modules.extend((value, initializer, initializer.__code__, initializer.__defaults__, kw, closure))
+        if closure is not None:
+            for cell in closure:
+                try:
+                    contents = cell.cell_contents
+                except ValueError:
+                    c._fail('mixed_implementation', 'empty selected constructor cell')
+                modules.extend((cell, contents))
+        if kw is not None:
+            if any(type(key) is not str or len(key) > 128 for key in kw):
+                c._fail('mixed_implementation', 'bounded generated constructor keyword')
+            for key in sorted(kw):
+                modules.extend((key, kw[key]))
+    return (tuple(functions), tuple(modules),
+            (_MIXED_V2_EXTERNAL, _MIXED_V2_TYPES, _MIXED_V2_EXPRESSIONS,
+             tuple(positions), _MIXED_V2_LOCAL_NAMES, _MIXED_V2_DOMAIN,
+             _MIXED_V2_COEFFICIENTS, _MIXED_V2_CENSUS_SHA256,
+             _MIXED_V2_SCHEMA, _MIXED_V2_TOP_FIELDS))
+
+
+def _mixed_v2_owner_rows(image):
+    # Each occurrence has a real Source/compiled owner, hashed with the same
+    # existing finite stream bound. The genuine runtime guards remain separate.
+    rows = []
+    names = tuple((__name__, name) for name in _MIXED_V2_LOCAL_NAMES) + _MIXED_V2_EXTERNAL
+    for (module_name, path), function_image, module in zip(
+            names, image[0], image[1][:len(names)], strict=True):
+        source = vars(module).get('__file__')
+        if type(source) is not str:
+            c._fail('mixed_implementation', 'actual typed Source file owner required')
+        file_row = _mixed_file_record(source, 64 << 20)
+        rows.append([module_name, path, id(function_image[0]), id(function_image[1]), *file_row])
+    for index, (module_name, path) in enumerate(_MIXED_V2_TYPES):
+        offset = image[2][3][index]
+        cls, initializer, code = image[1][offset:offset + 3]
+        module = sys.modules.get(module_name)
+        source = None if module is None else vars(module).get('__file__')
+        if type(source) is not str:
+            c._fail('mixed_implementation', 'actual constructor Source file owner required')
+        file_row = _mixed_file_record(source, 64 << 20)
+        closure, kw = initializer.__closure__, initializer.__kwdefaults__
+        if ((closure is not None and (type(closure) is not tuple or len(closure) > 8))
+                or (kw is not None and (type(kw) is not dict or len(kw) > 4))):
+            c._fail('mixed_implementation', 'bounded current constructor controls')
+        cells = []
+        if closure is not None:
+            for cell in closure:
+                try:
+                    contents = cell.cell_contents
+                except ValueError:
+                    c._fail('mixed_implementation', 'empty current constructor cell')
+                cells.append([id(cell), id(contents)])
+        if kw is not None and any(type(key) is not str or len(key) > 128 for key in kw):
+            c._fail('mixed_implementation', 'bounded current constructor keyword')
+        rows.append([module_name, path, id(cls), id(initializer), id(code),
+            id(initializer.__defaults__), id(kw), id(closure),
+            cells,
+            [] if kw is None else [[key, id(kw[key])] for key in sorted(kw)], *file_row])
+    return rows
+
+
+def _mixed_v2_admit(record, limits, local_image):
+    # Original linkage already binds the complete canonical v2 subject. Shape,
+    # integers and matching hashes NEVER issue the selected ABI/root/caller facts.
+    typed = record['typed_ownership']
+    c._keys(typed, ('schema', 'Source_domain', 'Source_census_sha256',
+        'component_bounds', 'component_evidence'), 'complete typed ownership')
+    if (typed['schema'] != 'masy.mixed_metadata_typed_ownership.v2'
+            or typed['Source_domain'] != dict(_MIXED_V2_DOMAIN)
+            or typed['Source_census_sha256'] != _MIXED_V2_CENSUS_SHA256):
+        c._fail('mixed_implementation', 'exact v2 Source domain and complete census')
+    domain = typed['Source_domain']
+    c._keys(domain, tuple(name for name, _value in _MIXED_V2_DOMAIN), 'typed Source eligibility')
+    for name, value in _MIXED_V2_DOMAIN:
+        if type(domain[name]) is not int or domain[name] != value:
+            c._fail('mixed_implementation', 'plain-int fixed Source eligibility')
+    census = record['Source_census']
+    for name, value in (('chain_call_quota', 162), ('binding_check_quota', 111),
+                        ('runtime_strict_calls_per_binding', 35),
+                        ('runtime_plain_calls_per_binding', 8)):
+        if type(census[name]) is not int or census[name] != value:
+            c._fail('mixed_implementation', 'exact Source-owned v2 complete caller quotas')
+    names = tuple(name for name, _expression in _MIXED_V2_EXPRESSIONS)
+    c._keys(typed['component_bounds'], names, 'all typed and actual new-control bounds')
+    evidence = typed['component_evidence']
+    c._keys(evidence, ('schema', 'owners', 'laws'), 'typed component evidence')
+    if evidence['schema'] != 'masy.Root.mixed_metadata_component_evidence.v2':
+        c._fail('mixed_implementation', 'independently Root-issued component evidence')
+    c._keys(evidence['laws'], names, 'complete component producer laws')
+    for name, expression in _MIXED_V2_EXPRESSIONS:
+        _mixed_v2_uint(typed['component_bounds'][name])
+        law = evidence['laws'][name]
+        c._keys(law, ('expression_sha256', 'producer_law_sha256'), name)
+        if law['expression_sha256'] != c._sha(expression.encode('utf-8')):
+            c._fail('mixed_implementation', 'exact typed/backing/observer/new-code expression')
+        c._digest(law['producer_law_sha256'], 'Root-owned complete pretransport producer law')
+    # Prepay all new typed, backing, observer and setup owners BEFORE creating
+    # external images/hashing their Source rows. Root must independently have
+    # issued their complete ABI/producer/caller laws; shape is not issuance.
+    _reservation(limits, 0,
+        _mixed_pre_entry_charge(limits, local_image)
+        + _mixed_v2_polynomial(typed['component_bounds']), combined=True)
+    image = _mixed_v2_external_image()
+    if evidence['owners'] != _mixed_v2_owner_rows(image):
+        c._fail('mixed_implementation', 'exact current typed/observer function and Source owners')
+    return image
+
+
+def _mixed_v2_polynomial(bounds):
+    # Pure scalar arithmetic for Source-authenticated complete component facts.
+    # The 14 families are disjoint ADDITIONS; the old25-row bank is never spent.
+    c._keys(bounds, tuple(name for name, _expression in _MIXED_V2_EXPRESSIONS),
+            'complete typed polynomial')
+    for name, _expression in _MIXED_V2_EXPRESSIONS:
+        _mixed_v2_uint(bounds[name])
+    typed = sum(count * bounds[name] for name, count in _MIXED_V2_COEFFICIENTS)
+    extra = (3 * _parse_charge(_MIXED_PROOF_BYTES)
+        + bounds['X_SchemaAdmission'] + 1732 * bounds['X_ScalarPolynomial']
+        + 3975 * bounds['X_InsertCheck'] + 1620 * bounds['X_RowCheck']
+        + 2 * bounds['X_EntryGate'] + 265 * bounds['X_InventoryCapture']
+        + 3 * bounds['X_OwnerRoster']
+        + 3 * bounds['X_Error'])
+    return typed + extra
+
+
+def _mixed_v2_charge(owner):
+    # Complete actual new/current image and frame trees are additional, even
+    # though every old bootstrap/image/frame fee remains in the old bank.
+    image = owner._counts['typed_image']
+    images = 6 * (c.rw._compiled_image_charge(owner._image)
+                   + c.rw._compiled_image_charge(image))
+    functions = (tuple(row[0] for row in owner._image[0] + image[0])
+                 + tuple(image[1][offset + 1] for offset in image[2][3]))
+    frames = 6 * c.rw._compiled_frame_charge(functions)
+    return _mixed_v2_polynomial(owner._record['typed_ownership']['component_bounds']) + images + frames
+
+
+def _mixed_v2_owner(root, limits):
+    owner = _MIXED_OPERATION_SLOT
+    if (not _mixed_v2_active() or owner._key is not _MIXED_OWNER_KEY
+            or owner._phase != 'entered' or owner._root != Path(root).absolute()
+            or owner._limits is not limits or 'typed_image' not in owner._counts
+            or owner._entry_kind not in ('recover', 'operate', 'ack',
+                                        'inspect_metadata', 'inspect_passive_snapshot')
+            or os.getpid() != owner._pid or threading.get_ident() != owner._thread):
+        c._fail('mixed_implementation', 'same prepaid v2 owner/root/limits/PID/thread')
+    return owner
+
+
+def _mixed_v2_insert(root, limits, kind, values, name):
+    _mixed_v2_owner(root, limits)
+    if type(kind) is not str or type(values) is not set or type(name) is not str:
+        c._fail('mixed_implementation', 'exact inventory name/set before insertion')
+    if kind in ('generations', 'water'):
+        match = c._GEN.fullmatch(name)
+        if match is None or int(match[1]) > 8:
+            c._fail('mixed_implementation', 'v2 revision0..8 before name retention')
+        maximum = 9 if kind == 'generations' else 4
+    elif kind == 'temps':
+        if c._NONCE.fullmatch(name) is None:
+            c._fail('mixed_implementation', 'v2 exact HEAD nonce before retention')
+        maximum = 1
+    else:
+        c._fail('mixed_implementation', 'fixed v2 inventory role')
+    if len(values) + (name not in values) > maximum:
+        c._fail('mixed_implementation', 'v2 fresh9/1/4 domain before set insertion')
+
+
+def _mixed_v2_row_check(root, limits, rows):
+    _mixed_v2_owner(root, limits)
+    if type(rows) is not int or not 0 <= rows < 9:
+        c._fail('mixed_implementation', 'v2 nine rows before next compact row validator')
+
+
+def _mixed_v2_prefix_charge(root, limits):
+    # Caller invokes this AFTER original BoundaryStoreLimits.__post_init__ and
+    # before _open/header-None inventory. Equality alone is never ownership.
+    owner = _mixed_v2_owner(root, limits)
+    if owner._entry_kind != 'recover':
+        c._fail('mixed_implementation', 'validated identical-limits recovery prefix only')
+    return owner._fixed
+
+
+def _mixed_readonly_entry(handle, kind):
+    """Consume one v2 entry; original exact oracle executes while slot stays live.
+
+    No callback/operator/path/data is accepted. Independently Root-qualified
+    caller Source selects the unchanged metadata oracle or passive snapshot.
+    This helper supplies no actual LOAD result, snapshot or transport authority.
+    """
+    if (type(handle) is not c.DenseBoundaryStore or not _mixed_v2_active()
+            or type(kind) is not str or kind not in ('inspect_metadata', 'inspect_passive_snapshot')
+            or handle._entered is not False or handle._closed is not False
+            or handle._failed_owner is not None or type(handle._state) is not c._State
+            or handle._state.phase != 'idle' or not _combined(handle._header)):
+        c._fail('mixed_implementation', 'genuine idle v2 readonly handle/intent required')
+    _mixed_entry(handle._root, kind)
+    _mixed_v2_owner(handle._root, handle._limits)
+    # Includes complete original current+prospective reservations BEFORE query,
+    # plus current files, Source, runtime, environment, inventory and temporaries.
+    handle._stable()
+    if kind == 'inspect_passive_snapshot':
+        head, _raw = handle._head()
+        if (head['kind'] != 'event_accepted' or type(head['revision']) is not int
+                or head['revision'] != 8 or type(head['accepted_sequence']) is not int
+                or head['accepted_sequence'] != 4 or _paused(head)):
+            c._fail('mixed_implementation', 'final accepted R2F boundary before passive LOAD')
+    return None

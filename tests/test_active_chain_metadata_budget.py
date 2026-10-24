@@ -407,3 +407,256 @@ class SyntheticPublicationReservation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SyntheticTypedOwnershipV2(unittest.TestCase):
+    """Scalar/stat control checks only; these construct NO issued Root proof.
+
+    The deliberately private owner fixtures isolate before-retention guards.
+    They never call __enter__, a genuine binding, LOAD, SAVE or Native transport.
+    Actual v2 admission still requires independent Root ABI/backing/caller facts.
+    Run by module discovery: the original __main__ block above stays byte-exact.
+    """
+
+    def bounds(self):
+        return {name: 1 for name, _expression in active._MIXED_V2_EXPRESSIONS}
+
+    def synthetic_owner(self, root):
+        owner = object.__new__(active._MixedMetadataOperation)
+        for name in owner.__slots__:
+            object.__setattr__(owner, name, None)
+        owner._key, owner._phase = active._MIXED_OWNER_KEY, 'entered'
+        owner._root, owner._limits = Path(root).absolute(), active.c._DEFAULT
+        owner._record = {'schema': active._MIXED_V2_SCHEMA}
+        owner._pid, owner._thread = os.getpid(), active.threading.get_ident()
+        owner._entry_kind, owner._fixed = 'recover', 123
+        owner._counts = {'typed_image': ((), (), ())}
+        return owner
+
+    def test_every_backing_and_observer_family_is_an_independent_addition(self):
+        bounds = self.bounds()
+        baseline = active._mixed_v2_polynomial(bounds)
+        # Independent accepted caller-law vector, including BOTH scan registry
+        # and returned backing owners within Gamma_T, never id-deduplicated here.
+        expected = {'Gamma_NS':7358, 'Gamma_Image':1468, 'Gamma_Original':7,
+                    'Gamma_Heap':12, 'Gamma_plain':3774, 'Gamma_I':265,
+                    'Gamma_H':2, 'Gamma_A':3, 'Gamma_T':29, 'Gamma_D':146,
+                    'Gamma_F':192, 'Gamma_L':2, 'Gamma_E':9, 'Gamma_Observer':1}
+        self.assertEqual(dict(active._MIXED_V2_COEFFICIENTS), expected)
+        for name, count in expected.items():
+            with self.subTest(family=name):
+                changed = dict(bounds, **{name:2})
+                self.assertEqual(active._mixed_v2_polynomial(changed) - baseline, count)
+        self.assertEqual(active._MAX_CHAIN, 25)
+        self.assertEqual(active._MAX_REVISION, 24)
+
+    def test_new_capture_and_repeated_control_owners_are_not_old_bank_credit(self):
+        bounds = self.bounds()
+        expected = (3 * active._parse_charge(131072)
+                    + 7358+1468+7+12+3774+265+2+3+29+146+192+2+9+1
+                    + 1+1732+3975+1620+2+265+3+3)
+        self.assertEqual(active._mixed_v2_polynomial(bounds), expected)
+        for name, count in (('X_InventoryCapture',265), ('X_ScalarPolynomial',1732),
+                            ('X_InsertCheck',3975), ('X_RowCheck',1620)):
+            changed = dict(bounds, **{name:2})
+            self.assertEqual(active._mixed_v2_polynomial(changed)-expected, count)
+
+    def test_no_missing_observer_backing_or_unknown_scalar_component_is_accepted(self):
+        for name in ('Gamma_Observer', 'Gamma_A', 'Gamma_T', 'Gamma_L', 'X_Error'):
+            bounds = self.bounds()
+            del bounds[name]
+            with self.subTest(missing=name):
+                with self.assertRaises(active.c.BoundaryStoreError):
+                    active._mixed_v2_polynomial(bounds)
+        bounds = dict(self.bounds(), discount=1)
+        with self.assertRaises(active.c.BoundaryStoreError):
+            active._mixed_v2_polynomial(bounds)
+
+    def test_component_integer_domain_refuses_bool_nonpositive_and_custom_objects(self):
+        class Poison:
+            def bit_length(self):
+                raise AssertionError('custom bit_length must never run')
+        for value in (True, False, 0, -1, 1 << 64, 1.0, Poison()):
+            with self.subTest(value_type=type(value).__name__):
+                bounds = dict(self.bounds(), Gamma_Observer=value)
+                with self.assertRaises(active.c.BoundaryStoreError):
+                    active._mixed_v2_polynomial(bounds)
+
+    def test_boolean_source_domain_does_not_equal_one_as_eligibility(self):
+        domain = dict(active._MIXED_V2_DOMAIN, temps=True)
+        record = {'typed_ownership': {
+            'schema':'masy.mixed_metadata_typed_ownership.v2',
+            'Source_domain':domain, 'Source_census_sha256':active._MIXED_V2_CENSUS_SHA256,
+            'component_bounds':self.bounds(), 'component_evidence':{}}}
+        with self.assertRaises(active.c.BoundaryStoreError):
+            active._mixed_v2_admit(record, active.c._DEFAULT, ())
+
+    def test_before_insert_keeps_full_set_unchanged_on_ninth_revision_or_tenth_name(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            owner = self.synthetic_owner(root)
+            values = {'g-' + str(i).zfill(4) + '-' + format(i, '032x') for i in range(9)}
+            old = values.copy()
+            with patch.object(active, '_MIXED_OPERATION_SLOT', owner):
+                active._mixed_v2_insert(root, owner._limits, 'generations', values, next(iter(values)))
+                for name in ('g-0008-'+'f'*32, 'g-0009-'+'e'*32):
+                    with self.subTest(name=name):
+                        with self.assertRaises(active.c.BoundaryStoreError):
+                            active._mixed_v2_insert(root, owner._limits, 'generations', values, name)
+                        self.assertEqual(values, old)
+
+    def test_temp_and_managed_limits_refuse_before_retaining_an_extra_name(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            owner = self.synthetic_owner(root)
+            temps, children = {'a'*32}, {'g-0001-'+format(i,'032x') for i in range(4)}
+            with patch.object(active, '_MIXED_OPERATION_SLOT', owner):
+                for kind, values, name in (('temps',temps,'b'*32),
+                        ('water',children,'g-0002-'+'c'*32)):
+                    old = values.copy()
+                    with self.subTest(kind=kind):
+                        with self.assertRaises(active.c.BoundaryStoreError):
+                            active._mixed_v2_insert(root, owner._limits, kind, values, name)
+                        self.assertEqual(values, old)
+
+    def test_real_initial_header_none_inventory_admits_nine_and_refuses_extra_history(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generations = root/'generations'
+            generations.mkdir()
+            for i in range(9):
+                (generations/('g-'+str(i).zfill(4)+'-'+format(i,'032x'))).mkdir()
+            owner = self.synthetic_owner(root)
+            info = root.stat()
+            with patch.object(active, '_MIXED_OPERATION_SLOT', owner):
+                result = active._inventory_at(root, None, owner._limits,
+                                               (info.st_dev,info.st_ino), sibling=False)
+                self.assertEqual(len(result['generations']), 9)
+                (generations/('g-0008-'+'f'*32)).mkdir()
+                with self.assertRaises(active.c.BoundaryStoreError) as caught:
+                    active._inventory_at(root, None, owner._limits,
+                                         (info.st_dev,info.st_ino), sibling=False)
+                self.assertEqual(caught.exception.code, 'mixed_implementation')
+                # Rejection never removes old or newly encountered files.
+                self.assertEqual(len(list(generations.iterdir())), 10)
+
+    def test_row_and_prefix_checks_require_exact_prepaid_limits_without_changing_caps(self):
+        from unittest.mock import patch
+        import dataclasses
+        with tempfile.TemporaryDirectory() as root:
+            owner = self.synthetic_owner(root)
+            with patch.object(active, '_MIXED_OPERATION_SLOT', owner):
+                active._mixed_v2_row_check(root, owner._limits, 8)
+                for value in (9, True, -1):
+                    with self.assertRaises(active.c.BoundaryStoreError):
+                        active._mixed_v2_row_check(root, owner._limits, value)
+                self.assertEqual(active._mixed_v2_prefix_charge(root, owner._limits), 123)
+                equal_but_not_owned = dataclasses.replace(owner._limits)
+                self.assertEqual(equal_but_not_owned, owner._limits)
+                with self.assertRaises(active.c.BoundaryStoreError):
+                    active._mixed_v2_prefix_charge(root, equal_but_not_owned)
+                with self.assertRaises(active.c.BoundaryStoreError):
+                    active._mixed_v2_row_check(Path(root)/'other', owner._limits, 0)
+
+    def test_readonly_intents_are_v2_only_and_consume_the_same_live_slot_once(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            owner = self.synthetic_owner(root)
+            owner._entry_kind = None
+            with patch.object(active, '_MIXED_OPERATION_SLOT', owner), \
+                    patch.object(active, '_mixed_process_check'):
+                active._mixed_entry(root, 'inspect_metadata')
+                self.assertIs(active._MIXED_OPERATION_SLOT, owner)
+                self.assertEqual(owner._entry_kind, 'inspect_metadata')
+                # An ancestry guard can still see the authentic same live slot.
+                active._mixed_v2_row_check(root, owner._limits, 0)
+                with self.assertRaises(active.c.BoundaryStoreError):
+                    active._mixed_entry(root, 'operate', request_kind='finish')
+                owner._record = {'schema':'masy.mixed_metadata_Root_implementation.v1'}
+                self.assertFalse(active._mixed_v2_readonly_kind(owner, 'inspect_metadata'))
+                self.assertFalse(active._mixed_v2_readonly_kind(owner, 'inspect_passive_snapshot'))
+
+    def test_custom_intent_cannot_invoke_an_equality_operator(self):
+        from unittest.mock import patch
+        class PoisonIntent:
+            def __eq__(self, other):
+                raise AssertionError('intent operator must never execute')
+        with tempfile.TemporaryDirectory() as root:
+            owner = self.synthetic_owner(root)
+            value = PoisonIntent()
+            with patch.object(active, '_MIXED_OPERATION_SLOT', owner):
+                self.assertFalse(active._mixed_v2_readonly_kind(owner, value))
+                with self.assertRaises(active.c.BoundaryStoreError):
+                    active._mixed_v2_insert(root, owner._limits, value, set(), 'a'*32)
+                # Exact but uninitialized handle is sufficient: the type guard
+                # must refuse before reading its unavailable instance fields.
+                handle = object.__new__(active.c.DenseBoundaryStore)
+                with self.assertRaises(active.c.BoundaryStoreError):
+                    active._mixed_readonly_entry(handle, value)
+
+    def synthetic_constructor_image(self, module, cls):
+        # Deliberately narrow negative metadata fixture, never a Root proof.
+        from unittest.mock import patch
+        from contextlib import ExitStack
+        stack = ExitStack()
+        stack.enter_context(patch.object(active, '_MIXED_V2_LOCAL_NAMES', ()))
+        stack.enter_context(patch.object(active, '_MIXED_V2_EXTERNAL', ()))
+        stack.enter_context(patch.object(active, '_MIXED_V2_TYPES', (('synthetic_ctor_owner','Kind'),)))
+        module.Kind = cls
+        stack.enter_context(patch.dict(sys.modules, {'synthetic_ctor_owner':module}))
+        return stack
+
+    def test_empty_generated_constructor_cells_refuse_in_builder_and_reader(self):
+        from types import ModuleType
+        def constructor():
+            captured = None
+            def init(self):
+                return captured
+            return init
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'synthetic.py'
+            source.write_bytes(b'# synthetic Source\n')
+            module = ModuleType('synthetic_ctor_owner')
+            module.__file__ = str(source.resolve())
+            init = constructor()
+            cls = type('Kind', (), {'__init__':init})
+            with self.synthetic_constructor_image(module, cls):
+                image = active._mixed_v2_external_image()
+                del init.__closure__[0].cell_contents
+                for operation in (lambda:active._mixed_v2_external_image(),
+                                  lambda:active._mixed_v2_owner_rows(image)):
+                    with self.assertRaises(active.c.BoundaryStoreError) as caught:
+                        operation()
+                    self.assertEqual(caught.exception.code, 'mixed_implementation')
+
+    def test_nonstring_constructor_keyword_is_refused_before_sorting(self):
+        from types import ModuleType
+        def init(self):
+            pass
+        init.__kwdefaults__ = {'valid':None, 1:None}
+        cls = type('Kind', (), {'__init__':init})
+        module = ModuleType('synthetic_ctor_owner')
+        with self.synthetic_constructor_image(module, cls):
+            with self.assertRaises(active.c.BoundaryStoreError) as caught:
+                active._mixed_v2_external_image()
+            self.assertEqual(caught.exception.code, 'mixed_implementation')
+
+    def test_missing_constructor_source_or_module_refuses_without_keyerror(self):
+        from types import ModuleType
+        def init(self):
+            pass
+        cls = type('Kind', (), {'__init__':init})
+        module = ModuleType('synthetic_ctor_owner')
+        with self.synthetic_constructor_image(module, cls):
+            image = active._mixed_v2_external_image()
+            for remove in (False, True):
+                if remove:
+                    del sys.modules['synthetic_ctor_owner']
+                with self.assertRaises(active.c.BoundaryStoreError) as caught:
+                    active._mixed_v2_owner_rows(image)
+                self.assertEqual(caught.exception.code, 'mixed_implementation')
+
+    def test_readonly_helper_refuses_foreign_handle_before_query(self):
+        with self.assertRaises(active.c.BoundaryStoreError):
+            active._mixed_readonly_entry(SimpleNamespace(), 'inspect_passive_snapshot')

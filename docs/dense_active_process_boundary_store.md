@@ -165,3 +165,76 @@ positive scalar planner fixture is deliberately NON-loadable synthetic control
 metadata, not an Original/Native/Root authority. Full genuine Original/Native
 loaders and all actual Root evidence remain mandatory. These test Sources were
 not imported, collected or executed by the author.
+
+
+## Ephemeral v2 typed-ownership lane
+
+The private mixed-metadata lane additionally recognizes
+`masy.mixed_metadata_Root_implementation.v2`. Persistent STORE, HEAD, generations,
+ACKs, Native capsules and image formats are unchanged. V1 and ordinary calls
+retain their existing paths; v2 does not relabel v1 evidence or old execution.
+All actual v2 Source-binary, ABI/provider/backing/observer/caller facts remain
+Root-owned, independently issued prerequisites. A matching JSON record, hash,
+positive integer or Source test is not an issuer or proof of heap/CPU fit.
+
+V2 keeps every existing C/W/I/error/history/parser/image/frame/S/V charge and
+adds all fourteen typed/backing/observer families. Its complete Source-fixed
+polynomial and code/owner roster are in `_MIXED_V2_COEFFICIENTS`,
+`_MIXED_V2_EXPRESSIONS` and `_MIXED_V2_CENSUS_SHA256`. The old charge still uses
+25 rows, even though the new lane refuses a tenth compact row. Whole owning
+backings are paid per retained occurrence, including BOTH the scan registry
+and returned tuple; there is no id/base/view/alias, close, GC or last-use credit.
+Missing or inadequate selected bounds refuse before binding/transport/write.
+
+Only a fresh independently qualified twelve-role caller may use the new domain:
+9 generation names/revisions0..8, one temporary HEAD nonce, four managed attempts,
+and nine compact rows. Checks precede each existing set insertion and next row
+validator, including initial recovery's header-None inventory. The original
+25/29/4096 generic domains remain. Recovery validates caller limits in the
+original position, then requires identity with the prepaid owner's limits and
+adds the full v2 prefix charge before open/inventory. Mutation refuses any
+existing HEAD temporary before intent/Native/write. Readonly/recovery may inspect
+one; no old/orphan version or indeterminate temporary is removed or hidden.
+
+The v2 `typed_ownership` object has exactly `schema`, `Source_domain`,
+`Source_census_sha256`, `component_bounds`, `component_evidence`. Component keys
+and allocation expressions are Source-fixed. Each bound is a positive plain
+integer of at most64 bits, linked to the exact expression and a separately
+Root-qualified complete producer-law digest. Evidence also binds the exact
+loaded local/external function and constructor Source/code roster. No imports
+or probes manufacture missing owners. Complete Root linkage covers the entire
+canonical subject, current Source/binary/process/thread/nonce/ordinal and
+ordinary observer/caller domain. No accepted/provider/fresh/cache/fit Boolean
+or callable injection exists. These shape and identity checks never replace
+Root's actual proof issuance.
+
+New implementation costs are additional: the one extra retained inventory root
+cell/tuple/Path is charged265 times; schema admission includes one extra prepaid
+polynomial, so evaluations are1732 (1731 original charge evaluations plus that
+one). Existing unit/probe constructors become3465 (old3464 plus its additional
+setup). All new insertion/row/control/constructor-image/error owners remain
+positive. The first complete typed/setup reservation precedes external image
+construction and Source hashing; the final exact expanded image/frame debit
+precedes the genuine binding and owner publication. Bootstrap still needs
+independently qualified ABI/Source facts before factory entry.
+
+A controller may consume `_mixed_readonly_entry(handle, intent)` only inside a
+fresh genuine v2 context. Intents are exactly `inspect_metadata` and
+`inspect_passive_snapshot`; neither accepts an operator, callback or path.
+The helper requires the genuine idle same-root handle and performs the original
+stable/current+prospective admission BEFORE the unchanged oracle. The slot
+remains published through that oracle and through ordinary public publication.
+The passive intent additionally requires actual accepted revision8/sequence4,
+then preserves the original genuine LOAD and passive snapshot factory/observer.
+Both intents are admitted by v2 ancestry currentness, consume one entry and
+are refused by every Native mutation/writer guard. Metadata mode has no LOAD.
+No export, SAVE, pause/resume, transport or publication is authorized there.
+
+Separate future controller work must scope each public operation, recovery,
+private query and each of D's24 requests independently, retaining every exact
+oracle and expected failure. Unwrapped private queries retain ordinary nP and
+may still refuse; this product Source change alone is no whole-role fit or
+restart acceptance. Root must join the newly committed bytes, issue genuine
+current-and-next-generation root/ABI/caller laws, admit the unchanged hardware
+and storage limits, then run affected engineering checks and the real fresh
+protocol. No Native/runtime execution is implied by this Source delivery.
