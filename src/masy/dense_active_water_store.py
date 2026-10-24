@@ -859,6 +859,9 @@ def _metadata_stat_charge(handle, inventory):
     # Preserve all three current history/descriptor/capsule receiver families.
     # The two prospective families are still paid at EACH of those three
     # roles, including primary/export-close OR primary/reader/work-close errors.
+    if _combined(handle._header) and _MIXED_OPERATION_SLOT is not None:
+        return _mixed_account_charge(handle, existing, image_max, generation_count,
+                                     combined_future_peak)
     return 3 * existing + 6 * combined_future_peak
 
 
@@ -1001,8 +1004,159 @@ def _generation_fields(value, head, header, limits):
     return value
 
 
+
+
+# Opt-in operation-owned compact ancestry. No default/wire migration.
+_COMPACT_ROW_KEY = object()
+_MIXED_OPERATION_SLOT = None
+
+class _CompactChainRow:
+    __slots__ = ('_key', 'full_receipts_raw', 'parent_receipts_raw', 'last_receipt_raw')
+    def __init__(self, key, full, parent, last):
+        if key is not _COMPACT_ROW_KEY or type(full) is not bytes or type(parent) is not bytes or (last is not None and type(last) is not bytes):
+            c._fail('compact_row', 'only the ordinary complete validator issues byte projections')
+        object.__setattr__(self,'_key',key)
+        object.__setattr__(self,'full_receipts_raw',full)
+        object.__setattr__(self,'parent_receipts_raw',parent)
+        object.__setattr__(self,'last_receipt_raw',last)
+    def __setattr__(self, name, value):
+        raise TypeError('compact ancestry bytes are immutable')
+    def __delattr__(self, name):
+        raise TypeError('compact ancestry bytes are immutable')
+    def __reduce_ex__(self, protocol):
+        raise TypeError('compact ancestry is operation-local, never wire')
+
+def _checked_compact_row(value):
+    if type(value) is not _CompactChainRow or value._key is not _COMPACT_ROW_KEY:
+        c._fail('compact_row','unissued or foreign compact ancestry projection')
+    if type(value.full_receipts_raw) is not bytes or type(value.parent_receipts_raw) is not bytes or (value.last_receipt_raw is not None and type(value.last_receipt_raw) is not bytes):
+        c._fail('compact_row','exact immutable receipt bytes required')
+    return value
+
+def _validated_compact_chain_row(root, header, store_sha, current, limits, child, seen):
+    """Ordinary complete original validation/close frame; no B graph returns."""
+    _head_fields(current, limits, header=header)
+    name = current["generation_name"]
+    if name in seen or current["store_id"] != header["store_id"] or current["store_file_sha256"] != store_sha:
+        c._fail("active_chain", "cycle or foreign store")
+    seen.add(name)
+    path = root / "generations" / name
+    generation, raw = c._record(path / "generation.json", limits.max_generation_bytes,
+                                 links=c._published_links(path, "generation.json"))
+    _generation_fields(generation, current, header, limits)
+    if c._sha(raw) != current["generation_file_sha256"] or generation["generation_sha256"] != current["generation_sha256"]:
+        c._fail("active_chain", "actual generation file/semantic seal differs")
+    intent, intent_raw = c._record(path / "intent.json", limits.max_intent_bytes)
+    _intent_fields(intent, limits, header=header)
+    if c._sha(intent_raw) != generation["intent_file_sha256"]:
+        c._fail("active_chain", "actual reserved intent differs")
+    for field in ("store_id", "attempt_id", "revision", "event_operation_id", "request_id", "request_intent"):
+        if c.oi._json(intent[field]) != c.oi._json(generation[field]):
+            c._fail("active_chain", "intent/generation binding")
+    if (c.oi._json(intent["source_identity"]) != c.oi._json(header["source_identity"])
+            or intent["environment_sha256"] != header["environment_sha256"]
+            or intent["expected_parent_generation"] != generation["parent_generation"]
+            or intent["expected_parent_head_file_sha256"] != generation["parent_head_file_sha256"]):
+        c._fail("active_chain", "input parent/runtime binding")
+    expected_input_sequence = (0 if generation["parent_head_record"] is None
+                               else generation["parent_head_record"]["accepted_sequence"])
+    if intent["accepted_sequence"] != expected_input_sequence:
+        c._fail("active_chain", "intent binds input cursor before unknown Native completion/pause outcome")
+    entry_anchor = generation["entry_anchor_head_record"]
+    if intent["entry_anchor_head_file_sha256"] != (None if entry_anchor is None else c._sha(c.oi._json(entry_anchor))):
+        c._fail("active_chain", "input accepted-anchor bytes differ")
+    image = generation["image"]
+    owner_name = current["anchor_generation"] if _paused(current) else name
+    if type(image) is not dict or image.get("relative_path") != f"generations/{owner_name}/image":
+        c._fail("active_chain", "image must belong to genuine accepted anchor")
+    manifest, wrapper_raw = c._image_for(header, root, image, limits)
+    c._preflight_for(header, manifest, header["source_identity"], header["environment_sha256"], limits.image)
+    if (c.oi._json(manifest["originals"]) != c.oi._json(header["originals"])
+            or c.oi._json(manifest["genesis"]) != c.oi._json(header["genesis_physical"])
+            or manifest["physical"]["relative_path"] != f"generations/{owner_name}/physical"):
+        c._fail("active_chain", "original/genesis/own physical reference")
+    artifacts = c._artifacts_for(header, root, manifest["originals"], manifest["genesis"],
+                                  manifest["physical"], limits.image, wrapper_raw)
+    try:
+        for ref in artifacts.refs:
+            artifacts.hashed(ref)
+        artifacts.check()
+    finally:
+        artifacts.close()
+    sequence = current["accepted_sequence"]
+    if _combined(header) and _paused(current):
+        expected_kind = "wind" if current["kind"] == "wind_paused" else "rain"
+        if sequence >= len(header["event_kinds"]) or header["event_kinds"][sequence] != expected_kind:
+            c._fail("active_process_kind", "selected pause differs from the STORE-bound original event kind")
+    if (manifest["state"]["next_index"] != sequence or manifest["state"]["n_accepted"] != sequence
+            or len(manifest["receipts"]) != sequence
+            or c.oi._json(generation["accepted_summary"]) != c.oi._json(c._summary(manifest))):
+        c._fail("active_chain", "accepted image/cursor/summary")
+    receipt = c._receipt(manifest)
+    if generation["accepted_receipt_sha256"] != (None if receipt is None else c._sha(receipt)):
+        c._fail("active_chain", "last accepted receipt identity")
+    if generation["ack_core"]["completion_receipt_sha256"] != (c._sha(receipt) if current["kind"] == "event_accepted" else None):
+        c._fail("active_ack", "request completion receipt differs from actual B receipt")
+    _mixed_row_serializers_prepaid(root, header, limits, image)
+    full_receipts_raw = c.oi._json(manifest["receipts"])
+    if child is not None:
+        child_head, child_gen, child_projection = child
+        advance = child_head["kind"] == "event_accepted"
+        if (child_head["revision"] != current["revision"] + 1
+                or child_head["accepted_sequence"] != sequence + advance
+                or _checked_compact_row(child_projection).parent_receipts_raw
+                    != full_receipts_raw):
+            c._fail("active_chain", "exact accepted prefix across paused/accepted revisions")
+        anchor = current if not _paused(current) else generation["entry_anchor_head_record"]
+        if c.oi._json(child_gen["entry_anchor_head_record"]) != c.oi._json(anchor):
+            c._fail("active_anchor", "nearest genuine accepted input anchor differs")
+        operation, request = _request_id(header, anchor, current, c.oi._json(current),
+                                         child_gen["request_intent"], header["schedule_sha256"])
+        if (child_gen["event_operation_id"] != operation or child_gen["request_id"] != request):
+            c._fail("active_request", "actual schedule/parent/request identity differs")
+        if _paused(child_head):
+            if _combined(header) and _paused(current) and child_head["kind"] != current["kind"]:
+                c._fail("active_process_kind", "one unaccepted event cannot switch Native process")
+            previous_count = current["pause_count"] if _paused(current) else 0
+            if child_head["pause_count"] != previous_count + 1:
+                c._fail("active_pause", "pause count must advance independently of original ordinal")
+            if _paused(current) and child_head["pause_ordinal"] <= current["pause_ordinal"]:
+                c._fail("active_pause", "original pause ordinal must increase")
+    _active_reference(root, header, limits, current, generation)
+    if current["kind"] == "genesis":
+        if c.oi._json(manifest["physical"]) != c.oi._json(header["genesis_physical"]):
+            c._fail("active_chain", "actual genesis physical differs")
+    parent_receipts_raw = c.oi._json(manifest["receipts"][:-1]
+        if current["kind"] == "event_accepted" else manifest["receipts"])
+    projection = _CompactChainRow(_COMPACT_ROW_KEY, full_receipts_raw, parent_receipts_raw, receipt)
+    return current, generation, projection
+
+def _compact_generation_chain(root, header, store_sha, head, limits):
+    _header_fields(header, limits)
+    if not _combined(header):
+        c._fail('compact_row', 'explicit combined ancestry only')
+    _mixed_context_check(root, header, limits, where='ancestry')
+    root_identity = (header['storage_contract']['root_dev'], header['storage_contract']['root_ino'])
+    _inventory_at(root, header, limits, root_identity)
+    c._digest(header['schedule_sha256'], 'actual original resolved schedule')
+    chain, seen = [], set()
+    current, child = head, None
+    while True:
+        if len(chain) >= _MAX_CHAIN:
+            c._fail('active_chain','derived25-row chain before append')
+        row = _validated_compact_chain_row(root, header, store_sha, current, limits, child, seen)
+        chain.append(row)
+        child = row
+        if current['kind'] == 'genesis':
+            break
+        current = row[1]['parent_head_record']
+    return chain
+
+
 def _generation_chain(root, header, store_sha, head, limits):
     """Actual new-format ancestry validation; no Native LOAD or transport."""
+    if _combined(header) and _MIXED_OPERATION_SLOT is not None:
+        return _compact_generation_chain(root, header, store_sha, head, limits)
     _header_fields(header, limits)
     root_identity = (header["storage_contract"]["root_dev"], header["storage_contract"]["root_ino"])
     _inventory_at(root, header, limits, root_identity)
@@ -1208,7 +1362,11 @@ def _load(handle, head):
 
 def _acknowledgement(header, head, generation, manifest):
     core_raw = _metadata_bytes(generation["ack_core"], 128 << 10, "bounded actual ACK")
-    receipt = c._receipt(manifest) if head["kind"] == "event_accepted" else None
+    if _combined(header) and type(manifest) is _CompactChainRow:
+        receipt = (_checked_compact_row(manifest).last_receipt_raw
+                   if head["kind"] == "event_accepted" else None)
+    else:
+        receipt = c._receipt(manifest) if head["kind"] == "event_accepted" else None
     return ActiveWaterAcknowledgement(_schema(header) + ".ack", header["store_id"],
         head["event_operation_id"], head["request_id"], head["revision"],
         head["accepted_sequence"], c._token(head), core_raw, receipt)
@@ -1288,6 +1446,8 @@ def _create_active_store(path, *, runner, originals, runtime_reference,
     """Create the new opt-in format from an untouched genuine static runner only."""
     _protocol = {"schema": SCHEMA_PROCESS if combined else SCHEMA,
                  "profile": PROFILE_PROCESS if combined else PROFILE}
+    if combined and _MIXED_OPERATION_SLOT is not None:
+        c._fail('mixed_implementation', 'creation retains the original complete profile; create outside this operation lane')
     c.BoundaryStoreLimits.__post_init__(limits)
     c.StorageContract.__post_init__(storage_contract)
     if type(runner) is not c.dr.DenseRunner:
@@ -1412,6 +1572,8 @@ def _load_selected(handle, context, runner, generation):
 
 def _recover_active_store(path, *, expected_store_file_sha256, limits=c._DEFAULT, combined=False):
     """Validate exactly selected revision, with real wet LOAD and zero transport."""
+    if combined and _MIXED_OPERATION_SLOT is not None:
+        _mixed_entry(path, 'recover')
     c.BoundaryStoreLimits.__post_init__(limits)
     c._digest(expected_store_file_sha256, "external exact active STORE SHA")
     # Unknown stored W is not used until typed header admission; this fixed
@@ -1588,6 +1750,8 @@ def acknowledge(handle, expected_parent, *, request_kind, boundary_ordinal=None)
     handle._binding()
     c._digest(expected_parent, "expected selected parent token")
     intent = _intent_for(request_kind, boundary_ordinal, handle._header)
+    if _combined(handle._header) and _MIXED_OPERATION_SLOT is not None:
+        _mixed_entry(handle._root, 'ack')
     if handle._entered:
         c._fail("handle_reentrant", "one store operation at a time")
     if handle._state.phase != "idle":
@@ -1632,6 +1796,9 @@ def _operate(handle, expected_parent, request_intent):
         c._fail("handle_reentrant", "one store operation at a time")
     if handle._state.phase != "idle":
         c._fail("store_halted", handle._state.phase)
+    if _combined(handle._header) and _MIXED_OPERATION_SLOT is not None:
+        _mixed_entry(handle._root, 'ack' if expected_parent != handle._state.token else 'operate',
+                     request_kind=request_intent['kind'])
     old = handle._state
     halt = dataclasses.replace(old, phase="halted_before_head", intended=None)
     handle._entered = True
@@ -1680,7 +1847,9 @@ def _operate(handle, expected_parent, request_intent):
         policy = True
         _admit(handle, [r[0]["generation_name"] for r in chain], old.max_work_bytes)
         policy = False
+        _mixed_before_native(handle, request_intent)
         directory, intent, halt = _reserve_attempt(handle, selected, anchor, request_intent, operation, request_id)
+        _mixed_assign_attempt(handle, directory, intent)
         context = _borrow_parent(handle, intent)
         context.__enter__()
         work = context.take_runner()
@@ -1773,6 +1942,7 @@ def _operate(handle, expected_parent, request_intent):
             anchor_manifest, wrapper_raw = c._image_for(handle._header, handle._root,
                                                          anchor_generation["image"], handle._limits)
             originals = handle._extra_original(anchor_manifest, wrapper_raw)
+            _mixed_before_physical(handle, work)
             physical = handle._save_physical(directory / "physical", work, originals)
             image = handle._save_image(directory / "image", work, physical)
             head = _seal_generation(handle, directory, intent, selected, anchor,
@@ -1909,3 +2079,815 @@ def _reservation_for_handle(handle, work_bytes, chain_charge=0):
     owner._charge = extra
     # Admission is separate from the existing report/consumer record.
     return original
+
+
+# Additional opt-in ordinary Source contract; all genuine Root operands are absent.
+_MIXED_OWNER_KEY = object()
+_MIXED_PROOF_BYTES = 128 << 10
+_MIXED_OPERATION_ORDINAL = 0
+_MIXED_PUBLIC_CPYTHON = (
+    ('Modules/_json.c', '6a0eaa8a82a30d5e35b47bda64c0a9741924c0b925fa6a9445addb3a61a5b5b9'),
+    ('Lib/json/decoder.py', '9f02654649816145bc76f8c210a5fe3ba1de142d4d97a1c93105732e747c285b'),
+    ('Lib/json/scanner.py', '8604d9d03786d0d509abb49e9f069337278ea988c244069ae8ca2c89acc2cb08'),
+    ('Lib/copy.py', 'cbd25547933176fcf6bb05c2adc9f4796d15ac20b9b82dcf890daea7203daeab'),
+    ('Lib/json/encoder.py', 'af7bd40a0d0d0a3e726a9b4b3a2a543019f6ab97a340d0162a9c29ca9da97869'),
+    ('Lib/json/__init__.py', 'd5d41e2c29049515d295d81a6d40b4890fbec8d8482cfb401630f8ef2f77e4d5'),
+)
+
+
+def _mixed_ref(value, where):
+    c._keys(value, ('path', 'size', 'sha256'), where)
+    path = value['path']
+    if (type(path) is not str or not 1 <= len(path) <= _PATH_CHARS
+            or path != os.path.realpath(path) or not os.path.isabs(path)):
+        c._fail('mixed_implementation', 'one canonical immutable evidence path')
+    c._integer(value['size'], _MIXED_PROOF_BYTES, where)
+    if value['size'] == 0:
+        c._fail('mixed_implementation', 'positive immutable evidence size')
+    c._digest(value['sha256'], where)
+    return path, value['size'], value['sha256']
+
+
+def _mixed_read_ref(value, where):
+    path, size, digest = _mixed_ref(value, where)
+    before = os.lstat(path)
+    identity = (c.oi._stat_id(before), before.st_mode, before.st_nlink)
+    if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or before.st_mode & 0o222 or before.st_size != size):
+        c._fail('mixed_implementation', 'readonly ordinary single-link evidence')
+    # ONE fd is joined to that exact initial lstat. A delegated path reader's
+    # separate inner lstat would not prove this outer identity through an ABA.
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+    try:
+        opened = os.fstat(fd)
+        if (c.oi._stat_id(opened), opened.st_mode, opened.st_nlink) != identity:
+            c._fail('mixed_implementation', 'evidence changed between lstat and fd open')
+        parts, used = [], 0
+        while True:
+            part = os.read(fd, min(64 << 10, size + 1 - used))
+            if not part:
+                break
+            used += len(part)
+            if used > size:
+                c._fail('mixed_implementation', 'evidence grew during same-fd read')
+            parts.append(part)
+        raw = b''.join(parts)
+        held, after = os.fstat(fd), os.lstat(path)
+        if ((c.oi._stat_id(held), held.st_mode, held.st_nlink) != identity
+                or (c.oi._stat_id(after), after.st_mode, after.st_nlink) != identity
+                or used != size or len(raw) != size or c._sha(raw) != digest):
+            c._fail('mixed_implementation', 'actual same-fd evidence identity/bytes/currentness')
+        return raw
+    finally:
+        os.close(fd)
+
+
+def _mixed_observer_record():
+    monitoring = getattr(sys, 'monitoring', None)
+    if monitoring is None:
+        c._fail('mixed_implementation', 'unknown ordinary observer implementation')
+    traces = (sys.gettrace(), sys.getprofile(), threading.gettrace(), threading.getprofile())
+    # CPython3.12's six public monitoring tool slots0..5 are a separate
+    # Root-qualified API/ordinary-observer prerequisite, not inferred from Source.
+    tools = tuple(monitoring.get_tool(index) for index in range(6))
+    events = tuple(monitoring.get_events(index) for index in range(6))
+    if any(value is not None for value in traces + tools) or events != (0,) * 6:
+        c._fail('mixed_implementation', 'non-escaping ordinary execution required')
+    return (traces, tools, events)
+
+
+def _mixed_selected_record():
+    # No replacement, monkeypatch, fallback selection or fabricated parser result.
+    json = c.oi.json
+    scanner = json.scanner
+    encoder = json.encoder
+    native_json = sys.modules.get('_json')
+    if (native_json is None or scanner.c_make_scanner is not native_json.make_scanner
+            or scanner.make_scanner is not native_json.make_scanner
+            or encoder.c_make_encoder is not native_json.make_encoder
+            or json.decoder.scanstring is not native_json.scanstring):
+        c._fail('mixed_implementation', 'genuine selected C JSON implementations required')
+    dispatch = copy._deepcopy_dispatch
+    expected_dispatch = (copy._deepcopy_dict, copy._deepcopy_list, copy._deepcopy_tuple,
+                         copy._deepcopy_atomic, copy._deepcopy_atomic, copy._deepcopy_atomic,
+                         copy._deepcopy_atomic, copy._deepcopy_atomic)
+    if tuple(dispatch.get(cls) for cls in (dict, list, tuple, str, int, float, bool,
+                                         type(None))) != expected_dispatch:
+        c._fail('mixed_implementation', 'original exact JSON deepcopy dispatch')
+    values = (json.loads, json.dumps, json.JSONDecoder, json.JSONDecoder.__init__,
+        json.JSONDecoder.decode, json.JSONDecoder.raw_decode, json.JSONEncoder,
+        json.JSONEncoder.__init__, json.JSONEncoder.encode, json.JSONEncoder.iterencode,
+        scanner.make_scanner, scanner.c_make_scanner, encoder.c_make_encoder,
+        json.decoder.scanstring, copy.deepcopy, *expected_dispatch,
+        c.oi._strict_json, c.oi._json, c.dr._canonical_json, c._plain_metadata,
+        int, float, str, bytes, dict, list, tuple, set, sys.getsizeof,
+        sys.gettrace, sys.getprofile, threading.gettrace, threading.getprofile)
+    if any(id(value).bit_length() > 64 or id(getattr(value, '__code__', None)).bit_length() > 64
+           for value in values):
+        c._fail('mixed_implementation', 'unsupported object identity integer domain')
+    return tuple((id(value), id(getattr(value, '__code__', None)),
+                  getattr(value, '__module__', ''), getattr(value, '__qualname__', ''))
+                 for value in values)
+
+
+def _mixed_file_record(path, cap):
+    path = Path(path)
+    if len(str(path)) > _PATH_CHARS or str(path) != os.path.realpath(path):
+        c._fail('mixed_implementation', 'canonical actual implementation file')
+    digest, _blob, size, _raw = c.runtime._hash_path(path, budget=cap)
+    return (str(path), size, digest)
+
+
+def _mixed_implementation_files():
+    modules = (sys, c.oi.json, c.oi.json.decoder, c.oi.json.scanner, c.oi.json.encoder,
+               copy, sys.modules.get('_json'), sys.modules[__name__], c, c.b, c.oi,
+               c.dr, c.rw)
+    rows = [_mixed_file_record(os.path.realpath(sys.executable), 64 << 20)]
+    for module in modules[1:]:
+        path = getattr(module, '__file__', None)
+        if type(path) is not str:
+            c._fail('mixed_implementation', 'actual Source/compiled file owner required')
+        rows.append(_mixed_file_record(path, 64 << 20))
+    return tuple(rows)
+
+
+def _mixed_scope_image():
+    functions = (
+        _mixed_process_check,
+        _mixed_clear,
+        _mixed_pre_entry_charge,
+        _mixed_ref,
+        _mixed_read_ref,
+        _mixed_observer_record,
+        _mixed_selected_record,
+        _mixed_file_record,
+        _mixed_implementation_files,
+        _mixed_scope_image,
+        mixed_metadata_operation,
+        _mixed_cell_probe,
+        _mixed_units,
+        _mixed_validate_linkage,
+        _mixed_cycle_charge,
+        _mixed_operation_charge,
+        _mixed_entry,
+        _mixed_context_check,
+        _mixed_projection_charge,
+        _mixed_serializer_charge,
+        _mixed_original_raw,
+        _mixed_prospective,
+        _mixed_next_pause_sizes,
+        _mixed_account_charge,
+        _mixed_row_serializers_prepaid,
+        _mixed_before_native,
+        _mixed_before_physical,
+        _mixed_writer_check,
+        _mixed_assign_attempt,
+        _validated_compact_chain_row,
+        _compact_generation_chain,
+        _checked_compact_row,
+        _generation_chain,
+        _metadata_stat_charge,
+        _operate,
+        _recover_active_store,
+        acknowledge,
+        _CompactChainRow.__init__,
+        _CompactChainRow.__setattr__,
+        _CompactChainRow.__delattr__,
+        _CompactChainRow.__reduce_ex__,
+        _MixedMetadataOperation.__init__,
+        _MixedMetadataOperation.__enter__,
+        _MixedMetadataOperation.__exit__,
+        _MixedMetadataOperation.__reduce_ex__,
+        c.b._static_metadata_wire_upper,
+        c.b._static_original_scalar_plan,
+        c.b._flat_metadata_node,
+        c.b._flat_metadata_fields,
+        c.b._wire_string,
+        c.b._wire_object,
+        c.b._wire_array,
+        c.b._mixed_static_writer_gate,
+        c.b._mixed_static_bridge,
+        c.b._StaticMetadataPlan.__init__,
+        c.b._StaticMetadataPlan.__setattr__,
+        c.b._StaticMetadataPlan.__delattr__,
+        c.b._StaticMetadataPlan.__reduce_ex__,
+        c.b.save_passive_boundary,
+        c.b._write_passive_boundary,
+    )
+    images = tuple(c.rw._compiled_function_image(function) for function in functions)
+    if any(image is None for image in images):
+        c._fail('mixed_implementation', 'unsupported operation Source function layout')
+    return (images, (c, c.b, c.oi, c.dr, c.rw, copy, sys, os, threading,
+        _MIXED_OWNER_KEY, _COMPACT_ROW_KEY, _STATIC_CENSUS, _MIXED_CONTROL_FIELDS, _MIXED_PUBLIC_CPYTHON),
+        (_MIXED_PROOF_BYTES, _MAX_CHAIN, _MAX_REVISION, _COMBINED_CAPSULE_GROWTH_BYTES))
+
+def _mixed_process_check(owner):
+    if (os.getpid() != owner._pid or threading.get_ident() != owner._thread
+            or Path(f'/proc/{owner._pid}/stat').read_text().rsplit(')', 1)[1].split()[19] != owner._start
+            or Path('/proc/sys/kernel/random/boot_id').read_text().strip() != owner._boot):
+        c._fail('mixed_implementation', 'same operation PID/birth/thread before mutation')
+
+
+def _mixed_clear(owner):
+    owner._phase = 'closed'
+    owner._record = owner._raw = owner._selected = owner._files = owner._image = None
+    owner._observer = owner._handle = owner._header_raw = None
+    owner._plan = owner._ticket = owner._counts = None
+    owner._nonce = owner._ordinal = None
+    owner._fixed = 0
+    owner._entry_kind = owner._request_kind = None
+
+
+def _mixed_pre_entry_charge(limits, image):
+    # Four independent immutable reference reads/strict parses, the retained
+    # runtime-reference graph, canonical Root and fact-subject encodings. P is
+    # the ORIGINAL complete parser law; no selected-implementation discount.
+    # Three independent primary/close/reader error banks remain simultaneous.
+    cap = _MIXED_PROOF_BYTES
+    units = _mixed_units(limits)
+    payloads = 3 * (5 * _parse_charge(cap) + 12 * cap)
+    # strict_json's owned visit cycle is cumulative; init's plain visitor is
+    # paid too. The genuine runtime binding starts only after the full census
+    # and its runtime helper-cycle quota have been reserved below.
+    cycles = _mixed_cycle_charge(units, 6, 1)
+    images = 6 * c.rw._compiled_image_charge(image)
+    frames = 6 * c.rw._compiled_frame_charge(tuple(row[0] for row in image[0]))
+    # The Source-owned hash stream can overlap old/new chunks in each error
+    # bank. Full Source files are streamed, never retained as payloads here.
+    streams = 3 * (2 * c.runtime._CHUNK + 4 * cap)
+    # Fixed Source field occurrences, separately billed even when several
+    # fields are in one object or borrow identical primitives. Complete parser
+    # graphs stay in P above; image trees use their own owning charge. The
+    # independently Root-qualified caller/ABI proof must establish this closed
+    # field/header projection for actual selected descendants, never infer it
+    # from a small object sample or Source code-slot count.
+    fields = sum(count for _role, count in _MIXED_CONTROL_FIELDS)
+    headers = (3 * fields * (units['dict'] + units['list'] + units['tuple']
+               + units['set'] + units['bytes'] + units['string']
+               + 16 * (units['pointer'] + units['integer'])))
+    paths = 3 * 13 * (4 * _PATH_CHARS * (units['string'] + units['pointer'])
+                      + units['dict'] + units['tuple'])
+    return payloads + cycles + images + frames + streams + headers + paths
+
+
+class _MixedMetadataOperation:
+    """One Root-bound PID/thread operation; no DATA graph/exception cache."""
+    __slots__ = ('_key', '_root', '_reference', '_runtime_raw', '_limits', '_phase',
+        '_pid', '_thread', '_start', '_boot', '_nonce', '_ordinal', '_raw', '_record',
+        '_selected', '_files', '_image', '_observer', '_handle', '_header_raw',
+        '_counts', '_plan', '_ticket', '_fixed', '_entry_kind', '_request_kind')
+
+    def __init__(self, key, root, runtime_reference, proof_reference, limits):
+        if key is not _MIXED_OWNER_KEY:
+            c._fail('mixed_implementation', 'owning operation factory required')
+        c.BoundaryStoreLimits.__post_init__(limits)
+        root = Path(root).absolute()
+        if str(root) != os.path.realpath(root) or len(str(root)) > _PATH_CHARS:
+            c._fail('mixed_implementation', 'canonical bounded actual store root')
+        _mixed_ref(proof_reference, 'Root implementation proof')
+        # This bounded setup reservation precedes the plain visitor, encoding
+        # and proof work; its computed image is not an authority or a cache.
+        _reservation(limits, 0, _mixed_pre_entry_charge(limits, _mixed_scope_image()), combined=True)
+        c._plain_metadata(runtime_reference, _MIXED_PROOF_BYTES, 'actual runtime reference')
+        self._key, self._root, self._limits = key, root, limits
+        self._reference = tuple(proof_reference[name] for name in ('path', 'size', 'sha256'))
+        self._runtime_raw = c.oi._json(runtime_reference)
+        self._pid, self._thread = os.getpid(), threading.get_ident()
+        self._start = Path(f'/proc/{self._pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+        self._boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        self._phase, self._handle, self._header_raw = 'new', None, None
+        self._nonce = self._ordinal = self._raw = self._record = None
+        self._selected = self._files = self._image = self._observer = None
+        self._counts, self._plan, self._ticket, self._fixed = {}, None, None, 0
+        self._entry_kind = self._request_kind = None
+
+    def __enter__(self):
+        global _MIXED_OPERATION_SLOT, _MIXED_OPERATION_ORDINAL
+        if self._phase != 'new' or _MIXED_OPERATION_SLOT is not None:
+            c._fail('mixed_implementation', 'one non-nested one-shot operation')
+        _mixed_process_check(self)
+        published = False
+        try:
+            initial_image = _mixed_scope_image()
+            _reservation(self._limits, 0,
+                _mixed_pre_entry_charge(self._limits, initial_image), combined=True)
+            reference = dict(zip(('path', 'size', 'sha256'), self._reference, strict=True))
+            raw = _mixed_read_ref(reference, 'Root implementation proof')
+            record = c.oi._strict_json(raw, c._JSON)
+            c._keys(record, ('schema', 'root', 'runtime_reference_sha256', 'source_identity',
+                'environment_sha256', 'process', 'nonce', 'ordinal', 'implementation_files',
+                'selected_ids', 'public_CPython_Source', 'linkage', 'Source_census',
+                'units', 'observer'), 'Root mixed metadata implementation')
+            if (record['schema'] != 'masy.mixed_metadata_Root_implementation.v1'
+                    or record['root'] != str(self._root)
+                    or record['runtime_reference_sha256'] != c._sha(self._runtime_raw)):
+                c._fail('mixed_implementation', 'exact Root proof/runtime/store subject')
+            expected_process = {'pid': self._pid, 'thread': self._thread,
+                                'start': self._start, 'boot': self._boot,
+                                'executable': sys.executable, 'prefix': sys.prefix}
+            if record['process'] != expected_process:
+                c._fail('mixed_implementation', 'actual process birth/thread, not a caller flag')
+            if (type(record['nonce']) is not str or c._NONCE.fullmatch(record['nonce']) is None
+                    or type(record['ordinal']) is not int
+                    or not 1 <= record['ordinal'] < 1 << 64
+                    or record['ordinal'] != _MIXED_OPERATION_ORDINAL + 1):
+                c._fail('mixed_implementation', 'fresh one-shot Root operation nonce/ordinal')
+            # Proof/data is never synthesized here. The Root-qualified linkage
+            # witness must bind exact public Source, selected binaries/functions and
+            # complete constructor/caller census. Unavailable/unsupported refuses.
+            if c.oi._json(record) != raw:
+                c._fail('mixed_implementation', 'canonical immutable Root fact bytes')
+            _mixed_validate_linkage(record)
+            self._selected = _mixed_selected_record()
+            self._files = _mixed_implementation_files()
+            self._observer = _mixed_observer_record()
+            expected_source_hashes = (_MIXED_PUBLIC_CPYTHON[5][1], _MIXED_PUBLIC_CPYTHON[1][1],
+                _MIXED_PUBLIC_CPYTHON[2][1], _MIXED_PUBLIC_CPYTHON[4][1], _MIXED_PUBLIC_CPYTHON[3][1])
+            if tuple(row[2] for row in self._files[1:6]) != expected_source_hashes:
+                c._fail('mixed_implementation', 'actual Python JSON/copy Source differs from ownership basis')
+            if (record['selected_ids'] != [list(row) for row in self._selected]
+                    or record['implementation_files'] != [list(row) for row in self._files]
+                    or record['public_CPython_Source'] != [list(row) for row in _MIXED_PUBLIC_CPYTHON]
+                    or record['observer'] != [[None] * 4, [None] * 6, [0] * 6]):
+                c._fail('mixed_implementation', 'actual selected implementations/observers differ')
+            # Provisional fields are private to this unpublished owner. Any
+            # refusal below clears ALL of them; __exit__ is not relied upon.
+            self._nonce, self._ordinal = record['nonce'], record['ordinal']
+            self._raw, self._record = raw, record
+            self._image = _mixed_scope_image()
+            if not c.rw._same_compiled_image(initial_image, self._image):
+                c._fail('mixed_implementation', 'entry Source image changed')
+            self._fixed = _mixed_operation_charge(self)
+            _reservation(self._limits, 0, self._fixed, combined=True)
+            # Count the first genuine binding in the SAME prepaid quota. No
+            # runtime guard or its parsers run before this full reservation.
+            self._counts['bindings'] = 1
+            reference_runtime = c.oi._strict_json(self._runtime_raw, c._JSON)
+            source, environment = c._runtime_binding(reference_runtime, self._limits)
+            if source != record['source_identity'] or environment != record['environment_sha256']:
+                c._fail('mixed_implementation', 'genuine runtime Source/environment binding required')
+            _mixed_process_check(self)
+            if (_MIXED_OPERATION_SLOT is not None
+                    or self._ordinal != _MIXED_OPERATION_ORDINAL + 1):
+                c._fail('mixed_implementation', 'entry ownership changed before publication')
+            self._phase = 'entered'
+            _MIXED_OPERATION_ORDINAL = self._ordinal
+            _MIXED_OPERATION_SLOT = self
+            published = True
+            return self
+        finally:
+            if not published:
+                _mixed_clear(self)
+
+    def __exit__(self, error_type, error, traceback):
+        global _MIXED_OPERATION_SLOT
+        try:
+            if (_MIXED_OPERATION_SLOT is not self or self._phase != 'entered') and error_type is None:
+                c._fail('mixed_implementation', 'same entered owner required for cleanup')
+            # An existing primary error propagates unchanged even if cleanup
+            # ownership is invalid; cleanup never replaces Native failure evidence.
+        finally:
+            if _MIXED_OPERATION_SLOT is self:
+                _MIXED_OPERATION_SLOT = None
+            _mixed_clear(self)
+        return False
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError('mixed metadata operation cannot escape/persist')
+
+
+def mixed_metadata_operation(*, root, runtime_reference, proof_reference, limits=c._DEFAULT):
+    """Explicit Root-controller lane; no evidence/default/fit/transport authority.
+
+    The reference must be independently issued/accepted by Root for THIS
+    process/source/selected implementation and operation. A matching profile
+    label or a self-authored boolean is not the ownership/ABI proof.
+    """
+    return _MixedMetadataOperation(_MIXED_OWNER_KEY, root, runtime_reference,
+                                   proof_reference, limits)
+
+# Source-discovered constructor counts, not AST-site-as-dynamic counts. A chain
+# budget is a checked operation quota; it is prepaid in full and the next chain
+# refuses BEFORE its row parser when exhausted. It never predicts Native success.
+_STATIC_CENSUS = (
+    ('chain_rows', _MAX_CHAIN), ('B_strict_parsers_per_row', 1),
+    ('control_strict_parsers_per_row', 2), ('active_strict_parsers_per_row_upper', 2),
+    ('active_plain_visitors_per_row_upper', 2), ('artifact_deepcopy_calls_per_row', 79),
+    ('artifact_private_memos_per_row', 3), ('artifact_copied_dicts_per_row', 9),
+    ('new_receipt_encoders_per_row', 2), ('receipt_byte_owners_per_row', 3),
+    ('current_receiver_families', 3), ('future_constructor_families', 6),
+    ('entry_proof_strict_parsers', 4), ('entry_runtime_reference_strict_parsers', 1),
+    ('prospective_Original_strict_parsers', 1), ('entry_runtime_plain_visitors', 1),
+    ('selected_identity_rows', 40), ('implementation_file_rows', 13),
+    ('Root_linked_evidence_files', 3), ('operation_owner_slots', 26),
+    ('static_plan_slots', 7), ('prefix_receipt_slice_refs_upper', 8),
+)
+
+_MIXED_CONTROL_FIELDS = (
+    ('four_reference_records', 4 * 3), ('top_Root_fact_fields', 15),
+    ('expected_process_fields', 6), ('selected_identity_fields', 40 * 4),
+    ('implementation_file_fields', 13 * 3), ('public_Source_fields', 6 * 2),
+    ('ordinary_observer_fields', 4 + 6 + 6), ('operation_owner_slots', 26),
+    ('header_units_fields', 11), ('three_limit_holders_fields_upper', 3 * 64),
+    ('counter_and_entry_state_fields', 8), ('private_writer_ticket_fields', 7),
+    ('static_plan_slots', 7),
+)
+
+
+def _mixed_cell_probe():
+    value = None
+    def probe():
+        return value
+    return probe
+
+
+def _mixed_units(limits):
+    probe = _mixed_cell_probe()
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    # Each captured limit occurrence gets the complete closed scalar holder,
+    # not merely a borrowed-pointer discount or a generic opaque fee.
+    originals = c.oi.OriginalPackLimits(max_cells=limits.image.max_cells,
+        max_classes=limits.image.max_classes, max_voxels=limits.image.max_voxels,
+        max_cohorts=limits.image.max_cohorts, max_events=limits.image.max_events)
+    holders = (c._JSON, limits.image, originals)
+    maximum = 0
+    for holder in holders:
+        fields = vars(holder)
+        if type(fields) is not dict or not 1 <= len(fields) <= 64:
+            c._fail('mixed_implementation', 'closed scalar-only limit holder')
+        charge = sys.getsizeof(holder) + sys.getsizeof(fields)
+        for name, value in fields.items():
+            if (type(name) is not str or len(name) > 128 or type(value) is not int
+                    or value < 0 or value.bit_length() > 64):
+                c._fail('mixed_implementation', 'unsupported captured limit owner')
+            charge += sys.getsizeof(name) + sys.getsizeof(value) + 2 * pointer
+        maximum = max(maximum, charge)
+    return {'pointer': pointer, 'dict': sys.getsizeof({}), 'list': sys.getsizeof([]),
+        'set': sys.getsizeof(set()), 'tuple': sys.getsizeof(()),
+        'bytes': sys.getsizeof(b''), 'string': sys.getsizeof(''),
+        'integer': sys.getsizeof((1 << 64) - 1), 'function': sys.getsizeof(probe),
+        'cell': sys.getsizeof(probe.__closure__[0]), 'limit_holder': maximum}
+
+
+def _mixed_validate_linkage(record):
+    """Shape/subject joins for a genuinely Root-issued proof, never its issuer.
+
+    Independent Source-to-binary/ABI/caller/observer qualification of this exact
+    record is a REQUIRED Root-controller precondition. A caller-created record
+    is outside the contract, even if its current hashes match. No boolean or
+    profile label supplied here certifies the unobserved relationship.
+    """
+    linkage = record['linkage']
+    c._keys(linkage, ('schema', 'subject_sha256', 'Source_binary_proof',
+        'ABI_and_observer_proof', 'caller_census_proof'), 'Root implementation linkage')
+    if linkage['schema'] != 'masy.Root.mixed_metadata_ownership_linkage.v1':
+        c._fail('mixed_implementation', 'genuine separately reviewed Root linkage required')
+    subject = {name: record[name] for name in record if name != 'linkage'}
+    subject_raw = c.oi._json(subject)
+    subject_digest = c._sha(subject_raw)
+    if linkage['subject_sha256'] != subject_digest:
+        c._fail('mixed_implementation', 'exact complete Root fact subject')
+    for name in ('Source_binary_proof', 'ABI_and_observer_proof', 'caller_census_proof'):
+        # Reference ownership is externally Root-authenticated, then immutable
+        # bytes/currentness are rechecked here; no accepted=True success flag.
+        raw = _mixed_read_ref(linkage[name], name)
+        evidence = c.oi._strict_json(raw, c._JSON)
+        c._keys(evidence, ('schema', 'subject_sha256', 'facts_sha256'), name)
+        if (evidence['schema'] != 'masy.Root.mixed_metadata_' + name + '.v1'
+                or evidence['subject_sha256'] != linkage['subject_sha256']
+                or evidence['facts_sha256'] != subject_digest):
+            c._fail('mixed_implementation', 'Root evidence must bind the exact fact domain')
+    census = record['Source_census']
+    c._keys(census, ('schema', 'fixed_rows', 'chain_call_quota',
+        'binding_check_quota', 'runtime_strict_calls_per_binding', 'runtime_plain_calls_per_binding'),
+        'complete Root-qualified constructor/caller census')
+    if (census['schema'] != 'masy.mixed_metadata_Source_census.v1'
+            or census['fixed_rows'] != [list(row) for row in _STATIC_CENSUS]):
+        c._fail('mixed_implementation', 'exact owning Source census required')
+    # These are explicit finite admission quotas, not evidence of required work
+    # or measured fit. A smaller caller quota never suppresses a validation:
+    # exhaustion refuses before the offending constructor/parser.
+    for name in ('chain_call_quota', 'binding_check_quota', 'runtime_strict_calls_per_binding',
+                 'runtime_plain_calls_per_binding'):
+        if type(census[name]) is not int or not 1 <= census[name] <= 1 << 20:
+            c._fail('mixed_implementation', 'positive Root-proved finite caller domain')
+
+
+def _mixed_cycle_charge(units, strict, plain):
+    p, integer = units['pointer'], units['integer']
+    strict_one = (units['function'] + units['tuple'] + 3 * p + 3 * units['cell']
+                  + units['limit_holder'] + 2 * integer + 4 * p)
+    plain_one = (units['function'] + units['tuple'] + 8 * p + 8 * units['cell']
+                 + units['set'] + 5 * integer + units['string'] + 4 * 4096 + 10 * p)
+    return strict * strict_one + plain * plain_one
+
+
+def _mixed_operation_charge(owner):
+    units = _mixed_units(owner._limits)
+    if owner._record['units'] != units:
+        c._fail('mixed_implementation', 'actual positive object/header ABI must match Root')
+    census = owner._record['Source_census']
+    rows = census['chain_call_quota'] * _MAX_CHAIN
+    # Every successful row's 3..5 strict/0..2 plain cycles is retained for the
+    # WHOLE operation, without collector or allocator-release credit.
+    cycles = _mixed_cycle_charge(units, 5 * rows, 2 * rows)
+    runtime_cycles = _mixed_cycle_charge(units,
+        census['binding_check_quota'] * census['runtime_strict_calls_per_binding'],
+        census['binding_check_quota'] * census['runtime_plain_calls_per_binding'])
+    bootstrap = _mixed_pre_entry_charge(owner._limits, owner._image)
+    header = (sys.getsizeof(owner) + len(owner.__slots__) * (units['pointer'] + units['integer'])
+              + 8 * (units['dict'] + units['list'] + units['tuple']))
+    return bootstrap + cycles + runtime_cycles + header
+
+
+def _mixed_entry(root, kind, *, request_kind=None):
+    owner = _MIXED_OPERATION_SLOT
+    if owner is None:
+        return None
+    if (type(owner) is not _MixedMetadataOperation or owner._key is not _MIXED_OWNER_KEY
+            or owner._phase != 'entered' or Path(root).absolute() != owner._root
+            or owner._entry_kind is not None or kind not in ('recover', 'operate', 'ack')):
+        c._fail('mixed_implementation', 'one genuine public operation in the owning context')
+    if kind == 'operate' and request_kind not in ('finish', 'checkpoint_water', 'checkpoint_wind'):
+        c._fail('mixed_implementation', 'typed original request before any forecast')
+    _mixed_process_check(owner)
+    owner._entry_kind, owner._request_kind = kind, request_kind
+    return owner
+
+
+def _mixed_context_check(root, header, limits, *, where):
+    owner = _MIXED_OPERATION_SLOT
+    if (type(owner) is not _MixedMetadataOperation or owner._key is not _MIXED_OWNER_KEY
+            or owner._phase != 'entered' or owner._entry_kind not in ('recover', 'operate', 'ack')
+            or owner._root != Path(root).absolute() or owner._limits is not limits):
+        c._fail('mixed_implementation', 'same unescaped operation PID/birth/thread/root')
+    _mixed_process_check(owner)
+    _header_fields(header, limits)
+    if (c.oi._json(owner._record) != owner._raw or owner._nonce != owner._record['nonce']
+            or owner._ordinal != owner._record['ordinal']
+            or owner._fixed != _mixed_operation_charge(owner)):
+        c._fail('mixed_implementation', 'unchanged Root facts/units/nonce/complete overhead')
+    if (not _combined(header) or c.oi._json(header['runtime_reference']) != owner._runtime_raw
+            or header['source_identity'] != owner._record['source_identity']
+            or header['environment_sha256'] != owner._record['environment_sha256']):
+        c._fail('mixed_implementation', 'same closed combined runtime/Source/environment')
+    if (not c.rw._same_compiled_image(owner._image, _mixed_scope_image())
+            or _mixed_selected_record() != owner._selected
+            or _mixed_implementation_files() != owner._files
+            or _mixed_observer_record() != owner._observer):
+        c._fail('mixed_implementation', 'Source/function/dispatch/compiled/observer currentness')
+    reference = dict(zip(('path', 'size', 'sha256'), owner._reference, strict=True))
+    if _mixed_read_ref(reference, 'Root implementation proof') != owner._raw:
+        c._fail('mixed_implementation', 'immutable Root evidence changed')
+    for name in ('Source_binary_proof', 'ABI_and_observer_proof', 'caller_census_proof'):
+        _mixed_read_ref(owner._record['linkage'][name], name)
+    # Full genuine C current runtime/environment guard remains at every actual
+    # reservation discount and before Native/private writer. The prepaid row
+    # serializers/ancestry calls also recheck files/functions/observer above.
+    if where in ('reservation', 'before_native', 'before_physical', 'writer'):
+        count = owner._counts.get('bindings', 0) + 1
+        if count > owner._record['Source_census']['binding_check_quota']:
+            c._fail('mixed_implementation', 'prepaid genuine binding-call quota before work')
+        owner._counts['bindings'] = count
+        source, environment = c._runtime_binding(header['runtime_reference'], limits)
+        if source != header['source_identity'] or environment != header['environment_sha256']:
+            c._fail('mixed_implementation', 'genuine current runtime binding changed')
+    if where == 'ancestry':
+        count = owner._counts.get('chains', 0) + 1
+        if count > owner._record['Source_census']['chain_call_quota']:
+            c._fail('mixed_implementation', 'prepaid chain-call quota before row parser')
+        owner._counts['chains'] = count
+    return owner
+
+
+def _mixed_projection_charge(owner, rows, raw):
+    units = owner._record['units']
+    p, integer = units['pointer'], units['integer']
+    # Four slots/key, three separately paid bytes payloads/headers, returned
+    # 3tuple, chain slot, seen/name entry and live child/parent refs. Head and
+    # generation DATA remain in their original I/control reservations.
+    row = (sys.getsizeof(object.__new__(_CompactChainRow)) + 4 * p
+        + 3 * (raw + units['bytes']) + units['tuple'] + 3 * p
+        + units['list'] + 2 * p + units['set'] + units['string']
+        + 4 * _PATH_CHARS + 8 * (p + integer))
+    return rows * row + units['list'] + units['set'] + 2 * rows * p
+
+
+def _mixed_serializer_charge(owner, raw):
+    units = owner._record['units']
+    return (4 * raw + 2 * units['string'] + 2 * units['bytes']
+            + units['list'] + 8 * units['pointer'])
+
+
+def _mixed_original_raw(handle, parser_extra):
+    reference = handle._header['originals']
+    relative = c.b._reference(reference, c.oi.SCHEMA)
+    path = handle._root / relative / 'manifest.json'
+    before = path.lstat()
+    if (not stat.S_ISREG(before.st_mode) or before.st_mode & 0o222
+            or not 1 <= before.st_size <= 4 << 20):
+        c._fail('mixed_implementation', 'actual bounded immutable Original metadata before parse')
+    # The full parser bank is admitted BEFORE read, unicode decode, full JSON,
+    # canonical seal copies or any prospective scalar extraction.
+    _reservation(handle._limits, handle._header['native_work_bytes'],
+        parser_extra + 3 * _parse_charge(before.st_size), combined=True)
+    raw = c._read(path, before.st_size, links=c._published_links(path.parent, path.name))
+    after = path.lstat()
+    if c.oi._stat_id(before) != c.oi._stat_id(after) or c._sha(raw) != reference['manifest_file_sha256']:
+        c._fail('mixed_implementation', 'Original metadata bytes/currentness changed')
+    return raw
+
+
+def _mixed_prospective(owner, handle, parser_extra):
+    head, head_raw = _head(handle)
+    if owner._ticket is not None and owner._ticket['parent_raw'] != head_raw:
+        c._fail('mixed_implementation', 'one unchanged selected parent during operation')
+    accepted = head['accepted_sequence']
+    future = min(len(handle._header['event_kinds']),
+                 accepted + (owner._entry_kind == 'operate'))
+    if owner._plan is None or owner._plan.accepted != future:
+        raw = _mixed_original_raw(handle, parser_extra)
+        plan = c.b._static_original_scalar_plan(raw, handle._header['originals'],
+            handle._header['source_identity'], handle._header['event_kinds'],
+            handle._limits.image, future)
+        owner._plan = plan  # immutable scalar-only result; raw/manifest never stored
+    if owner._ticket is None:
+        owner._ticket = {'parent_raw': head_raw, 'accepted': future,
+                         'image_path': None, 'writer_entered': False,
+                         'request_kind': owner._request_kind,
+                         'revision': None, 'attempt': None}
+    return head, owner._plan
+
+
+def _mixed_next_pause_sizes(future_peak, cold):
+    if type(future_peak) is not int or future_peak < 0 or type(cold) is not bool:
+        c._fail('mixed_implementation', 'typed original future-constructor bound')
+    coefficient = _parse_charge(1)
+    if future_peak % coefficient:
+        c._fail('mixed_implementation', 'exact original linear parser extent')
+    if cold and future_peak == 0:
+        c._fail('mixed_implementation', 'positive retained cold capsule extent required')
+    capsule = min(1 << 20, future_peak // coefficient) if cold else 1 << 20
+    # Newly current capsule AND the following constructor are distinct roles.
+    # Never clamp c+2933 to the 1MiB final wire cap: allocation may precede
+    # that old writer refusal. Preserve every old/orphan candidate maximum.
+    return (1 << 20, capsule,
+            max(future_peak, _parse_charge(capsule + _COMBINED_CAPSULE_GROWTH_BYTES)))
+
+
+def _mixed_account_charge(handle, old_existing, raw, generations, future_peak):
+    owner = _MIXED_OPERATION_SLOT
+    if type(owner) is not _MixedMetadataOperation or type(handle) is not c.DenseBoundaryStore:
+        c._fail('mixed_implementation', 'actual entered operation and genuine C handle required')
+    owner = _mixed_context_check(handle._root, handle._header, handle._limits,
+                                 where='reservation')
+    if owner._handle is None:
+        owner._handle = handle
+    elif owner._handle is not handle:
+        c._fail('mixed_implementation', 'same genuine C handle throughout one operation')
+    count = min(generations, _MAX_CHAIN)
+    full_old_B = count * _parse_charge(raw)
+    # All I/E/K/orphans stay exactly present. No new primitive replaces P.
+    base = old_existing - full_old_B
+    if base < 0:
+        c._fail('mixed_implementation', 'exact nonnegative old complete metadata partition')
+    current = (base + _parse_charge(raw) + _mixed_projection_charge(owner, count, raw)
+               + _mixed_serializer_charge(owner, raw))
+    fixed = owner._fixed
+    low = 3 * current + 6 * future_peak + fixed
+    head, plan = _mixed_prospective(owner, handle, low)
+    prospective = current
+    if owner._entry_kind == 'operate':
+        future_rows = min(count + 1, _MAX_CHAIN)
+        y = max(raw, plan.wire_upper)
+        # A Source-proved finish cannot return a published paused token. A
+        # checkpoint may genuinely finish early OR pause: pay BOTH alternatives
+        # by their maximum before transport, preserving all current holdings.
+        accepted = (base + _parse_charge(handle._limits.max_intent_bytes)
+            + _parse_charge(handle._limits.max_generation_bytes) + _parse_charge(y)
+            + _mixed_projection_charge(owner, future_rows, y)
+            + _mixed_serializer_charge(owner, y))
+        prospective = max(prospective, accepted)
+        if owner._ticket['request_kind'] != 'finish':
+            cold = _paused(head)
+            descriptor, new_capsule, next_peak = _mixed_next_pause_sizes(future_peak, cold)
+            # Descriptor generic1MiB remains an honest unsupported-profile
+            # boundary when a tighter Source-derived constructor law is absent.
+            # Never forecast from post-pause sizes or trim an actual Native plan.
+            paused = (base + _parse_charge(handle._limits.max_intent_bytes)
+                + _parse_charge(handle._limits.max_generation_bytes)
+                + _parse_charge(descriptor) + _parse_charge(new_capsule)
+                + _parse_charge(raw) + _mixed_projection_charge(owner, future_rows, raw)
+                + _mixed_serializer_charge(owner, raw))
+            prospective = max(prospective, paused)
+            future_peak = next_peak
+    # Fresh Root evidence/raw/current code/Source/observer fees, all cycles at
+    # the complete guarded quota, and independent runtime binding helper cycles.
+    answer = 3 * prospective + 6 * future_peak + fixed
+    # Keep explicit scalars only; never cache B, a traceback, artifact or owner.
+    owner._counts['image_raw_upper'] = max(owner._counts.get('image_raw_upper', 0), raw,
+                                         plan.wire_upper if owner._entry_kind == 'operate' else raw)
+    owner._counts['metadata_charge'] = max(owner._counts.get('metadata_charge', 0), answer)
+    return answer
+
+
+def _mixed_row_serializers_prepaid(root, header, limits, image):
+    owner = _mixed_context_check(root, header, limits, where='row_serializers')
+    c._keys(image, ('format', 'relative_path', 'manifest_file_sha256', 'manifest_sha256'),
+            'prepaid actual B image')
+    path = Path(root) / image['relative_path'] / 'manifest.json'
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= limits.image.max_metadata_bytes
+            or info.st_size > owner._counts.get('image_raw_upper', -1)):
+        c._fail('mixed_implementation', 'exact pre-reserved B raw size before new serializers')
+    if owner._counts.get('metadata_charge', 0) <= 0:
+        c._fail('mixed_implementation', 'complete current/future reservation must precede row')
+
+
+def _mixed_before_native(handle, request_intent):
+    if _MIXED_OPERATION_SLOT is None or not _combined(handle._header):
+        return
+    owner = _mixed_context_check(handle._root, handle._header, handle._limits,
+                                 where='before_native')
+    if owner._entry_kind != 'operate' or owner._ticket is None:
+        c._fail('mixed_implementation', 'actual operation forecast required before Native')
+    if owner._ticket['request_kind'] != request_intent['kind']:
+        c._fail('mixed_implementation', 'same typed request outcome alternatives')
+    inventory = _inventory(handle)
+    _reservation_for_handle(handle, handle._header['native_work_bytes'],
+                            _metadata_stat_charge(handle, inventory))
+
+
+def _mixed_before_physical(handle, runner):
+    if _MIXED_OPERATION_SLOT is None or not _combined(handle._header):
+        return
+    owner = _mixed_context_check(handle._root, handle._header, handle._limits,
+                                 where='before_physical')
+    if (owner._entry_kind != 'operate' or owner._plan is None
+            or type(runner) is not c.dr.DenseRunner
+            or runner._n_accepted != owner._plan.accepted or runner._next != owner._plan.accepted
+            or runner._limits.max_receipt_bytes != owner._plan.max_receipt_bytes):
+        c._fail('mixed_implementation', 'same actual accepted cursor/producer before Native SAVE')
+    inventory = _inventory(handle)
+    _reservation_for_handle(handle, handle._header['native_work_bytes'],
+                            _metadata_stat_charge(handle, inventory))
+
+
+def _mixed_writer_check(path, runner, root, originals, source, environment, limits,
+                        *, manifest=None, raw=None):
+    if (type(_MIXED_OPERATION_SLOT) is not _MixedMetadataOperation
+            or type(_MIXED_OPERATION_SLOT._handle) is not c.DenseBoundaryStore):
+        c._fail('mixed_implementation', 'actual attached operation before writer')
+    owner = _mixed_context_check(root, _MIXED_OPERATION_SLOT._handle._header,
+                                 _MIXED_OPERATION_SLOT._limits, where='writer')
+    handle = owner._handle
+    if (owner._entry_kind != 'operate' or owner._plan is None or owner._ticket is None
+            or limits is not handle._limits.image or originals != handle._header['originals']
+            or source != handle._header['source_identity'] or environment != handle._header['environment_sha256']):
+        c._fail('mixed_implementation', 'exact operation-bound private static writer ticket')
+    _mixed_before_physical(handle, runner)
+    if (owner._ticket['revision'] is None or owner._ticket['attempt'] is None):
+        c._fail('mixed_implementation', 'actual reserved C intent must precede private writer')
+    target = Path(path).absolute()
+    # A genuine existing C intent owns this one exclusive sibling B image.
+    expected = handle._root / 'generations' / ('g-' + str(owner._ticket['revision']).zfill(4)
+                                                + '-' + owner._ticket['attempt']) / 'image'
+    if target != expected:
+        c._fail('mixed_implementation', 'one exact reserved private image path')
+    previous = owner._ticket['image_path']
+    if previous is not None and previous != str(target):
+        c._fail('mixed_implementation', 'no writer ticket reuse on another image')
+    if manifest is not None:
+        if type(manifest) is not dict or manifest.get('schema') != c.b.SCHEMA:
+            c._fail('mixed_implementation', 'same closed static future constructor domain')
+        state, receipts, ledger = (manifest.get('state'), manifest.get('receipts'),
+                                   manifest.get('ledger'))
+        if type(state) is not dict or type(receipts) is not list or type(ledger) is not dict:
+            c._fail('mixed_implementation', 'same closed static future constructor domain')
+        entries = ledger.get('entries')
+        if (type(state.get('n_accepted')) is not int or type(state.get('next_index')) is not int
+                or state['n_accepted'] != owner._plan.accepted
+                or state['next_index'] != owner._plan.accepted
+                or len(receipts) != owner._plan.accepted
+                or type(entries) is not list or len(entries) != owner._plan.accepted
+                or any(type(entry) is not dict or entry.get('kind') != 'event' for entry in entries)):
+            c._fail('mixed_implementation', 'same closed static future constructor domain')
+    if raw is not None and (type(raw) is not bytes or len(raw) > owner._plan.wire_upper):
+        c._fail('mixed_implementation', 'actual writer exceeds its prepaid Source theorem')
+    # Only successfully validated writer facts become the owning ticket state.
+    owner._ticket['image_path'] = str(target)
+    owner._ticket['writer_entered'] = True
+
+
+def _mixed_assign_attempt(handle, directory, intent):
+    if _MIXED_OPERATION_SLOT is None or not _combined(handle._header):
+        return
+    owner = _mixed_context_check(handle._root, handle._header, handle._limits,
+                                 where='before_native')
+    if owner._ticket is None or owner._entry_kind != 'operate':
+        c._fail('mixed_implementation', 'reserved actual operation ticket required')
+    expected = f"g-{intent['revision']:04d}-{intent['attempt_id']}"
+    if directory != handle._root / 'generations' / expected:
+        c._fail('mixed_implementation', 'actual reserved C intent path required')
+    owner._ticket['revision'] = intent['revision']
+    owner._ticket['attempt'] = intent['attempt_id']

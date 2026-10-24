@@ -65,3 +65,103 @@ no fit or completion guarantee. Native continuation and candidate files can
 precede a later validation refusal; HEAD remains the accepted authority and all
 old and unadopted versions remain retained. New Source requires a fresh runtime
 and store; existing stores are never silently upgraded.
+
+
+## Explicit conditional metadata operation (Source implementation only)
+
+The optional `dense_active_water_store.mixed_metadata_operation` context is a
+separate, one-operation Root-controller contract for a static active-process
+store. It does not change a wire format, clock, codec, event, water-only API or
+ordinary default. Create the initial store through the original API outside this
+context. A supported context may surround one genuine recover, operate or ACK
+call, and is bound to its actual root, unchanged runtime reference, PID/start/
+boot/thread, fresh nonce/ordinal, Source/function/dispatch images and selected
+ordinary interpreter/library implementation. It is not a public proof issuer.
+All actual Root evidence operands remain absent in this Source delivery.
+
+Root must independently establish and accept the exact selected C JSON scanner/
+encoder, ordinary deepcopy and observer, Source-to-binary linkage and object ABI,
+and complete operation/caller/constructor inequalities before it supplies an
+immutable evidence reference. Matching version text, a Source hash, structural
+JSON keys or a caller-created proof file cannot establish these facts. The
+module rechecks genuine C runtime binding at every reservation discount and
+before Native/private writers, and repeatedly rechecks actual implementation
+files, loaded function/dispatch identity, observers and immutable evidence.
+No parser, encoder, environment, Native operator or guard is replaced. Missing
+or unsupported evidence refuses before this context becomes active. Without a
+context the old complete `n*P(Y)` path remains unchanged.
+
+The combined ancestry row helper performs the original complete checks and
+finally-close in their original sequence. Its only result is the original
+head/generation control pair plus a private frozen four-slot holder containing
+an issuer key and three separately charged byte payloads: complete receipts,
+parent-prefix receipts and the existing last receipt. No full B manifest,
+submapping, artifact, exception, generator or closure is stored in that result.
+The prefix comparison uses identical canonical bytes. A paused child still has
+no completion receipt; only an accepted child may return its original receipt.
+Successful nonretention is conditional on the actual qualified implementations
+and ordinary non-escaping observer; every full error receiver remains paid.
+
+`P` is unchanged. All current I/E/K/orphan occurrences, three receiver/error
+families, uncapped six maxima of `P(c+2933)`, full C+two active W, context,
+original future-B cap, codec, runtime, filesystem and hard process limits remain
+additive. Projection headers/three byte owners, new serializer buffers, complete
+Source function/frame images, all linked proof parse banks, immutable references,
+helper closure/cell/limit owners and every guarded caller occurrence are paid.
+The guarded quotas are Source-proved resource preconditions, not observed work
+counts or permission to omit a validation. Quota exhaustion refuses before the
+next offending constructor. Their required values and complete descendants must
+be independently Source-derived by Root, never fitted to a successful run.
+No release, garbage collection or allocator reuse credit is taken.
+
+The B planner reads only pre-reserved immutable Original metadata and extracts
+closed typed scalar limits and the actual event roster. It does not decode a
+model, snapshot arrays, rebuild routing or call Native for planning. The actual
+producer receipt cap must fit the unchanged B cap before transport. The static
+15-field serializer theorem is mechanically reproduced: 1,172,396 bytes for four
+accepted events and 2,257,628 for eight, conditional on all original static-v1
+scalar/shape/path/receipt/clock/schema rules and no added idle entries. These are
+wire theorems, not measured metadata sizes, default allowances or heap/fit proof.
+Current and all Source-reachable accepted/paused future metadata alternatives
+are reserved before transport, and checked again before physical and B writers.
+A one-operation ticket binds the exact genuine intent/path/cursor/producer and
+actual final raw wire. Generic warm descriptor/capsule bounds remain1MiB where
+no tighter Source constructor forecast is proved; this may correctly refuse a
+profile under the original cap. A post-pause size is never a pre-transport
+forecast. No successful complete mixed trajectory or 6GiB/8GiB fit is claimed.
+
+The appended tests use synthetic plain metadata and scalar/interface fixtures.
+They do not issue Root evidence or create Native capsules, model arrays or
+transport authority. Root separately qualifies real implementations, bindings,
+engineering tests and the original whole mixed trajectory under unchanged
+limits; no same-subject retry or old-store upgrade is implied.
+
+The task616 Source-only review retains each literal result. The complete entry
+reservation precedes the genuine runtime guard. Readonly evidence uses one fd
+joined to its original inode/mode/link identity; the whole proof/parse/encoding/
+Source-hash/image/frame and header/path projection remains charged. The old
+anonymous128-header draft is superseded by a finite named field roster. Root
+must independently establish the selected-descendant/ABI inequality; a small
+object observation or count of code slots does not establish it.
+
+The prospective pause reservation includes the new descriptor and capsule as
+current holdings AND the following `max(F, P(Cnew + 2933))` six-constructor
+bank. The constructor is not clamped to the final1MiB wire cap. A zero or
+unsupported cold extent refuses. All old/orphan I/E/K/F remain. Generic1MiB
+warm/descriptor bounds may refuse a profile; this is not a promise that a
+mixed schedule fits. No observed failed-run size forecasts the next allocation.
+
+The ordinary writer ticket includes initially-unissued revision/attempt fields.
+Only the actual existing C reservation fills them; a writer before that step
+refuses. Currentness precedes attaching a real handle, and writer state is
+committed only after the complete path/manifest/raw checks. The context owns
+one combined operation; concurrent old/noncombined work cannot borrow it.
+A failed entry or exit clears provisional fields and never masks an existing
+primary error or repairs/releases a failed Native owner.
+
+The authored engineering tests are Source only: the original8 methods remain
+unchanged, plus11 compact-interface and10 publication/metadata controls. The
+positive scalar planner fixture is deliberately NON-loadable synthetic control
+metadata, not an Original/Native/Root authority. Full genuine Original/Native
+loaders and all actual Root evidence remain mandatory. These test Sources were
+not imported, collected or executed by the author.
