@@ -238,3 +238,61 @@ restart acceptance. Root must join the newly committed bytes, issue genuine
 current-and-next-generation root/ABI/caller laws, admit the unchanged hardware
 and storage limits, then run affected engineering checks and the real fresh
 protocol. No Native/runtime execution is implied by this Source delivery.
+
+
+### Explicit v3 canonical metadata lane (Source implementation, not qualification)
+
+The opt-in v3 mixed-metadata proof uses distinct Root, typed-ownership,
+evidence and implementation-boundary schemas. A v1/v2 proof cannot authorize
+v3. The ordinary path, existing limits, old parser/error banks and all Native
+parsers, serializers, values, conservation and source/currentness checks remain.
+No v3 implementation/runtime/ABI/observer fact is supplied by this guide.
+
+The genuine one-shot mixed owner prepays the complete positive 22-component
+polynomial before constructing or hashing the new images. Its exact selected
+implementation roster has 81 anchors. Pre-existing implementation functions,
+modules, classes and immutable Source constants are anchors under the actual
+Source/origin/environment/operator/compiled guards and a separate positive
+implementation reserve; this is not a whole-library or heap bound. Every newly
+owned header, default, closure, container, captured field and Native current or
+possible-next backing remains charged per occurrence. Neither aliases nor GC,
+logical `nbytes`, close or last use provide accounting credit.
+
+After genuine runtime binding and the final exclusivity gate, v3 installs one
+private canonical scope in Native physical checkpoints, Original inputs and the
+active water checkpoint adapter. The scope holds the owner's scalar identity;
+the live mixed slot retains the real owner. Every scope check fetches and checks
+the actual owner, PID/thread/root, backlink and all three mirrors. Cleanup clears
+only slots containing that exact scope, preserves a foreign slot, closes all
+owned state and drops the owner reference even on failure. An existing primary
+exception keeps precedence; cancellation propagates. No scope persists on wire.
+
+The fixed W-R-W-R lane admits at most nine retained generations, one temporary
+and four Native children, with all old generic bounds unchanged. Root must bind
+the fixed Source producer/caller and backing laws before issuing any facts.
+Archive roles are admitted through the genuine owning physical/water API and
+exact parent/path, then checked by full mandatory/all-or-none member rosters.
+The wet companion has exactly an indexed prefix of 1..90 members; member count
+alone or a matching basename supplies no authority.
+
+A canonical success header has a 128-byte data offset, v1 magic, 118-byte ASCII
+literal, C order, a primitive numeric descriptor or positive scalar S/U width,
+rank at most four and dimensions at most 16000. A same-held-stream peek rewinds
+only after success, then the original genuine NumPy parser runs. This does not
+prove hostile file-mutation/ABA equivalence. All original hashes, currentness,
+ZIP checks, malformed headers and error banks remain mandatory. The Source
+caller upper is 2731 header reads (1771 new prefix gates and 960 existing getters).
+
+Before SAVE, actual producer metadata is checked before creating output. The
+Original guard reuses the already bounded genuine JSON result. Native physical
+prewrite uses actual arrays/scalars and the selected real formatter, with all
+normalization and Unicode roots positively charged. Water prewrite checks both
+genuine P1 layouts, their exact member/header metadata, shape-times-itemsize byte
+counts and the unchanged native P1 aggregate validator. This is metadata-only
+eligibility, not a replacement serializer or a synthetic P1 receipt.
+
+Qualification requires a new honest immutable Source/runtime composition, actual
+selected provider/ABI/NPZ/header linkage, all 45 positive primitive facts, complete
+current and possible-next root/observer laws, and the original 6 GiB logical,
+8 GiB address-space and 32 MiB whole-case admissions. Unsupported facts or limits
+refuse; this Source implementation does not assert fit or a mixed restart pass.

@@ -660,3 +660,139 @@ class SyntheticTypedOwnershipV2(unittest.TestCase):
     def test_readonly_helper_refuses_foreign_handle_before_query(self):
         with self.assertRaises(active.c.BoundaryStoreError):
             active._mixed_readonly_entry(SimpleNamespace(), 'inspect_passive_snapshot')
+
+
+class SyntheticCanonicalMetadataV3(unittest.TestCase):
+    """Scalar/control engineering only; never genuine Root fact issuance."""
+
+    def bounds(self):
+        return {name: 1 for name, _expression in active._MIXED_V3_EXPRESSIONS}
+
+    def boundary(self):
+        return {'schema': active._MIXED_V3_BOUNDARY,
+            'anchor_roster_source_sha256': active._MIXED_V3_ANCHOR_SOURCE,
+            'bindings': [[module, symbol, i + 1, i + 1, 0, 0]
+                         for i, (module, symbol, group) in enumerate(active._MIXED_V3_ANCHORS)],
+            'implementation_reserve_bytes': 1, 'source_mode': 'quiescent_owned_runtime',
+            'metadata_model_ownership': 'full_owned_occurrences'}
+
+    def test_version_two_evidence_refuses_before_current_owner_or_provider_observation(self):
+        from unittest.mock import patch
+        typed = {'schema': 'masy.mixed_metadata_typed_ownership.v2',
+            'Source_domain': dict(active._MIXED_V2_DOMAIN),
+            'Source_census_sha256': active._MIXED_V3_CENSUS_SHA256,
+            'component_bounds': self.bounds(), 'component_evidence': {}}
+        with patch.object(active, '_mixed_v3_external_image', side_effect=AssertionError('must refuse first')):
+            with self.assertRaises(active.c.BoundaryStoreError):
+                active._mixed_v3_admit({'typed_ownership': typed}, active.c._DEFAULT, ())
+
+    def test_v3_scalar_families_remain_disjoint_and_none_fact_is_not_a_bound(self):
+        bounds = self.bounds()
+        base = active._mixed_v3_polynomial(bounds)
+        for name, count in active._MIXED_V2_COEFFICIENTS:
+            changed = dict(bounds, **{name: 2})
+            self.assertEqual(active._mixed_v3_polynomial(changed) - base, count)
+        for value in (None, True, 0, -1, 1 << 64):
+            changed = dict(bounds, Gamma_Observer=value)
+            with self.assertRaises(active.c.BoundaryStoreError):
+                active._mixed_v3_polynomial(changed)
+
+    def test_anchor_shape_parser_has_no_model_or_identity_issuance_authority(self):
+        # Positive SHAPE only; no actual image/ids/provider/model call follows.
+        active._mixed_v3_boundary(self.boundary())
+        for field, value in (('implementation_reserve_bytes', 0),
+                             ('metadata_model_ownership', 'borrowed_roots'),
+                             ('source_mode', 'mutable'), ('bindings', [])):
+            boundary = self.boundary()
+            boundary[field] = value
+            with self.assertRaises(active.c.BoundaryStoreError):
+                active._mixed_v3_boundary(boundary)
+        boundary = self.boundary()
+        boundary['bindings'][0][2] = True
+        with self.assertRaises(active.c.BoundaryStoreError):
+            active._mixed_v3_boundary(boundary)
+
+    def test_unknown_anchor_name_or_extra_boundary_field_cannot_widen_selected_roster(self):
+        for change in ('name', 'extra'):
+            boundary = self.boundary()
+            if change == 'name':
+                boundary['bindings'][0][1] = 'arbitrary_model_payload'
+            else:
+                boundary['model_is_implementation'] = True
+            with self.assertRaises(active.c.BoundaryStoreError):
+                active._mixed_v3_boundary(boundary)
+
+    def test_original_metadata_domain_refuses_before_any_array_or_transport(self):
+        # Validates a decoded primitive projection; no Original LOAD or Root fact.
+        active.c.oi._canonical_original_manifest({'files': [{'dtype': '<f8', 'shape': [6, 1, 3, 6]}]})
+        for row in ({'dtype': '>f8', 'shape': [6]}, {'dtype': '<f8', 'shape': [16001]},
+                    {'dtype': '<f8', 'shape': [1, 1, 1, 1, 1]}):
+            with self.assertRaises(active.c.oi.OriginalInputsError):
+                active.c.oi._canonical_original_manifest({'files': [row]})
+
+    def test_partial_slot_cleanup_and_close_failure_clear_all_known_slots(self):
+        from types import ModuleType
+        class BrokenClose:
+            def close(self):
+                raise OSError('synthetic close error')
+        scope = BrokenClose()
+        modules = [ModuleType('synthetic_native'), ModuleType('synthetic_original'),
+                   ModuleType('synthetic_active')]
+        scope._native, scope._oi, scope._active = modules
+        for module in modules:
+            module._CANONICAL_METADATA_SCOPE = scope
+        owner = SimpleNamespace(_counts={'canonical_scope': scope})
+        with self.assertRaises(OSError, msg='ordinary close error must remain truthful'):
+            active._mixed_v3_drop(owner)
+        self.assertTrue(all(module._CANONICAL_METADATA_SCOPE is None for module in modules))
+        self.assertNotIn('canonical_scope', owner._counts)
+
+    def test_primary_failure_survives_cleanup_failure_and_clears_original_owner(self):
+        from types import ModuleType
+        class BrokenClose:
+            def close(self):
+                raise OSError('synthetic cleanup error')
+        owner = object.__new__(active._MixedMetadataOperation)
+        for field in owner.__slots__:
+            object.__setattr__(owner, field, None)
+        scope = BrokenClose()
+        modules = [ModuleType('synthetic_native'), ModuleType('synthetic_original'),
+                   ModuleType('synthetic_active')]
+        scope._native, scope._oi, scope._active = modules
+        for module in modules:
+            module._CANONICAL_METADATA_SCOPE = scope
+        owner._counts = {'canonical_scope': scope}
+        original = ValueError('synthetic original error')
+        try:
+            raise original
+        except ValueError as caught:
+            active._mixed_clear(owner)
+            self.assertIs(caught, original)
+        self.assertEqual(owner._phase, 'closed')
+        self.assertIsNone(owner._counts)
+        self.assertTrue(all(module._CANONICAL_METADATA_SCOPE is None for module in modules))
+
+    def test_foreign_mirror_is_preserved_while_every_owned_slot_is_cleared(self):
+        from types import ModuleType
+        class Scope:
+            closed = False
+            def close(self):
+                self.closed = True
+        for index in range(3):
+            scope, foreign = Scope(), object()
+            modules = [ModuleType('synthetic_native'), ModuleType('synthetic_original'),
+                       ModuleType('synthetic_active')]
+            scope._native, scope._oi, scope._active = modules
+            for module in modules:
+                module._CANONICAL_METADATA_SCOPE = scope
+            modules[index]._CANONICAL_METADATA_SCOPE = foreign
+            owner = SimpleNamespace(_counts={'canonical_scope': scope})
+            with self.subTest(foreign_slot=index):
+                with self.assertRaises(active.c.BoundaryStoreError) as caught:
+                    active._mixed_v3_drop(owner)
+                self.assertEqual(caught.exception.code, 'mixed_implementation')
+                self.assertIs(modules[index]._CANONICAL_METADATA_SCOPE, foreign)
+                self.assertTrue(all(module._CANONICAL_METADATA_SCOPE is None
+                                    for i, module in enumerate(modules) if i != index))
+                self.assertTrue(scope.closed)
+                self.assertNotIn('canonical_scope', owner._counts)

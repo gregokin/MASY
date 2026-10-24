@@ -2300,6 +2300,18 @@ def _mixed_process_check(owner):
 
 
 def _mixed_clear(owner):
+    if owner._counts is not None and owner._counts.get('canonical_scope') is not None:
+        primary = sys.exc_info()[1]
+        try:
+            _mixed_v3_drop(owner)
+        except Exception:
+            if primary is None:
+                raise
+        finally:
+            # Drop removes its count entry even if close fails. This bounded
+            # second call executes the ORIGINAL clear body, not another drop.
+            _mixed_clear(owner)
+        return
     owner._phase = 'closed'
     owner._record = owner._raw = owner._selected = owner._files = owner._image = None
     owner._observer = owner._handle = owner._header_raw = None
@@ -2385,7 +2397,9 @@ class _MixedMetadataOperation:
             reference = dict(zip(('path', 'size', 'sha256'), self._reference, strict=True))
             raw = _mixed_read_ref(reference, 'Root implementation proof')
             record = c.oi._strict_json(raw, c._JSON)
-            if type(record) is dict and record.get('schema') == _MIXED_V2_SCHEMA:
+            if type(record) is dict and record.get('schema') == _MIXED_V3_SCHEMA:
+                c._keys(record, _MIXED_V2_TOP_FIELDS, 'Root mixed metadata implementation v3')
+            elif type(record) is dict and record.get('schema') == _MIXED_V2_SCHEMA:
                 c._keys(record, _MIXED_V2_TOP_FIELDS, 'Root mixed metadata implementation v2')
             else:
                 c._keys(record, ('schema', 'root', 'runtime_reference_sha256', 'source_identity',
@@ -2394,6 +2408,7 @@ class _MixedMetadataOperation:
                     'units', 'observer'), 'Root mixed metadata implementation')
             if (record['schema'] != 'masy.mixed_metadata_Root_implementation.v1'
                     and record['schema'] != _MIXED_V2_SCHEMA
+                    and record['schema'] != _MIXED_V3_SCHEMA
                     or record['root'] != str(self._root)
                     or record['runtime_reference_sha256'] != c._sha(self._runtime_raw)):
                 c._fail('mixed_implementation', 'exact Root proof/runtime/store subject')
@@ -2430,7 +2445,9 @@ class _MixedMetadataOperation:
             self._nonce, self._ordinal = record['nonce'], record['ordinal']
             self._raw, self._record = raw, record
             self._image = _mixed_scope_image()
-            if record['schema'] == _MIXED_V2_SCHEMA:
+            if record['schema'] == _MIXED_V3_SCHEMA:
+                self._counts['typed_image'] = _mixed_v3_admit(record, self._limits, self._image)
+            elif record['schema'] == _MIXED_V2_SCHEMA:
                 self._counts['typed_image'] = _mixed_v2_admit(record, self._limits, self._image)
             if not c.rw._same_compiled_image(initial_image, self._image):
                 c._fail('mixed_implementation', 'entry Source image changed')
@@ -2447,6 +2464,8 @@ class _MixedMetadataOperation:
             if (_MIXED_OPERATION_SLOT is not None
                     or self._ordinal != _MIXED_OPERATION_ORDINAL + 1):
                 c._fail('mixed_implementation', 'entry ownership changed before publication')
+            if record['schema'] == _MIXED_V3_SCHEMA:
+                _mixed_v3_install(self)
             self._phase = 'entered'
             _MIXED_OPERATION_ORDINAL = self._ordinal
             _MIXED_OPERATION_SLOT = self
@@ -2459,6 +2478,8 @@ class _MixedMetadataOperation:
     def __exit__(self, error_type, error, traceback):
         global _MIXED_OPERATION_SLOT
         try:
+            if self._counts is not None and self._counts.get('canonical_scope') is not None:
+                _mixed_v3_exit_check(self, error_type)
             if (_MIXED_OPERATION_SLOT is not self or self._phase != 'entered') and error_type is None:
                 c._fail('mixed_implementation', 'same entered owner required for cleanup')
             # An existing primary error propagates unchanged even if cleanup
@@ -2614,6 +2635,8 @@ def _mixed_operation_charge(owner):
     bootstrap = _mixed_pre_entry_charge(owner._limits, owner._image)
     header = (sys.getsizeof(owner) + len(owner.__slots__) * (units['pointer'] + units['integer'])
               + 8 * (units['dict'] + units['list'] + units['tuple']))
+    if owner._record['schema'] == _MIXED_V3_SCHEMA:
+        return bootstrap + cycles + runtime_cycles + header + _mixed_v3_charge(owner)
     if owner._record['schema'] == _MIXED_V2_SCHEMA:
         return bootstrap + cycles + runtime_cycles + header + _mixed_v2_charge(owner)
     return bootstrap + cycles + runtime_cycles + header
@@ -2659,6 +2682,10 @@ def _mixed_context_check(root, header, limits, *, where):
             or _mixed_implementation_files() != owner._files
             or _mixed_observer_record() != owner._observer):
         c._fail('mixed_implementation', 'Source/function/dispatch/compiled/observer currentness')
+    if owner._record['schema'] == _MIXED_V3_SCHEMA:
+        if not c.rw._same_compiled_image(owner._counts['typed_image'], _mixed_v3_external_image()):
+            c._fail('mixed_implementation', 'current v3 anchors/Source/provider/metadata image')
+        _mixed_v3_check_scope(owner)
     if owner._record['schema'] == _MIXED_V2_SCHEMA:
         if not c.rw._same_compiled_image(owner._counts['typed_image'], _mixed_v2_external_image()):
             c._fail('mixed_implementation', 'current typed constructor/provider/observer image')
@@ -2837,6 +2864,9 @@ def _mixed_before_native(handle, request_intent):
                                  where='before_native')
     if owner._entry_kind != 'operate' or owner._ticket is None:
         c._fail('mixed_implementation', 'actual operation forecast required before Native')
+    if (owner._record['schema'] == _MIXED_V3_SCHEMA
+            and handle._header['event_kinds'] != ['wind', 'rain', 'wind', 'rain']):
+        c._fail('mixed_implementation', 'canonical fixed four-event Original profile before Native')
     if owner._ticket['request_kind'] != request_intent['kind']:
         c._fail('mixed_implementation', 'same typed request outcome alternatives')
     inventory = _inventory(handle)
@@ -2937,12 +2967,16 @@ _MIXED_V2_CENSUS_SHA256 = '66157ba2263974669b248d0df6b8e4535b11ce74e255025db8d43
 
 
 def _mixed_v2_active():
+    if _mixed_v3_active():
+        return True
     owner = _MIXED_OPERATION_SLOT
     return (type(owner) is _MixedMetadataOperation and type(owner._record) is dict
             and owner._record.get('schema') == _MIXED_V2_SCHEMA)
 
 
 def _mixed_v2_readonly_kind(owner, kind):
+    if type(owner._record) is dict and owner._record.get('schema') == _MIXED_V3_SCHEMA:
+        return type(kind) is str and kind in ('inspect_metadata', 'inspect_passive_snapshot')
     return (type(owner._record) is dict and owner._record.get('schema') == _MIXED_V2_SCHEMA
             and type(kind) is str and kind in ('inspect_metadata', 'inspect_passive_snapshot'))
 
@@ -3199,3 +3233,295 @@ def _mixed_readonly_entry(handle, kind):
                 or head['accepted_sequence'] != 4 or _paused(head)):
             c._fail('mixed_implementation', 'final accepted R2F boundary before passive LOAD')
     return None
+
+
+# Explicit versioned ownership boundary. No v1/v2 fact is reinterpreted.
+_MIXED_V3_SCHEMA = 'masy.mixed_metadata_Root_implementation.v3'
+_MIXED_V3_TYPED = 'masy.mixed_metadata_typed_ownership.v3'
+_MIXED_V3_EVIDENCE = 'masy.Root.mixed_metadata_component_evidence.v3'
+_MIXED_V3_BOUNDARY = 'masy.Root.mixed_implementation_boundary.v3'
+_MIXED_V3_ANCHOR_SOURCE = 'b4d5699abeddcb259b4ef74d763ee8240fb28cb4df131973e2a99f66f5a43271'
+_MIXED_V3_ANCHORS = (('numpy', '<module>', 'native_namespace'), ('maple.aeolian.cohorts.dispatch', 'mobile_state_is_genuinely_empty', 'native_namespace'), ('maple.aeolian.cohorts.dispatch', 'mobile_mass_by_class_kg', 'native_namespace'), ('maple.aeolian.scheduler.accounting', 'accounting_step_durations_s', 'native_namespace'), ('maple.aeolian.scheduler.block', 'reservoir_arithmetic_scale_kg', 'native_namespace'), ('maple.aeolian.scheduler.state', 'SchedulerPhysicsConfig', 'native_namespace'), ('maple.aeolian.scheduler.finalization', 'finalize_wind_event', 'native_namespace'), ('maple.aeolian.scheduler.finalization', 'WindEventFinalizationResult', 'native_namespace'), ('maple.aeolian.scheduler.record', '_EPS_S', 'native_namespace'), ('maple.core.parameters.wind_forcing', 'WindBlock', 'native_namespace'), ('maple.core.parameters.wind_forcing', 'resolve_wind_forcing_record', 'native_namespace'), ('maple.core.types.cohort', 'MobileCohortState', 'native_namespace'), ('maple.core.types.topographic_commit', 'committed_elevation_m', 'native_namespace'), ('maple.surface.voxels._numerics', 'summation_error_bound_kg', 'native_namespace'), ('maple_syrup.complete_event', 'CompletionPolicy', 'native_namespace'), ('maple_syrup.complete_event', 'DryHandoff', 'native_namespace'), ('maple_syrup.complete_event', 'EventProgress', 'native_namespace'), ('maple_syrup.complete_event', 'IncompleteEventError', 'native_namespace'), ('maple_syrup.rainfall', 'RainfallField', 'native_namespace'), ('maple_syrup.rainfall', 'RainfallProvenance', 'native_namespace'), ('maple_syrup.rainfall', 'RainfallSchedule', 'native_namespace'), ('maple_syrup.sediment_bed', 'BedContext', 'native_namespace'), ('maple_syrup.sediment_bed', 'BedState', 'native_namespace'), ('maple_syrup.sediment_bed', 'TerrainReference', 'native_namespace'), ('maple_syrup.sediment_bed', 'bed_inventory', 'native_namespace'), ('maple_syrup.sediment_bed', 'commit_bed', 'native_namespace'), ('maple_syrup.sediment_bed', 'routing_graph_from_elevation', 'native_namespace'), ('maple_syrup.sediment_event', 'SedimentEventControl', 'native_namespace'), ('maple_syrup.sediment_event', 'initial_event_state', 'native_namespace'), ('maple_syrup.sediment_event', 'sediment_hydrograph_columns', 'native_namespace'), ('maple_syrup.sediment_physics', 'physics_grid_from_graph', 'native_namespace'), ('maple_syrup.sediment_transport', 'transport_network', 'native_namespace'), ('maple_syrup.storm', 'HYDROGRAPH_COLUMNS', 'native_namespace'), ('maple_syrup.storm', 'initial_state', 'native_namespace'), ('maple_syrup.rainfall', 'RainfallProvenance', 'scanner_schema'), ('maple_syrup.rainfall', 'RainfallSchedule', 'scanner_schema'), ('maple_syrup.complete_event', 'CompletionPolicy', 'scanner_schema'), ('maple_syrup.complete_event', 'QuietProgress', 'scanner_schema'), ('maple_syrup.complete_event', 'EventProgress', 'scanner_schema'), ('maple_syrup.sediment_event', 'SedimentEventControl', 'scanner_schema'), ('maple_syrup.sediment_event', 'SedimentEventState', 'scanner_schema'), ('maple_syrup.sediment_event', 'SedimentEventResult', 'scanner_schema'), ('maple_syrup.storm', 'StormControl', 'scanner_schema'), ('maple_syrup.storm', 'StormState', 'scanner_schema'), ('maple_syrup.sediment_bed', 'BedState', 'scanner_schema'), ('maple_syrup.sediment_bed', 'TerrainReference', 'scanner_schema'), ('maple_syrup.routing', 'RoutingGraph', 'scanner_schema'), ('maple_syrup.sediment_transport', 'TransportNetwork', 'scanner_schema'), ('maple_syrup.sediment_physics', 'PhysicsGrid', 'scanner_schema'), ('maple.core.types.voxel', 'VoxelColumnState', 'scanner_schema'), ('maple.core.types.active_layer', 'ActiveLayerState', 'scanner_schema'), ('maple.core.types.sediment_availability', 'SedimentAvailabilityState', 'scanner_schema'), ('maple.core.types.sediment_ledger', 'SedimentLedgerState', 'scanner_schema'), ('maple.core.types.topographic_commit', 'CommittedTopographyState', 'scanner_schema'), ('maple.core.types.water', 'WaterState', 'scanner_schema'), ('maple_syrup.complete_event', 'CompletionPolicy', 'codec_registry'), ('maple_syrup.complete_event', 'DryHandoff', 'codec_registry'), ('maple_syrup.complete_event', 'EventProgress', 'codec_registry'), ('maple_syrup.complete_event', 'QuietProgress', 'codec_registry'), ('maple_syrup.sediment_event', 'SedimentEventControl', 'codec_registry'), ('maple_syrup.sediment_event', 'SedimentEventResult', 'codec_registry'), ('maple_syrup.storm', 'StormControl', 'codec_registry'), ('maple_syrup.storm', 'StormState', 'codec_registry'), ('maple_syrup.sediment_bed', 'TerrainReference', 'codec_registry'), ('maple.core.types.sediment_ledger', 'SedimentLedgerState', 'codec_registry'), ('maple.core.types.sediment_ledger', 'CompactSedimentLedgerState', 'codec_registry'), ('maple.core.types.topographic_commit', 'CommittedTopographyState', 'codec_registry'), ('maple.core.types.water', 'WaterState', 'codec_registry'), ('builtins', 'ValueError', 'encoder_controls'), ('builtins', 'dict', 'encoder_controls'), ('builtins', 'float', 'encoder_controls'), ('builtins', 'id', 'encoder_controls'), ('builtins', 'int', 'encoder_controls'), ('builtins', 'isinstance', 'encoder_controls'), ('builtins', 'list', 'encoder_controls'), ('builtins', 'str', 'encoder_controls'), ('builtins', 'tuple', 'encoder_controls'), ('builtins', 'int.__repr__', 'encoder_controls'), ('builtins', 'float.__repr__', 'encoder_controls'), ('json.encoder', 'JSONEncoder.default', 'encoder_controls'), ('json.encoder', 'encode_basestring_ascii', 'encoder_controls'))
+_MIXED_V3_EXPRESSIONS = (('Gamma_A', '2*Fn(a_native_projection,0,0)+Tu(2)+Tu(3)+5*h_cell+WetProjectionRegistry+ProjectionCache+NativeNamespace+WetBodyTemporary'), ('Gamma_D', '3*Fn(a_budget,2,2)+Tu(4)+Tu(1)+Tu(7)+12*h_cell+4*I(64)+2*h_bool+h_obj+VisitTemp(24,a_budget,4096)'), ('Gamma_E', '4*Fn(max_fixed_function_AST,4,4)+Tu(18)+Tu(21)+Tu(17)+56*h_cell+Tu(4)+Se(33)+33*I(64)+Di(33)+33*h_obj+Ob(10)+10*(U(128)+h_bool+h_none)+3*U(4096)+3*h_obj+VisitTemp(32,max_fixed_function_AST,4096)+2*h_float+h_bool+Ref(13)+3*33*h_generator'), ('Gamma_F', '2*Fn(a_fingerprint,0,0)+Tu(1)+Tu(2)+3*h_cell+h_hash+VisitTemp(32,a_fingerprint,4096)+B(8)+U(64)'), ('Gamma_H', 'Fn(a_header_admission,0,0)+Tu(2)+2*h_cell+I(64)+VisitTemp(32,a_header_admission,1024)'), ('Gamma_Heap', 'Fn(a_strict_json,0,0)+Tu(3)+3*h_cell+HeapHolder+I(64)+VisitTemp(24,a_strict_json,4096)'), ('Gamma_I', '2*Fn(a_inventory_at,0,0)+2*Tu(5)+10*h_cell+Se(9)+9*U(39)+Se(1)+U(32)+Se(4)+4*U(39)+CapturedHeader+Limits+2*I(64)+VisitTemp(4,a_inventory_at,path_chars)+Di(4096)+4096*(U(128)+Tu(10)+10*I(256))'), ('Gamma_Image', 'Fn(a_strict_json,0,0)+Tu(3)+3*h_cell+ImageHolder+I(64)+VisitTemp(24,a_strict_json,4096)'), ('Gamma_L', 'Fn(aload_checkpoint,0,0)+Tu(9)+9*h_cell+ReferenceNPZDecode+VisitTemp(32,aload_checkpoint,1024)+NativeControlTree'), ('Gamma_NS', 'Fn(a_strict_json,0,0)+Tu(3)+3*h_cell+NamespaceHolder+I(64)+VisitTemp(24,a_strict_json,4096)'), ('Gamma_Observer', 'ObserverBody'), ('Gamma_Original', 'Fn(a_strict_json,0,0)+Tu(3)+3*h_cell+OriginalHolder+I(64)+VisitTemp(24,a_strict_json,4096)'), ('Gamma_T', '2*Fn(a_scan,0,0)+Tu(1)+Tu(11)+12*h_cell+4*I(64)+h_hash+Schemas+Record(7,256,64)+Se(33)+33*I(64)+WetRegistry+Tu(scan_arrays)+scan_arrays*Ar(4,R_wet)+VisitTemp(32,a_scan,8192)+B(4*1024)+Li(256)+256*U(128)'), ('Gamma_plain', 'Fn(a_plain_metadata,0,0)+Tu(8)+8*h_cell+Se(33)+33*I(64)+5*I(64)+U(4096)+8*p+VisitTemp(24,a_plain_metadata,4096)'), ('X_EntryGate', 'Fr(a_mixed_v2_prefix_charge)+Fr(a_mixed_readonly_entry)+SmallOwnerCheck+Tu(2)+2*U(32)+Record(15,32768,256)+Limits+3*h_obj'), ('X_Error', 'h_exception+Tu(3)+U(path_chars)+13*h_traceback+NewFrameRoster+ErrorInputs+Li(49)+49*Tu(8)+GenericNPYHeaderError+CanonicalGuardError+CanonicalPrewriteHeader+CanonicalRosterCheck+canonical_prewrite_rows*CanonicalProducerRow+V3NewError'), ('X_InsertCheck', 'Fr(a_mixed_v2_insert)+SmallOwnerCheck+Tu(3)+3*U(16)+Ob(1)+U(39)+I(64)+3*I(64)+Se(9)'), ('X_InventoryCapture', 'h_cell+Tu(6)+Path(path_chars)'), ('X_OwnerRoster', 'OwnRosterTables'), ('X_RowCheck', 'Fr(a_mixed_v2_row_check)+SmallOwnerCheck+I(64)+U(128)'), ('X_ScalarPolynomial', 'Fr(a_mixed_v2_polynomial)+22*Fr(a_mixed_v2_uint)+Tu(22)+Se(22)+22*U(128)+14*I(128)+8*I(128)+24*I(128)+4*h_generator+4*h_iter+ImageConstructor+2*3*(8*(h_cell+h_obj)+4*(U(128)+h_obj))'), ('X_SchemaAdmission', 'Fr(a_mixed_v2_admit)+Record(16,proof_raw,4096)+Record(5,128,64)+Record(5,128,64)+Record(22,22*64,64)+Record(4,128,64)+22*Record(2,128,64)+OwnerRows+ImageConstructor+2*3*(8*(h_cell+h_obj)+4*(U(128)+h_obj))+49*Stream(source_stream_chunk)+UnitConstructor+3*h_iter+Li(22)+Tu(22)+Se(22)+22*(U(128)+I(64))+implementation_reserve_bytes+ParsedAnchorRows+Record(new_boundary_fields,6*128,64)+NPYProviderHeaderBank+CanonicalContextSetup+npy_guard_calls*CanonicalGuardCall+canonical_archive_checks*CanonicalRosterCheck+canonical_original_count_checks*CanonicalOriginalCountCheck+canonical_context_checks*CanonicalContextCheck+CanonicalPrewriteBank+CanonicalReferenceFunctionImage+V3NewCompleteSchema'))
+
+_MIXED_V3_CENSUS_SHA256 = 'e503cca27a53e8662f36f5d8c3caf76578c5b5f9b2698660ff5a48952ddcda41'
+
+
+def _mixed_v3_active():
+    owner = _MIXED_OPERATION_SLOT
+    return (type(owner) is _MixedMetadataOperation and type(owner._record) is dict
+            and owner._record.get('schema') == _MIXED_V3_SCHEMA)
+
+
+def _mixed_v3_native():
+    module = sys.modules.get('maple.aeolian.scheduler.physical_checkpoint')
+    active = sys.modules.get('masy.dense_active_checkpoint')
+    provider = sys.modules.get('numpy.lib._format_impl')
+    if (module is None or active is None or provider is None
+            or c.oi is not sys.modules.get('masy.dense_original_inputs')):
+        c._fail('mixed_implementation', 'declare actual canonical owners/provider before v3 admission')
+    return module, active, provider
+
+
+def _mixed_v3_anchor_rows():
+    # Exact finite named owners; never traverse a namespace/library graph or
+    # import/probe a missing provider. Every occurrence/reference stays positive.
+    rows, held = [], []
+    for module_name, symbol, group in _MIXED_V3_ANCHORS:
+        module = sys.modules.get(module_name)
+        if module is None:
+            c._fail('mixed_implementation', 'missing selected v3 implementation anchor')
+        value = module
+        if symbol != '<module>':
+            for part in symbol.split('.'):
+                if type(value) is type or value is module:
+                    value = vars(value).get(part)
+                else:
+                    c._fail('mixed_implementation', 'fixed class/module anchor path')
+        if value is None:
+            c._fail('mixed_implementation', 'missing fixed implementation endpoint')
+        if type(value) is c.rw.FunctionType:
+            code, namespace = id(value.__code__), id(value.__globals__)
+        else:
+            # Explicit Source endpoints are classes/modules/C operators or
+            # immutable Source constants; no arbitrary payload can use zero.
+            if (type(value) not in (type, type(sys), type(len), type(int.__repr__), float, tuple)
+                    or (type(value) in (float, tuple) and group != 'native_namespace')):
+                c._fail('mixed_implementation', 'unsupported exact anchor endpoint type')
+            code = namespace = 0
+        if type(value) is tuple:
+            # The only tuple endpoint is this exact immutable Source literal.
+            # Do not recurse through or exempt an arbitrary tuple/model graph.
+            if (module_name != 'maple_syrup.storm' or symbol != 'HYDROGRAPH_COLUMNS'
+                    or len(value) != len(_MIXED_V3_HYDROGRAPH_COLUMNS)
+                    or any(type(item) is not str for item in value)
+                    or value != _MIXED_V3_HYDROGRAPH_COLUMNS):
+                c._fail('mixed_implementation', 'exact primitive Source tuple anchor')
+        rows.append([module_name, symbol, id(value), id(type(value)), code, namespace])
+        held.extend((module, value))
+    return rows, tuple(held)
+
+
+def _mixed_v3_boundary(boundary):
+    c._keys(boundary, ('schema', 'anchor_roster_source_sha256', 'bindings',
+        'implementation_reserve_bytes', 'source_mode', 'metadata_model_ownership'), 'v3 boundary')
+    if (boundary['schema'] != _MIXED_V3_BOUNDARY
+            or boundary['anchor_roster_source_sha256'] != _MIXED_V3_ANCHOR_SOURCE
+            or boundary['source_mode'] != 'quiescent_owned_runtime'
+            or boundary['metadata_model_ownership'] != 'full_owned_occurrences'):
+        c._fail('mixed_implementation', 'explicit selected implementation/full model ownership boundary')
+    _mixed_v2_uint(boundary['implementation_reserve_bytes'])
+    rows = boundary['bindings']
+    if type(rows) is not list or len(rows) != 81:
+        c._fail('mixed_implementation', 'exact81 actual selected anchor occurrences')
+    for row, (module, symbol, _group) in zip(rows, _MIXED_V3_ANCHORS, strict=True):
+        if (type(row) is not list or len(row) != 6 or row[:2] != [module, symbol]
+                or any(type(x) is not int or not 0 <= x < 1 << 64 for x in row[2:])
+                or row[2] == 0 or row[3] == 0):
+            c._fail('mixed_implementation', 'closed exact anchor names/plain identities')
+
+
+def _mixed_v3_function_owners():
+    native, active, provider = _mixed_v3_native()
+    pairs = []
+    for name in _MIXED_V3_LOCAL_NAMES:
+        pairs.append((sys.modules[__name__], name, globals().get(name)))
+    for name in _MIXED_V3_NATIVE_NAMES:
+        pairs.append((native, name, vars(native).get(name)))
+    for name in ('_canonical_original_prewrite', '_canonical_original_manifest'):
+        pairs.append((c.oi, name, vars(c.oi).get(name)))
+    for name in ('_canonical_register_wet', '_canonical_write_layout'):
+        pairs.append((active, name, vars(active).get(name)))
+    for cls_name, names in _MIXED_V3_NATIVE_METHODS:
+        cls = vars(native).get(cls_name)
+        if type(cls) is not type:
+            c._fail('mixed_implementation', 'actual canonical scope/sink type')
+        for name in names:
+            pairs.append((native, cls_name + '.' + name, vars(cls).get(name)))
+    # Actual serializers/provider formatter methods are anchors with their full
+    # current code/default/globals image; their bodies still execute once.
+    snapshot = sys.modules.get('maple.io.outputs.snapshot')
+    for module, names in ((provider, ('_write_array_header', 'header_data_from_array_1_0')),
+                          (snapshot, ('save_state_snapshot', 'load_state_snapshot'))):
+        if module is None:
+            c._fail('mixed_implementation', 'missing actual declared canonical producer')
+        for name in names:
+            pairs.append((module, name, vars(module).get(name)))
+    checkpoint = sys.modules.get('maple_syrup.checkpoint')
+    if checkpoint is None:
+        c._fail('mixed_implementation', 'declare actual genuine P1 metadata validator')
+    for name in ('_child_layout', '_child_uint', '_write_limits'):
+        pairs.append((checkpoint, name, vars(checkpoint).get(name)))
+    return pairs
+
+
+def _mixed_v3_external_image():
+    legacy = _mixed_v2_external_image()
+    images, operators = list(legacy[0]), list(legacy[1])
+    for module, name, value in _mixed_v3_function_owners():
+        image = c.rw._compiled_function_image(value)
+        if image is None:
+            c._fail('mixed_implementation', 'complete current v3 function/default/closure Source image')
+        images.append(image)
+        operators.extend((module, value))
+    anchors, held = _mixed_v3_anchor_rows()
+    operators.extend(held)
+    native, active, provider = _mixed_v3_native()
+    operators.extend((native, active, provider, native._CanonicalMetadataScope,
+                      native._CanonicalHeaderSink, native._CANONICAL_SCOPE_KEY))
+    return (tuple(images), tuple(operators), (legacy[2], _MIXED_V3_ANCHORS,
+        tuple(tuple(row) for row in anchors), _MIXED_V3_EXPRESSIONS,
+        _MIXED_V3_CENSUS_SHA256, _MIXED_V3_SCHEMA, _MIXED_V3_TYPED,
+        _MIXED_V3_EVIDENCE, _MIXED_V3_BOUNDARY, native._CANONICAL_ARCHIVE_ROWS,
+        _MIXED_V3_LOCAL_NAMES, _MIXED_V3_NATIVE_NAMES, _MIXED_V3_NATIVE_METHODS,
+        _MIXED_V3_HYDROGRAPH_COLUMNS))
+
+
+def _mixed_v3_owner_rows():
+    rows = _mixed_v2_owner_rows(_mixed_v2_external_image())
+    for module, name, value in _mixed_v3_function_owners():
+        image = c.rw._compiled_function_image(value)
+        source = vars(module).get('__file__')
+        if image is None or type(source) is not str:
+            c._fail('mixed_implementation', 'actual finite v3 Source/compiled owner')
+        rows.append([vars(module)['__name__'], name, id(value), id(value.__code__),
+                     *_mixed_file_record(source, 64 << 20)])
+    return rows
+
+
+def _mixed_v3_admit(record, limits, local_image):
+    typed = record['typed_ownership']
+    c._keys(typed, ('schema', 'Source_domain', 'Source_census_sha256',
+        'component_bounds', 'component_evidence'), 'complete v3 typed ownership')
+    if (typed['schema'] != _MIXED_V3_TYPED or typed['Source_domain'] != dict(_MIXED_V2_DOMAIN)
+            or typed['Source_census_sha256'] != _MIXED_V3_CENSUS_SHA256):
+        c._fail('mixed_implementation', 'exact v3 Source domain/census')
+    domain = typed['Source_domain']
+    c._keys(domain, tuple(name for name, _value in _MIXED_V2_DOMAIN), 'v3 fixed domain')
+    for name, value in _MIXED_V2_DOMAIN:
+        if type(domain[name]) is not int or domain[name] != value:
+            c._fail('mixed_implementation', 'plain fixed v3 caller domain')
+    for name, value in (('chain_call_quota', 162), ('binding_check_quota', 111),
+                        ('runtime_strict_calls_per_binding', 35), ('runtime_plain_calls_per_binding', 8)):
+        if type(record['Source_census'][name]) is not int or record['Source_census'][name] != value:
+            c._fail('mixed_implementation', 'unchanged complete Source caller quotas')
+    names = tuple(name for name, expression in _MIXED_V3_EXPRESSIONS)
+    bounds = typed['component_bounds']
+    c._keys(bounds, names, 'all22 independently issued v3 component bounds')
+    evidence = typed['component_evidence']
+    c._keys(evidence, ('schema', 'owners', 'laws', 'implementation_boundary'), 'v3 evidence')
+    if evidence['schema'] != _MIXED_V3_EVIDENCE:
+        c._fail('mixed_implementation', 'new v3 evidence required, never v2 relabelling')
+    _mixed_v3_boundary(evidence['implementation_boundary'])
+    c._keys(evidence['laws'], names, 'all22 exact v3 producer laws')
+    for name, expression in _MIXED_V3_EXPRESSIONS:
+        _mixed_v2_uint(bounds[name])
+        law = evidence['laws'][name]
+        c._keys(law, ('expression_sha256', 'producer_law_sha256'), name)
+        if law['expression_sha256'] != c._sha(expression.encode('utf-8')):
+            c._fail('mixed_implementation', 'exact full v3 ownership expression')
+        c._digest(law['producer_law_sha256'], 'genuine Root pretransport producer/ABI law')
+    if bounds['X_SchemaAdmission'] < evidence['implementation_boundary']['implementation_reserve_bytes']:
+        c._fail('mixed_implementation', 'positive implementation reserve inside original6GiB admission')
+    # Reserve ALL new models/control/provider/parser/Unicode/error owners before
+    # generating/hash-reading their actual images. Shape/ids are not issuance.
+    _reservation(limits, 0, _mixed_pre_entry_charge(limits, local_image)
+                 + _mixed_v3_polynomial(bounds), combined=True)
+    image = _mixed_v3_external_image()
+    if (evidence['owners'] != _mixed_v3_owner_rows()
+            or evidence['implementation_boundary']['bindings'] != [list(row) for row in image[2][2]]):
+        c._fail('mixed_implementation', 'actual current v3 owners/implementation anchors differ')
+    return image
+
+
+def _mixed_v3_polynomial(bounds):
+    c._keys(bounds, tuple(name for name, expression in _MIXED_V3_EXPRESSIONS), 'complete v3 polynomial')
+    for name, expression in _MIXED_V3_EXPRESSIONS:
+        _mixed_v2_uint(bounds[name])
+    typed = sum(count * bounds[name] for name, count in _MIXED_V2_COEFFICIENTS)
+    extra = (3 * _parse_charge(_MIXED_PROOF_BYTES) + bounds['X_SchemaAdmission']
+        + 1732 * bounds['X_ScalarPolynomial'] + 3975 * bounds['X_InsertCheck']
+        + 1620 * bounds['X_RowCheck'] + 2 * bounds['X_EntryGate']
+        + 265 * bounds['X_InventoryCapture'] + 3 * bounds['X_OwnerRoster']
+        + 3 * bounds['X_Error'])
+    return typed + extra
+
+
+def _mixed_v3_charge(owner):
+    image = owner._counts['typed_image']
+    functions = tuple(row[0] for row in owner._image[0] + image[0])
+    functions += tuple(image[1][offset + 1] for offset in image[2][0][3])
+    # All old image/frame banks remain; every new image/header/owned allocation
+    # is additional, with complete model backings per occurrence in Root laws.
+    return (_mixed_v3_polynomial(owner._record['typed_ownership']['component_bounds'])
+        + 6 * (c.rw._compiled_image_charge(owner._image) + c.rw._compiled_image_charge(image))
+        + 6 * c.rw._compiled_frame_charge(functions))
+
+
+def _mixed_v3_install(owner):
+    native, active, provider = _mixed_v3_native()
+    scope = native._canonical_new_scope(owner, c.oi, active)
+    owner._counts['canonical_scope'] = scope
+    # No fallible operation follows a partial publication except ordinary exact
+    # dictionary assignments; the caller's finally still clears every slot.
+    vars(native)['_CANONICAL_METADATA_SCOPE'] = scope
+    vars(c.oi)['_CANONICAL_METADATA_SCOPE'] = scope
+    vars(active)['_CANONICAL_METADATA_SCOPE'] = scope
+
+
+def _mixed_v3_check_scope(owner):
+    scope = owner._counts.get('canonical_scope')
+    native, active, provider = _mixed_v3_native()
+    if type(scope) is not native._CanonicalMetadataScope:
+        c._fail('mixed_implementation', 'actual current v3 metadata scope')
+    scope.check()
+
+
+def _mixed_v3_exit_check(owner, error_type):
+    # Existing primary Native/cancellation failure keeps precedence. Cleanup is
+    # primitive exact-slot clearing, never a validator or failed transport retry.
+    if error_type is None:
+        _mixed_v3_check_scope(owner)
+
+
+def _mixed_v3_clear_slot(module, scope):
+    namespace = vars(module)
+    if namespace.get('_CANONICAL_METADATA_SCOPE') is scope:
+        namespace['_CANONICAL_METADATA_SCOPE'] = None
+        return True
+    return False
+
+
+def _mixed_v3_drop(owner):
+    scope = owner._counts.get('canonical_scope')
+    if scope is None:
+        return
+    native, original, active = scope._native, scope._oi, scope._active
+    foreign = False
+    try:
+        foreign = not _mixed_v3_clear_slot(native, scope) or foreign
+    finally:
+        try:
+            foreign = not _mixed_v3_clear_slot(original, scope) or foreign
+        finally:
+            try:
+                foreign = not _mixed_v3_clear_slot(active, scope) or foreign
+            finally:
+                try:
+                    scope.close()
+                finally:
+                    owner._counts.pop('canonical_scope', None)
+    if foreign:
+        c._fail('mixed_implementation', 'canonical cleanup preserves a foreign mirror slot')
+
+
+    # All changing Native current+next roots/producer metadata still require
+    # their genuine independently issued component producer laws. This scalar
+    # eligibility is not an invented predictor of future model values or fit.
+
+
+_MIXED_V3_LOCAL_NAMES = ('_mixed_v3_active', '_mixed_v3_native', '_mixed_v3_anchor_rows', '_mixed_v3_boundary', '_mixed_v3_function_owners', '_mixed_v3_external_image', '_mixed_v3_owner_rows', '_mixed_v3_admit', '_mixed_v3_polynomial', '_mixed_v3_charge', '_mixed_v3_install', '_mixed_v3_check_scope', '_mixed_v3_exit_check', '_mixed_v3_clear_slot', '_mixed_v3_drop')
+_MIXED_V3_NATIVE_NAMES = ('_canonical_metadata', '_canonical_peek', '_canonical_member_roster', '_canonical_writer_member', '_canonical_new_scope', '_canonical_register_physical', '_canonical_prewrite_physical')
+_MIXED_V3_NATIVE_METHODS = (('_CanonicalHeaderSink', ('__init__', 'write')), ('_CanonicalMetadataScope', ('__init__', 'check', 'take', 'register', 'audit', 'read_prefix', 'original', 'prewrite', 'close', '__reduce_ex__')))
+
+_MIXED_V3_HYDROGRAPH_COLUMNS = ('t_s', 'cumulative_rain_m3', 'cumulative_intake_m3', 'cumulative_saturation_return_m3', 'cumulative_drainage_m3', 'cumulative_export_m3', 'surface_storage_m3', 'soil_storage_m3', 'outlet_discharge_m3_s', 'max_depth_m', 'max_velocity_m_s', 'accepted_steps', 'rejected_attempts', 'min_accepted_dt_s', 'max_routing_cell_balance_residual_m', 'max_constitutive_residual_m')
