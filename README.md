@@ -2,7 +2,9 @@
 
 MAPLE-SYRUP is designed to alternate actual MAPLE wind events and actual SYRUP water events over one evolving MAPLE sediment landscape. Wind physics stays in `~/MAPLE` and water physics stays in `~/SYRUP`. SYRUP's existing `maple_syrup` package name remains unchanged, and the combined wrapper uses `masy`. The wrapper contains no copied transport physics, no re-created sediment bed between events and no simultaneous wind/water transport.
 
-**Current status:** the restricted Dense CPU Python integration passes on committed MAPLE `39bcf79` + SYRUP
+**October 25 qualification:** a bounded, labelled synthetic Dense GPU run completed wind → water → wind → water and matched a separate native GPU control for the captured records at all four event boundaries. [Exact sources, scope and remaining work](docs/dense_gpu_qualification_20261025.md). Full CPU–GPU comparison, windowed coupling, combined persisted restart, scale qualification and production calibration remain open.
+
+**October 19 reference:** the restricted Dense CPU Python integration passes on committed MAPLE `39bcf79` + SYRUP
 `d05d8c6`, using MASY runtime `22aa6ab`. Claude accepted the source-only qualification review, followed by Codex
 verification of all execution and evidence conditions.
 Actual nonempty wind → rain/recession → nonempty wind → second rain/recession passes on one evolving bed,
@@ -13,9 +15,8 @@ Later published MASY additions provide [bounded Dense CPU production-feature
 coupling](docs/dense_production_wind.md), including reduced wind, topographic
 separation, creep and avalanching on labelled synthetic interface fixtures.
 Production calibration remains pending. The [GPU runtime](docs/gpu_runtime.md)
-provides separate immutable source profiles and an identity-only probe;
-numerical GPU transport remains unqualified. These later sources require their
-own new runtime identities and never change the reference lock above.
+provides separate immutable source profiles and an identity-only probe. The
+[October 25 Dense GPU milestone](docs/dense_gpu_qualification_20261025.md) adds separately qualified bounded functional transport on its exact source selection. Numerical agreement with CPU transport remains unqualified. Its new GPU source profile is distinct from the October 19 CPU reference lock (MAPLE `39bcf79`, SYRUP `d05d8c6`, MASY `22aa6ab`); later sources never change that reference lock.
 
 **Coherent CPU components (October 19).** The coherent CPU publication candidate is the immutable source-manifest
 prototype `77f9c077…`, built over live published MASY `72a7d1d`, MAPLE `89a2775` and SYRUP `d05d8c6`. It uses one
@@ -32,7 +33,7 @@ windowed or full-scale support is claimed. The project goal of full alternating 
 The [schedule and bed adapter](docs/dense_integration.md), [Python event runner](docs/dense_runner.md), and
 [native finalization adapter](docs/wind_finalization.md) reuse the actual upstream physics. MAPLE's clock-origin
 extension is committed and included in this merge. Shared-storage libraries are present; windowed wind execution
-remains unqualified. GPU events ([private device runner](docs/dense_device_runner.md)), large cases, general
+remains unqualified. The [private device runner](docs/dense_device_runner.md) now has the bounded, source-specific GPU qualification linked above. Large cases, general
 combined restart and a collaborator transport CLI require later work.
 The [runtime tools](docs/runtime.md) still report `transport_ready=false` because they have no transport entry point;
 source delivery and the separately tested Python API have distinct acceptance evidence.

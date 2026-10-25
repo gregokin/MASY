@@ -1,6 +1,8 @@
 # Private Dense device runner (task 79/81 prototype)
 
-Status: **private prototype, qualified for CPU semantics only.** The task-67 device hook seam is merged into the
+The latest bounded qualification, for its exact source selection only, is recorded in the [October 25 Dense GPU milestone](dense_gpu_qualification_20261025.md): four labelled synthetic GPU events completed with exact agreement for the captured boundary records and clocks against a separate native GPU control. CPU–GPU field comparison, windowed coupling, persisted restart, scale and production calibration remain open. The sections below describe the earlier task-79/81 prototype and its historical qualification.
+
+Historical task-81 status: **private prototype, qualified for CPU semantics only.** The task-67 device hook seam is merged into the
 coherent engine. The task-81 runner uses the SAME shared engine, with typed bed/pool/soil/static owners, an exact
 native backend parameter bridge and the per-owner routing stamp described below.
 

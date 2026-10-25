@@ -65,3 +65,7 @@ this probe. `kernels_compiled`, `runtime_smoke`, `transport_ready` and
 execution, coupled GPU transport, windowed wind, performance or persisted
 combined restart. A profile prepared from a later committed MASY revision has
 its own identity and verification evidence.
+
+## October 25 functional qualification
+
+A run on a later committed source profile completed a small, labelled synthetic Dense GPU wind → water → wind → water sequence. Its captured event-boundary records and clocks matched exactly with a separate native GPU control using identical fixture inputs. See the [exact source selection and limits](dense_gpu_qualification_20261025.md). This is separate functional qualification; preparation, verification and the identity probe retain their original meanings and readiness flags. Full CPU–GPU comparison, windowed coupling, combined persisted restart, capacity/performance qualification and production calibration remain open.
