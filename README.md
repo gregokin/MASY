@@ -4,6 +4,8 @@ MAPLE-SYRUP is designed to alternate actual MAPLE wind events and actual SYRUP w
 
 **October 25 qualification:** a bounded, labelled synthetic Dense GPU run completed wind → water → wind → water and matched a separate native GPU control for the captured records at all four event boundaries. [Exact sources, scope and remaining work](docs/dense_gpu_qualification_20261025.md). Full CPU–GPU comparison, windowed coupling, combined persisted restart, scale qualification and production calibration remain open.
 
+A separate bounded six-class CPU windowed wind record also passed its native dense oracle: [exact scope and limits](docs/windowed_wind_qualification_20261025.md). Windowed wind–water coupling remains open.
+
 **October 19 reference:** the restricted Dense CPU Python integration passes on committed MAPLE `39bcf79` + SYRUP
 `d05d8c6`, using MASY runtime `22aa6ab`. Claude accepted the source-only qualification review, followed by Codex
 verification of all execution and evidence conditions.
