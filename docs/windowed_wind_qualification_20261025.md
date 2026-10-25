@@ -1,4 +1,4 @@
-# Bounded six-class windowed CPU wind record — October 25, 2026
+# Bounded windowed CPU wind records — October 25, 2026
 
 A labelled synthetic 3 × 3 landscape completed a two-block wind record using MAPLE’s native vertical-windowed bed. Three of six sediment voxels per column were resident; the bed had six sediment classes. The native dense oracle ran independently from the same initial physical state. The full-record test passed its original physical-state, class-budget, clock, final-settlement and storage-version assertions.
 
@@ -29,4 +29,16 @@ The original 4 GiB profile remains unchanged and its full-record attempt remains
 
 The local independent acceptance receipt is `agent_handoffs/tasks/masy802_K6_explicit_8GiB_committed_CPU_qualification_20261025/Root_data/ROOT_affected_CPU_acceptance_01.json`, SHA-256 `3f8fd9669fa83314f70bcbfdcd87f02fe7d5873e837923f6ffc37e097def8e82`. Detailed simulation evidence stays local.
 
-Windowed wind–water coupling, complete windowed production features, windowed GPU execution, persisted combined restart and larger-landscape memory/performance qualification remain open. This result adds no collaborator transport CLI or automatic model launch.
+Windowed wind–water coupling, multiclass windowed feature qualification, complete windowed production features, windowed GPU execution, persisted combined restart and larger-landscape memory/performance qualification remain open. This result adds no collaborator transport CLI or automatic model launch.
+
+## Separate one-class feature record
+
+A second bounded Native CPU record passed on a 4 × 4 nonflat landscape with six voxels per column, three resident voxels and one sediment class. Native reduced transport, topographic wind, flow separation, creep and avalanching are enabled in this labelled synthetic case. It uses availability fraction 0.25, initially dry surface water with `constant_depth`, and native empty prescribed vegetation. Production calibration and evolving vegetation physics remain pending.
+
+This acceptance uses MASY `edfa8dc0ce82c5fbf81be773c36a7723cadfe943`, MAPLE `3afad954eb6d4789270298f26eaa4f9b880970b5`, SYRUP `5e6a589f8b4c6b37422e7f0d728115582450eef0` and CPU lock `0f3a0a7375fcaa226b5f42a8e0ed5fe19dde38083025bf31f054a4012b24cfa5`. It is a separate source selection from the K6 result above. SYRUP did not run a water event.
+
+The two one-second wind blocks start at zero. The windowed record and the independently run native dense oracle both complete. Native finalization reports `completed=True, status="already_empty"`: no airborne sediment remains at that boundary, so it records zero finalizer transfers. The test verifies that exact status and zero transfers, complete physical-state and accounting correspondence, native class-budget bounds, exact counters/clocks, input preservation and source re-verification and single use. It does not manufacture an airborne load to exercise settlement; the K6 record above separately checks nonempty final settlement.
+
+Only `tests/windowed_wind/test_w7_windowed_record.py::test_small_feature_complete_record_matches_native_dense` ran: one test passed in 11.48 seconds, with all three test phases accepted, original controller/worker exit zero, HOST reaping/disappearance and successful post-run runtime verification. The original **4 GiB address-space limit** and other CPU/file/output/bed-store guards remain active. Previously passed metadata and three other affected cases were retained through committed-source continuity, without replay.
+
+The local independent acceptance receipt is `agent_handoffs/tasks/masy811_Small_empty_finalizer_committed_CPU_qualification_20261025/Root_data/ROOT_affected_CPU_acceptance_01.json`, SHA-256 `a62d378609bd1ac436e1f9f06a72b83576de253722c3af35767b796253c722d9`. Detailed simulation evidence stays local. This small pass is not a peak-memory or scale measurement. Multiclass windowed feature qualification, complete windowed production features, windowed wind–water coupling and windowed GPU execution remain open.
