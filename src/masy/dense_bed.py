@@ -497,6 +497,10 @@ class DenseBed:
     def _verify_static(self, n: SimpleNamespace) -> None:
         """Recompute the live static inputs against the original case record; never mutates. Runs first in every
         public transition, scheduler construction, copy and restore."""
+        # Additive complete-case family; old initializer/defaults are unchanged.
+        if hasattr(self, "_adopted_case_inputs"):
+            from masy.case_workflow import _verify_adopted_case
+            _verify_adopted_case(self)
         record = self._case_record
         if _sha256(record) != self._case_sha256:
             raise DenseBedError("case_input_mutated", "the held case record no longer reproduces case_sha256")
@@ -1060,4 +1064,67 @@ def build_dense_bed(*, geometry: Any, grain_classes: Any, mass_resolution_kg: fl
     bed._verify_static(n)
     bed._validate_shared(n, state)
     _check_commit_stamp(state, t0)
+    return bed
+
+
+# Complete Native case adoption is private to the public case_workflow entry.
+# Inverse: remove this appended block and the guarded _verify_static call above.
+def _adopt_case_inputs(inputs: Any, fallback: Any, limits: DenseBedLimits, copy_plan: dict[str, int]) -> DenseBed:
+    from masy.case_workflow import CASE_SCHEMA, _canonical
+
+    n = _native()
+    compiled, cfg = inputs.compiled, inputs.resolved.config
+    g, nc = cfg.geometry, len(cfg.grain_classes.classes)
+    available = n.np.array(fallback, copy=True)
+    available.flags.writeable = False
+    # These are COMPLETE actual Native holders. No zero/deposit/active-layer
+    # initialization call occurs on this path; deepcopy only owns the working
+    # copies so a failed future candidate cannot change the initial case.
+    fields = copy.deepcopy((compiled.voxel_column, compiled.active_layer, compiled.water,
+                            compiled.sediment_ledger, compiled.committed_topography,
+                            compiled.sediment_availability))
+    state = n.BedState(*fields)
+    context = n.BedContext(g, cfg.grain_classes, cfg.numerics.mass_resolution_kg,
+                           cfg.topographic_commit, cfg.avalanching, available)
+    held: dict[str, Any] = {"initial_available_fraction": available}
+    for index, (_, array) in enumerate(_require_host_arrays((inputs.resolved, compiled), "complete initial case")):
+        # The complete owned CaseInputs forest was frozen by case_workflow.
+        if array.flags.writeable:
+            raise DenseBedError("mutable_initial_case", "held initial Native case arrays must be read-only")
+        held[f"initial_native_array_{index}"] = array
+    record = {
+        "schema": CASE_SCHEMA, "backend": "numpy", "dtype": "float64",
+        "representation": "dense_voxel_column", "geometry": _canonical_static(g, "geometry"),
+        "grain_classes": _canonical_static(cfg.grain_classes, "grain_classes"),
+        "class_order": [grain.class_id for grain in cfg.grain_classes.classes],
+        "mass_resolution_kg": encode_time(float(cfg.numerics.mass_resolution_kg)),
+        "n_voxels": int(state.voxel_column.mass_kg.shape[2]), "initial_time_s": encode_time(0.0),
+        "initial_availability_policy": INITIAL_AVAILABILITY_POLICY,
+        "topographic_commit_spec": _canonical_static(cfg.topographic_commit, "topographic_commit_spec"),
+        "avalanching_spec": _canonical_static(cfg.avalanching, "avalanching_spec"),
+        "vegetation": _canonical_static(compiled.vegetation, "vegetation"),
+        "native_vegetation_content_sha256": n.vegetation_content_hash(compiled.vegetation),
+        "threshold_modifier_state": _canonical_static(compiled.threshold_modifier_state, "threshold_modifier_state"),
+        "depth_update_rule": "constant_depth", "native_case_identity_sha256": inputs.identity_sha256,
+        "native_case_source": _canonical({"files": inputs.file_pins, "import_sources": compiled.import_sources,
+                                         "stratigraphy": compiled.stratigraphy}),
+        **{key: _array_digest(array) for key, array in held.items()},
+    }
+    prescribed = {"vegetation": _sha256(record["vegetation"]),
+                  "native_vegetation_content_sha256": record["native_vegetation_content_sha256"],
+                  "threshold_modifier_state": _sha256(record["threshold_modifier_state"])}
+    receipt = {"schema": "masy.maple_case_adoption.v1", "operation": "copy_complete_native_case",
+               "native_initialization_repeated": False, "copy_plan": dict(copy_plan),
+               "limits": limits.as_record(), "compiled_case_identity_sha256": inputs.identity_sha256,
+               "initial_mobile_preserved": compiled.initial_mobile_state is not None,
+               "initial_baseline": None, "classes": nc}
+    bed = DenseBed(_TOKEN, case_record=record, held_inputs=held, context=context, state=state,
+                   vegetation=compiled.vegetation, threshold_modifier_state=compiled.threshold_modifier_state,
+                   time_s=0.0, limits=limits, initialization_receipt=receipt, prescribed_digests=prescribed)
+    bed._adopted_case_inputs = inputs
+    bed._verify_static(n)
+    bed._validate_shared(n, state)
+    _check_commit_stamp(state, 0.0)
+    n.validate_vegetation_state(compiled.vegetation, g.ny, g.nx, geometry=g)
+    n.validate_threshold_modifier_state(compiled.threshold_modifier_state, g.ny, g.nx)
     return bed
