@@ -127,8 +127,8 @@ taskset -c SELECTED_ALLOWED_CPU /home/okin/MAPLE/.venv/bin/python -I -B tools/ma
 `--cpu-extensions` is a separate machine qualification file, not a scientific
 case option. The runtime owner issues `masy.case_cpu_extensions.v1` after
 joining the exact selected lock, interpreter, Source triple and package paths/
-digests to the same-environment code identities. It contains exactly four
-possible additional owners: resource, readline, NumPy pocketfft and JAX MLIR
+digests to the same-environment code identities. It contains exactly five
+possible additional owners: resource, readline, mmap, NumPy pocketfft and JAX MLIR
 HLO. The worker need not load every optional owner: readline was observed in
 the input-test harness, not established as a CLI prerequisite. Every original
 compiled file identity remains mandatory; unknown additions and changed bytes
@@ -165,3 +165,24 @@ omits the ledger, committed/reconciliation and MASY/private continuation state,
 so it is explicitly an analysis artifact, not a Native or combined restart. No GPU, large/windowed,
 calibration, general provider memory or future API compatibility claim follows
 from this bounded CPU workflow.
+
+## Explicit mapped-NPY code identity
+
+Read-only water NPY descriptors use the existing NumPy memory-map path. NumPy
+imports the standard-library `mmap` extension lazily in its actual memmap
+constructor. The machine contract therefore includes the exact fifth owner
+`stdlib_mmap`, selected only from `DESTSHARED` with a genuine platform
+`EXTENSION_SUFFIXES` spelling. This does not change mapping, copying, closing,
+transport, Native physics or the process policy. All original locked compiled
+identities remain mandatory; full locked-plus-qualified count/byte limits and
+unknown/changed-file refusal remain. Preparation checks its actual loaded
+subset against the same complete authority without inventing loaded modules.
+
+A new committed Source/lock and a genuinely issued five-owner code contract
+are required. A previous generic unknown-file failure does not establish which
+file caused that failure and is not a successful CLI qualification. On future
+compiled-identity refusal the existing error/stderr includes bounded expected/
+actual file pins and a path (with a truthful truncation flag if necessary);
+secondary diagnostic failure retains the original refusal. No actual file pin,
+runtime result, generic future-import allowance or peak/fit claim is issued by
+this Source update.

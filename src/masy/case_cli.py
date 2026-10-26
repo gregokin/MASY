@@ -229,7 +229,7 @@ def _sources_current(rt, lock, limits):
 
 
 
-_CPU_EXTENSION_OWNERS = ('jaxlib_mlir_hlo', 'numpy_fft', 'stdlib_readline', 'stdlib_resource')
+_CPU_EXTENSION_OWNERS = ('jaxlib_mlir_hlo', 'numpy_fft', 'stdlib_readline', 'stdlib_resource', 'stdlib_mmap')
 
 
 def cpu_extensions_from(data, *, lock_id, source_heads, packages, interpreter_identity, limits):
@@ -242,8 +242,8 @@ def cpu_extensions_from(data, *, lock_id, source_heads, packages, interpreter_id
             or value['interpreter_identity'] != interpreter_identity):
         raise ValueError('CPU code qualification does not bind this exact lock/interpreter/source triple')
     if (type(value['qualification_origin']) is not str or not 0 < len(value['qualification_origin']) <= 4096
-            or type(value['extensions']) is not list or len(value['extensions']) != 4):
-        raise ValueError('explicit qualified four-owner contract required')
+            or type(value['extensions']) is not list or len(value['extensions']) != 5):
+        raise ValueError('explicit qualified five-owner contract required')
     owners = []; paths = set(); total = 0
     if len(value['extensions']) > limits['max_compiled_files']: raise ValueError('compiled count quota')
     for row in value['extensions']:
@@ -260,7 +260,7 @@ def cpu_extensions_from(data, *, lock_id, source_heads, packages, interpreter_id
         if (pin['size'], pin['sha256']) != (row['size'], row['sha256']):
             raise ValueError('qualified extension bytes changed')
         paths.add(row['path']); owners.append(row['owner'])
-    if sorted(owners) != sorted(_CPU_EXTENSION_OWNERS): raise ValueError('exact four CPU extension owners required')
+    if sorted(owners) != sorted(_CPU_EXTENSION_OWNERS): raise ValueError('exact five CPU extension owners required')
     return value
 
 

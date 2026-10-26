@@ -75,7 +75,10 @@ def _water(bed):
     from maple.core.types.topographic_commit import committed_elevation_m
     surface = committed_elevation_m(bed.state.committed_topography)
     ring = np.full((ny + 2, nx + 2), 1., dtype=np.float64); ring[1:-1, 1:-1] = surface
-    ring[0, 1:-1] = surface[0] - .02
+    # Synthetic open outlet: fixed 2 cm below Native mass-equivalent zero,
+    # rather than 2 cm below the initial bed. This is not a real-case repair
+    # or a guarantee that later interior topography cannot form a strict pit.
+    ring[0, 1:-1] = -.02
     exports = np.zeros(ring.shape, dtype=bool); exports[0, 1:-1] = True
     def grid(value): return np.full((ny, nx), value, dtype=np.float64)
     spec = CaseWaterSpec('synthetic-events-v1', 'authored:case-event-interface;not-calibration',

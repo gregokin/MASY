@@ -488,12 +488,26 @@ def _require_extension_paths(contract):
             valid = path == site / 'jaxlib/mlir/_mlir_libs/_mlirHlo.so'
         elif owner == 'numpy_fft':
             valid = path.parent == site / 'numpy/fft' and any(path.name == '_pocketfft_umath' + x for x in suffixes)
-        elif owner in ('stdlib_readline', 'stdlib_resource'):
-            stem = 'readline' if owner == 'stdlib_readline' else 'resource'
+        elif owner in ('stdlib_readline', 'stdlib_resource', 'stdlib_mmap'):
+            stem = 'readline' if owner == 'stdlib_readline' else ('resource' if owner == 'stdlib_resource' else 'mmap')
             valid = path.parent == dyn and any(path.name == stem + x for x in suffixes)
         else:
             valid = False
         if not valid: raise ValueError('CPU extension does not belong to its exact selected-environment owner')
+
+
+def _compiled_identity_error(message, path, expected, actual):
+    """Bounded file-identity detail; a diagnostic failure preserves refusal."""
+    try:
+        detail = {'path':path[:4096],'path_truncated':len(path)>4096,
+                  'expected':expected,'actual':actual}
+        text = message + '; compiled_identity=' + json.dumps(detail,sort_keys=True,
+            separators=(',',':'),ensure_ascii=True,allow_nan=False)
+        if len(text.encode('ascii')) > 65536:
+            raise ValueError('compiled identity diagnostic exceeds bound')
+    except Exception:
+        text = message + '; compiled_identity_detail_unavailable'
+    return ValueError(text)
 
 
 def _compiled_extension_record(actual, baseline, contract, limits):
@@ -505,10 +519,13 @@ def _compiled_extension_record(actual, baseline, contract, limits):
         return out
     old, current = identities(baseline), identities(actual)
     allowed = {row['path']: (row['size'], row['sha256']) for row in contract['extensions']}
-    if any(current.get(path) != pin for path, pin in old.items()):
-        raise ValueError('original compiled file missing or changed')
-    if any(old.get(path, allowed.get(path)) != pin for path, pin in current.items()):
-        raise ValueError('unknown or changed compiled file needs separate CPU qualification')
+    for path, pin in old.items():
+        if current.get(path) != pin:
+            raise _compiled_identity_error('original compiled file missing or changed',path,pin,current.get(path))
+    for path, pin in current.items():
+        expected = old.get(path,allowed.get(path))
+        if expected != pin:
+            raise _compiled_identity_error('unknown or changed compiled file needs separate CPU qualification',path,expected,pin)
     # Retain every current row and every possible-next approved owner. Charge
     # metadata/file-hash work under the original compiled count/byte domains.
     prospective = dict(old)
