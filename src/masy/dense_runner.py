@@ -568,56 +568,10 @@ class DenseRunner:
                 raise DenseRunnerError("work_bytes_cap", "constructor current-cover snapshot exceeds max_work_bytes")
         soil = self._check_water(n, bed, water, control, limits)
 
-        self._bed, self._schedule = bed, schedule
-        self._wind, self._water, self._control, self._limits = wind, water, control, limits
-        self._static_parts = self._static_parts_record(n)
-        self._static_parts_sha256 = _bed._sha256(self._static_parts)
-        self._static_record = {
-            "schema": STATIC_SCHEMA,
-            "profile": (dict(PROFILE) if self._production is None else
-                        {**PROFILE, "wind_detachment": "native_reduced", "avalanching": "native_configured",
-                         "scope": self._production.SCOPE, "calibration": "not_qualified_by_interface_tests"}),
-            "case_sha256": bed.case_sha256,
-            "schedule_sha256": schedule.digest,
-            "case_schedule_sha256": case_schedule_digest(bed.case_sha256, schedule),
-            "controlling_inputs_sha256": self._static_parts_sha256,
-            "limits": limits.as_record(),
-            # Initial values of evolving process-private state: recorded, never re-verified as static.
-            "initial_evolving": {
-                "mobile_state_sha256": _bed._sha256(_canonical_input(np, wind.initial_mobile_state, "mobile")),
-                "soil_water_m": _bed._array_digest(soil),
-            },
-        }
-        if hasattr(self, "_vegetation_plan"):
-            from masy.landscape_vegetation import STATIC_SCHEMA_V2, VEGETATION_PROFILE
-            self._static_record["schema"] = STATIC_SCHEMA_V2
-            self._static_record["profile"] = {**self._static_record["profile"], "vegetation": VEGETATION_PROFILE,
-                                               "shared_resources": "vegetation_only_empty_water_exchange"}
-        self._static_sha256 = _bed._sha256(self._static_record)
+        _initialize_common(self, n, bed, schedule, wind, water, control, limits, soil)
 
-        g = bed.context.geometry
-        self._n_classes = len(bed.context.grain_classes.classes)
-        self._inventory_elements = g.ny * g.nx * (bed.case_record["n_voxels"] + 1)
-        self._inventory0 = _vec(np, n.bed_inventory(bed.state)).copy()
-        zeros = np.zeros(self._n_classes, dtype=np.float64)
-        # accepted boundary (replaced only by publication)
-        self._pool = wind.initial_mobile_state
-        self._soil = soil
-        self._routing: SimpleNamespace | None = None
-        self._ledger = ClockLedger(bed.time_s)
-        self._next = 0
-        self._n_accepted = 0
-        self._totals = {"export": zeros.copy(), "input": zeros.copy(), "bound": zeros.copy(),
-                        "internal_terminal_deposition": zeros.copy(),
-                        "water": {"rain_m3": 0.0, "drainage_m3": 0.0, "storm_export_m3": 0.0,
-                                  "dry_surface_removed_m3": 0.0, "dry_soil_removed_m3": 0.0},
-                        "n_entry_reroutes": 0, "n_event_reroutes": 0}
-        self._receipts: list[dict[str, Any]] = []
-        self._stop_receipt: dict[str, Any] | None = None
-        self._active_evidence: Any = None
-        # Accepted identities, re-verified before every event's first work copy / native call.
-        self._accepted_bed = bed.identity_sha256()
-        self._accepted_private = self._private_identity(np, self._pool, self._soil)
+    def _combined_schedule_identity(self, bed_sha256, schedule):
+        return case_schedule_digest(bed_sha256, schedule)
 
     @classmethod
     def _from_passive_boundary_load(cls, loaded):
@@ -1109,6 +1063,8 @@ class DenseRunner:
                 own.verify_prepared_dynamic(prepared_bed)
             except (DenseBedError, VegetationError) as exc:
                 raise stop("refused", exc.code, exc.detail, exc) from exc
+        if hasattr(self, "_case_policy"):
+            self._production_process_check(checkpoint="before_publication", elapsed=elapsed, evidence=evidence)
         # Allocation-light final OS/process check after identities, immediately before adoption.
         # Its refusal is internal resource failure, not an assertion of outside bed mutation.
         if self._production is not None:
@@ -1581,6 +1537,92 @@ def _wind_accept(self: DenseRunner, index: int, event: WindEvent, resolved: dict
         "shear_velocity_m_s": event.shear_velocity_m_s,
         "direction_deg": event.direction_deg_cw_from_north, "duration_s": event.duration_s}]})
     completed = dataclasses.replace(result.state, block_index=len(record.blocks), block_offset_s=0.0)
+    return _wind_terminal(self, index, event, resolved, prepared, result, physical, a, t_end, elapsed,
+                          bed_change, inflow, export, native_residual, native_bound, completed, record)
+
+
+# Cold water witnesses are separate nominal objects, never DenseStage or rollback authority.
+class _ColdRainStage:
+    __slots__ = ("_parent", "_owner", "_label", "_case", "_nbytes", "_time", "_stamp", "_capsule")
+
+    def __init__(self):
+        raise DenseRunnerError("cold_stage_private", "only an admitted Native cold load issues this witness")
+
+
+def _cold_rain_stage(runner, stage, field):
+    from masy.dense_active_checkpoint import _stage_value
+    return _stage_value(runner, stage, field)
+
+
+def _cold_rain_value(runner, prepared, field):
+    from masy.dense_active_checkpoint import _entry_value
+    return _entry_value(runner, prepared, field)
+
+
+def _initialize_common(self, n, bed, schedule, wind, water, control, limits, soil):
+    """Original validated common tail; callers own their exact typed entry guards."""
+    np = n.np
+    self._bed, self._schedule = bed, schedule
+    self._wind, self._water, self._control, self._limits = wind, water, control, limits
+    self._static_parts = self._static_parts_record(n)
+    self._static_parts_sha256 = _bed._sha256(self._static_parts)
+    self._static_record = {
+        "schema": STATIC_SCHEMA,
+        "profile": (dict(PROFILE) if self._production is None else
+                    {**PROFILE, "wind_detachment": "native_reduced", "avalanching": "native_configured",
+                     "scope": self._production.SCOPE, "calibration": "not_qualified_by_interface_tests"}),
+        "case_sha256": bed.case_sha256,
+        "schedule_sha256": schedule.digest,
+        "case_schedule_sha256": self._combined_schedule_identity(bed.case_sha256, schedule),
+        "controlling_inputs_sha256": self._static_parts_sha256,
+        "limits": limits.as_record(),
+        # Initial values of evolving process-private state: recorded, never re-verified as static.
+        "initial_evolving": {
+            "mobile_state_sha256": _bed._sha256(_canonical_input(np, wind.initial_mobile_state, "mobile")),
+            "soil_water_m": _bed._array_digest(soil),
+        },
+    }
+    if hasattr(self, "_vegetation_plan"):
+        from masy.landscape_vegetation import STATIC_SCHEMA_V2, VEGETATION_PROFILE
+        self._static_record["schema"] = STATIC_SCHEMA_V2
+        self._static_record["profile"] = {**self._static_record["profile"], "vegetation": VEGETATION_PROFILE,
+                                           "shared_resources": "vegetation_only_empty_water_exchange"}
+    self._static_sha256 = _bed._sha256(self._static_record)
+
+    g = bed.context.geometry
+    self._n_classes = len(bed.context.grain_classes.classes)
+    self._inventory_elements = g.ny * g.nx * (bed.case_record["n_voxels"] + 1)
+    self._inventory0 = _vec(np, n.bed_inventory(bed.state)).copy()
+    zeros = np.zeros(self._n_classes, dtype=np.float64)
+    # accepted boundary (replaced only by publication)
+    self._pool = wind.initial_mobile_state
+    self._soil = soil
+    self._routing: SimpleNamespace | None = None
+    self._ledger = ClockLedger(bed.time_s)
+    self._next = 0
+    self._n_accepted = 0
+    self._totals = {"export": zeros.copy(), "input": zeros.copy(), "bound": zeros.copy(),
+                    "internal_terminal_deposition": zeros.copy(),
+                    "water": {"rain_m3": 0.0, "drainage_m3": 0.0, "storm_export_m3": 0.0,
+                              "dry_surface_removed_m3": 0.0, "dry_soil_removed_m3": 0.0},
+                    "n_entry_reroutes": 0, "n_event_reroutes": 0}
+    self._receipts: list[dict[str, Any]] = []
+    self._stop_receipt: dict[str, Any] | None = None
+    self._active_evidence: Any = None
+    # Accepted identities, re-verified before every event's first work copy / native call.
+    self._accepted_bed = bed.identity_sha256()
+    self._accepted_private = self._private_identity(np, self._pool, self._soil)
+
+
+def _wind_terminal(self, index, event, resolved, prepared, result, physical, a, t_end, elapsed,
+                   bed_change, inflow, export, native_residual, native_bound, completed, record, *, case_summary=None):
+    """Original finalizer/terminal budgets; transport operands remain genuine.
+
+    `result` is a Native block result and `a` may be a genuine Native
+    accumulator total. No Native result/physical object is fabricated here.
+    """
+    n, np, bed, cfg, ops, own, t, end, quotient, upper, stage_bytes, pool_bytes, plan, requested, covered, rounding, stage, pool, scheduler, block, inventory_before = (
+        prepared.n, prepared.np, prepared.bed, prepared.cfg, prepared.ops, prepared.own, prepared.t, prepared.end, prepared.quotient, prepared.upper, prepared.stage_bytes, prepared.pool_bytes, prepared.plan, prepared.requested, prepared.covered, prepared.rounding, prepared.stage, prepared.pool, prepared.scheduler, prepared.block, prepared.inventory_before)
     evidence = {"transport": result}
     try:
         final = _finalize_wind_event(completed, cfg, record, record_origin_s=t)
@@ -1731,30 +1773,23 @@ def _wind_accept(self: DenseRunner, index: int, event: WindEvent, resolved: dict
             raise _Stop("runner_error", "production_evidence_failure", _detail(exc), exception=exc,
                         elapsed=elapsed, evidence=evidence) from exc
 
+    if hasattr(self, "_case_policy"):
+        if (type(case_summary) is not dict or case_summary.get("event_index") != index
+                or case_summary.get("schedule_sha256") != self._schedule.digest):
+            raise _Stop("incomplete", "case_summary_identity", "terminal summary does not identify the current event",
+                        elapsed=elapsed, evidence=evidence)
+        body["case_wind"] = case_summary
+        body["native"]["result_scope"] = "last_genuine_block_result"
+        body["native"]["n_accounting_steps_scope"] = "event_accumulator_total"
+        body["native"]["accounting_step_upper_bound_scope"] = "whole_event_plan"
+        self._production_process_check(checkpoint="after_native_wind", elapsed=elapsed, evidence=evidence)
     publish = own.prepare_scheduler(physical)
 
     # The legitimate empty native pool is the next accepted pool; caches are rebuilt at re-entry.
     return self._finish(n, index, "wind", resolved, stage, candidate, t, t_end,
-                        ops.scalar(result.advanced_duration_s), inflow, export,
+                        (None if hasattr(self, "_case_policy") else ops.scalar(result.advanced_duration_s)), inflow, export,
                         np.full(self._n_classes, inventory_bound), body, publish,
                         pool=physical.mobile_state, soil=self._soil, routing=self._routing,
                         terminal=final_vectors["deposited_mass_by_class_kg"],
                         elapsed=elapsed, evidence=evidence, publication_source=physical)
 
-
-# Cold water witnesses are separate nominal objects, never DenseStage or rollback authority.
-class _ColdRainStage:
-    __slots__ = ("_parent", "_owner", "_label", "_case", "_nbytes", "_time", "_stamp", "_capsule")
-
-    def __init__(self):
-        raise DenseRunnerError("cold_stage_private", "only an admitted Native cold load issues this witness")
-
-
-def _cold_rain_stage(runner, stage, field):
-    from masy.dense_active_checkpoint import _stage_value
-    return _stage_value(runner, stage, field)
-
-
-def _cold_rain_value(runner, prepared, field):
-    from masy.dense_active_checkpoint import _entry_value
-    return _entry_value(runner, prepared, field)
