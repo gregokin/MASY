@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import copy
-import json
+import yaml
 from pathlib import Path
 import struct
 
@@ -66,7 +66,7 @@ def _package(root: Path, *, layered: bool = True, seeded: bool = False, imported
                     "representative_flight_speed_m_s": 3.0} for name in ("fine", "coarse")}}}
     wind = {"wind_forcing": {"blocks": [{"shear_velocity_m_s": 0.4, "direction_deg": 90.0, "duration_s": 1.0}]}}
     for name, value in (("case.yaml", case), ("model.yaml", model), ("wind.yaml", wind)):
-        (root / name).write_text(json.dumps(value))  # JSON is authored YAML, not a second parser.
+        (root / name).write_text(yaml.safe_dump(value, sort_keys=False))  # Native-compatible numeric YAML tags.
     return root
 
 
