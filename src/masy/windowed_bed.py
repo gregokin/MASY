@@ -646,12 +646,24 @@ class WindowedBed:
 
 
 def _bridge_record(limits: Any) -> dict[str, Any]:
-    if type(limits.run_dir) is not str or not 0 < len(limits.run_dir) <= 4096:
-        raise _refuse("invalid_bridge_limits", "the closed MASY profile requires a bounded plain run-directory string")
+    from pathlib import Path
+
+    root = limits.run_dir
+    # Match SYRUP's exact owned-path domain before allocating identity text.
+    # Directory/ancestor checks remain with its genuine _run_root owner.
+    if (type(root) is not type(Path())
+            or type(root._raw_paths) is not list or len(root._raw_paths) > 128
+            or any(type(p) is not str or len(p) > 4096 for p in root._raw_paths)
+            or sum(len(p) + 1 for p in root._raw_paths) > 4096
+            or not root.is_absolute() or ".." in root.parts):
+        raise _refuse("invalid_bridge_limits", "the closed MASY profile requires a bounded native run-directory Path")
+    run_dir = str(root)
+    if not 0 < len(run_dir) <= 4096:
+        raise _refuse("invalid_bridge_limits", "the canonical run-directory text exceeds its bounded domain")
     record = {f.name: getattr(limits, f.name) for f in dataclasses.fields(limits) if f.name != "run_dir"}
     if any(type(value) is not int for value in record.values()):
         raise _refuse("invalid_bridge_limits", "bridge limit declarations must be plain ints")
-    record["run_dir"] = limits.run_dir
+    record["run_dir"] = run_dir
     record["type"] = f"{type(limits).__module__}.{type(limits).__qualname__}"
     return record
 

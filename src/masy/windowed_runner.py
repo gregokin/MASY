@@ -129,6 +129,9 @@ def _metadata_terms(np: Any, roots: tuple[Any, ...], receipt_bytes: int, events:
     occurrence (no identity/alias credit). Native scratch/provider/allocator
     owners remain additional under their own real admission and OS guards.
     """
+    from pathlib import Path
+
+    path_type = type(Path())
     nodes = text = paths = payload = arrays = comparisons = 0
 
     def visit(value: Any, depth: int, path: int, lossless_schedule: bool = False) -> None:
@@ -160,6 +163,25 @@ def _metadata_terms(np: Any, roots: tuple[Any, ...], receipt_bytes: int, events:
             if len(value) > 4096:
                 raise DenseRunnerError("windowed_metadata_domain", "bounded controlling text required")
             text += len(value)
+        elif type(value) is path_type:
+            raw_paths = value._raw_paths
+            if (type(raw_paths) is not list or len(raw_paths) > 128
+                    or any(type(p) is not str or len(p) > 4096 for p in raw_paths)):
+                raise DenseRunnerError("windowed_metadata_domain", "bounded native run-directory Path required")
+            path_chars = sum(len(p) + 1 for p in raw_paths)
+            if path_chars > 4096:
+                raise DenseRunnerError("windowed_metadata_domain", "bounded native run-directory Path required")
+            # Raw list/strings, canonical text, cached/returned part containers
+            # and both full part-string occurrences: no same-object credit.
+            # One character bounds one possible component; parsing is bounded
+            # before is_absolute/parts. This walk creates no canonical string.
+            nodes += 4 + len(raw_paths) + 2 * path_chars
+            text += 4 * path_chars
+            comparisons += len(raw_paths) + 2 * path_chars
+            if nodes > 16384 or text > 1 << 20:
+                raise DenseRunnerError("windowed_metadata_domain", "whole controlling Path domain exceeded")
+            if not value.is_absolute() or ".." in value.parts:
+                raise DenseRunnerError("windowed_metadata_domain", "absolute native run-directory Path without '..' required")
         elif isinstance(value, enum.Enum):
             text += 512
             visit(value.value, depth + 1, path + 6, lossless_schedule)

@@ -73,7 +73,7 @@ def bridge_limits(run_dir):
         max_new_versions=1000000, max_entries=4096,
         max_external_backing_bytes=64 << 20, max_event_steps=10000,
         max_retries=10, max_transport_substeps=64, max_report_rows=4096,
-        reserve_host_bytes=64 << 20, run_dir=str(run_dir))
+        reserve_host_bytes=64 << 20, run_dir=run_dir)
 
 
 def components(tmp_path, *, count=4, process_profile="ownership"):

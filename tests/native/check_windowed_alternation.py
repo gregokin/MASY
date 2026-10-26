@@ -204,10 +204,13 @@ def test_stage_copies_all_residents_and_never_writes_deep_store(tmp_path):
 def test_pending_identity_journal_is_copied_and_content_is_controlling(tmp_path):
     c = fixture.components(tmp_path)
     original = c.bed.state.voxel_column
-    d = int(original.base.reshape(-1)[0]) - 1
+    deep_cells = np.flatnonzero(original.base.reshape(-1) > 0)
+    assert deep_cells.size > 0  # choose an existing genuine nonresident voxel
+    cell = int(deep_cells[0])
+    d = int(original.base.reshape(-1)[cell]) - 1
     assert d >= 0  # actual deep voxel, not a fabricated reservoir
-    mass = c.fx.dense_state.physical.voxel_column.mass_kg.reshape((16, 6, 1))[0, d].copy()
-    journal = DeepJournal.from_records(np.array([0], dtype=np.int64), np.array([d], dtype=np.int64),
+    mass = c.fx.dense_state.physical.voxel_column.mass_kg.reshape((16, 6, 1))[cell, d].copy()
+    journal = DeepJournal.from_records(np.array([cell], dtype=np.int64), np.array([d], dtype=np.int64),
         mass.reshape((1, 1)), header=original.deep_store.header, max_records=1)
     column = attach_pending_journal(rebind_prefix_packets(original, original), journal)
     pending_state = dataclasses.replace(c.bed.state, voxel_column=column)
