@@ -31,6 +31,7 @@ the parent against its own run directory, never compared with an older run) and 
 
 from __future__ import annotations
 
+import builtins
 import hashlib
 import importlib
 import importlib.machinery
@@ -42,7 +43,7 @@ import site
 import stat
 import sys
 import threading
-from types import FunctionType
+from types import CodeType, FunctionType, ModuleType
 import traceback
 from typing import Any, Mapping
 
@@ -218,15 +219,312 @@ def _sha256_file(path: str, budget: int, *, code: str = "compiled_identity_unrea
     return hasher.hexdigest(), read
 
 
-def _mapped_libraries(maps_path: str, roots: list[str]) -> list[str]:
-    """Shared libraries mapped into this process that live under one of `roots` (bounded /proc/self/maps read)."""
+# This is an eligibility bound on Source-owned metadata constructors, not a
+# limit on Native transport, a snapshot of sys.modules, or an allocator bound.
+_COMPILED_FRONTIER_LIMIT = 100000
+_COMPILED_NAME_CHARS = 1024
+_COMPILED_PATH_CHARS = 4096
+_COMPILED_LINE_ENDINGS = (b'\n', b'\r', b'\v', b'\f', b'\x1c', b'\x1d', b'\x1e',
+                          b'\xc2\x85', b'\xe2\x80\xa8', b'\xe2\x80\xa9')
+_COMPILED_MAPS_UNREAD = object()
+_COMPILED_FILE_ABSENT = object()
+_COMPILED_TYPE_DICT = type.__dict__['__dict__']
+_COMPILED_TYPE_MRO = type.__dict__['__mro__']
+_COMPILED_MODULE_DICT = ModuleType.__dict__['__dict__']
+_COMPILED_PROXY_TYPE = type(_COMPILED_TYPE_DICT.__get__(ModuleType))
+_COMPILED_MODULE_GETATTRIBUTE = ModuleType.__getattribute__
+_COMPILED_TYPE_GETATTRIBUTE = type.__getattribute__
+_COMPILED_SUPER = builtins.super
+_COMPILED_GETATTR = builtins.getattr
+_COMPILED_TYPING_SOURCE = '/usr/lib/python3.12/typing.py'
+_COMPILED_TYPING_SIZE = 117428
+_COMPILED_TYPING_SHA = 'c45d935c17234b1d6ae42d2d5499d3e03b4e2548fae0c4fce15477e23502214d'
+# Compile only this exact ordinary Source declaration; never execute it or
+# construct a replacement class. The padding preserves its genuine line table.
+_COMPILED_TYPING_DECLARATION = '''class _DeprecatedType(type):
+    def __getattribute__(cls, name):
+        if name not in {"__dict__", "__module__", "__doc__"} and name in cls.__dict__:
+            warnings.warn(
+                f"{cls.__name__} is deprecated, import directly "
+                f"from typing instead. {cls.__name__} will be removed "
+                "in Python 3.13.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return super().__getattribute__(name)
+'''
+_COMPILED_TYPING_TEMPLATE = compile('import warnings\n' + '\n' * 3275 + _COMPILED_TYPING_DECLARATION,
+                                    _COMPILED_TYPING_SOURCE, 'exec',
+                                    dont_inherit=True, optimize=0)
+_COMPILED_TYPING_CODE = _COMPILED_TYPING_TEMPLATE.co_consts[2].co_consts[1]
+_COMPILED_SYS_MODULES = sys.modules
+_COMPILED_TYPING_MODULE = sys.modules['typing']
+_COMPILED_TYPING_GLOBALS = (_COMPILED_MODULE_DICT.__get__(_COMPILED_TYPING_MODULE)
+                            if type(_COMPILED_TYPING_MODULE) is ModuleType else {})
+_COMPILED_TYPING_META = _COMPILED_TYPING_GLOBALS.get('_DeprecatedType')
+_COMPILED_TYPING_IO = _COMPILED_TYPING_GLOBALS.get('io')
+_COMPILED_TYPING_RE = _COMPILED_TYPING_GLOBALS.get('re')
+_COMPILED_TYPING_GETTER = (_COMPILED_TYPE_DICT.__get__(_COMPILED_TYPING_META).get('__getattribute__')
+                           if type(_COMPILED_TYPING_META) is type else None)
+_COMPILED_TYPING_CLOSURE = (_COMPILED_TYPING_GETTER.__closure__
+                            if type(_COMPILED_TYPING_GETTER) is FunctionType else None)
+
+
+def _compiled_frontier_refuse(changed=False):
+    raise WorkerRefusal('compiled_preexpansion_changed' if changed else 'compiled_preexpansion_unsupported',
+                        'compiled metadata changed during admission' if changed else
+                        'compiled metadata is outside the declared pre-expansion domain')
+
+
+def _compiled_population(m, e, v, r, k):
+    # Original967: 2m + 8e + 23v + 3r + k + rv. Five extra m roles
+    # retain the admitted holder/file pair, its tuple, and dictionary slots.
+    value = 7 * m + 8 * e + 23 * v + 3 * r + k + r * v
+    if value > _COMPILED_FRONTIER_LIMIT:
+        _compiled_frontier_refuse()
+    return value
+
+
+def _compiled_maps_data(maps_path):
+    if type(maps_path) is not str or len(maps_path) > _COMPILED_PATH_CHARS:
+        _compiled_frontier_refuse()
     try:
         with open(maps_path, "rb") as handle:
             data = handle.read(MAX_MAPS_BYTES + 1)
     except OSError:
-        return []
+        return None
     if len(data) > MAX_MAPS_BYTES:
         raise WorkerRefusal("compiled_identity_bound_exceeded", f"{maps_path} is larger than {MAX_MAPS_BYTES} bytes")
+    return data
+
+
+def _compiled_maps_rows(data):
+    """Exact UTF-8/surrogateescape str.splitlines population before decoding."""
+    if data is None:
+        return 0
+    if type(data) is not bytes or len(data) > MAX_MAPS_BYTES:
+        _compiled_frontier_refuse()
+    boundaries = sum(data.count(part) for part in _COMPILED_LINE_ENDINGS) - data.count(b'\r\n')
+    return boundaries + (1 if data and not data.endswith(_COMPILED_LINE_ENDINGS) else 0)
+
+
+def _compiled_typing_current():
+    """Closed ordinary Source metadata; no holder getter or Source execution."""
+    if (_COMPILED_TYPE_DICT is not type.__dict__['__dict__']
+            or _COMPILED_TYPE_MRO is not type.__dict__['__mro__']
+            or _COMPILED_MODULE_DICT is not ModuleType.__dict__['__dict__']):
+        return False
+    module, namespace, meta, function = (_COMPILED_TYPING_MODULE, _COMPILED_TYPING_GLOBALS,
+                                        _COMPILED_TYPING_META, _COMPILED_TYPING_GETTER)
+    if type(namespace) is not dict:
+        return False
+    _compiled_namespace_fields(namespace)
+    if type(meta) is not type or type(function) is not FunctionType:
+        return False
+    meta_namespace = _COMPILED_TYPE_DICT.__get__(meta)
+    _compiled_namespace_fields(meta_namespace)
+    meta_mro = _COMPILED_TYPE_MRO.__get__(meta)
+    if (type(meta_mro) is not tuple or len(meta_mro) != 3
+            or meta_mro[0] is not meta or meta_mro[1] is not type or meta_mro[2] is not object):
+        return False
+    source_path = namespace.get('__file__')
+    if (type(module) is not ModuleType or sys.modules is not _COMPILED_SYS_MODULES
+            or sys.modules.get('typing') is not module
+            or _COMPILED_MODULE_DICT.__get__(module) is not namespace
+            or type(source_path) is not str or source_path != _COMPILED_TYPING_SOURCE
+            or namespace.get('_DeprecatedType') is not meta
+            or namespace.get('io') is not _COMPILED_TYPING_IO
+            or namespace.get('re') is not _COMPILED_TYPING_RE
+            or sys.modules.get('typing.io') is not _COMPILED_TYPING_IO
+            or sys.modules.get('typing.re') is not _COMPILED_TYPING_RE
+            or meta_namespace.get('__getattribute__') is not function
+            or function.__globals__ is not namespace
+            or function.__builtins__ is not builtins.__dict__
+            or function.__defaults__ is not None or function.__kwdefaults__ is not None
+            or type(_COMPILED_TYPING_CODE) is not CodeType
+            or function.__code__ != _COMPILED_TYPING_CODE
+            or function.__code__.co_filename != _COMPILED_TYPING_SOURCE
+            or function.__code__.co_firstlineno != 3278
+            or function.__code__.co_freevars != ('__class__',)
+            or function.__closure__ is not _COMPILED_TYPING_CLOSURE
+            or type(function.__closure__) is not tuple or len(function.__closure__) != 1
+            or 'super' in namespace
+            or namespace.get('__builtins__') is not builtins.__dict__
+            or builtins.super is not _COMPILED_SUPER
+            or builtins.type is not type or builtins.getattr is not _COMPILED_GETATTR):
+        return False
+    module_name = meta_namespace.get('__module__')
+    if (len(meta_namespace) > 4 or type(module_name) is not str or module_name != 'typing'
+            or meta_namespace.get('__doc__') is not None
+            or any(type(name) is not str or name not in ('__module__', '__qualname__', '__doc__', '__getattribute__')
+                   for name in meta_namespace)):
+        return False
+    try:
+        contents = function.__closure__[0].cell_contents
+    except ValueError:
+        return False
+    return contents is meta
+
+
+def _compiled_typing_binding():
+    """Only the Source-owned typing.io/re absent-file, warning-free branch."""
+    if not _compiled_typing_current():
+        _compiled_frontier_refuse()
+    digest, size = _sha256_file(_COMPILED_TYPING_SOURCE, _COMPILED_TYPING_SIZE)
+    if size != _COMPILED_TYPING_SIZE or digest != _COMPILED_TYPING_SHA:
+        _compiled_frontier_refuse()
+
+
+def _compiled_namespace_fields(namespace):
+    """Stream plain keys before any lookup can invoke a foreign key's eq.
+
+    No namespace copy/sort: one bounded item/reference tuple at a time. The
+    per-namespace 100000-key work ceiling is separate from the eager frontier.
+    """
+    count = len(namespace)
+    if count > _COMPILED_FRONTIER_LIMIT:
+        _compiled_frontier_refuse()
+    file = getter = _COMPILED_FILE_ABSENT
+    fallback = False
+    try:
+        for name, value in namespace.items():
+            if type(name) is not str or len(name) > _COMPILED_NAME_CHARS:
+                _compiled_frontier_refuse()
+            if name == '__file__':
+                file = value
+            elif name == '__getattribute__':
+                getter = value
+            elif name == '__getattr__':
+                fallback = True
+    except RuntimeError:
+        _compiled_frontier_refuse(changed=True)
+    if len(namespace) != count:
+        _compiled_frontier_refuse(changed=True)
+    return file, getter, fallback
+
+
+def _compiled_static_file(holder, remaining):
+    """Use genuine descriptors only; never an unknown holder's getter/vars."""
+    if holder is None:
+        return None, 0
+    cls = type(holder)
+    mro = _COMPILED_TYPE_MRO.__get__(cls)
+    if type(mro) is not tuple or len(mro) > remaining:
+        _compiled_frontier_refuse()
+    visits = len(mro)
+    if any(base is ModuleType for base in mro):
+        getter = _COMPILED_FILE_ABSENT
+        fallback = False
+        for base in mro:
+            namespace = _COMPILED_TYPE_DICT.__get__(base)
+            class_file, class_getter, class_fallback = _compiled_namespace_fields(namespace)
+            if class_file is not _COMPILED_FILE_ABSENT:
+                _compiled_frontier_refuse()
+            if getter is _COMPILED_FILE_ABSENT and class_getter is not _COMPILED_FILE_ABSENT:
+                getter = class_getter
+            fallback = fallback or class_fallback
+        namespace = _COMPILED_MODULE_DICT.__get__(holder)
+        if type(namespace) is not dict or getter is not _COMPILED_MODULE_GETATTRIBUTE:
+            _compiled_frontier_refuse()
+        file, _unused_getter, module_fallback = _compiled_namespace_fields(namespace)
+        if file is _COMPILED_FILE_ABSENT:
+            if fallback or module_fallback:
+                _compiled_frontier_refuse()
+            file = None
+    else:
+        if cls is not type:
+            if (holder is not _COMPILED_TYPING_IO and holder is not _COMPILED_TYPING_RE
+                    or cls is not _COMPILED_TYPING_META):
+                _compiled_frontier_refuse()
+            # The extra fixed namespace/MRO/proxy checks below are explicit
+            # positive owners, including the Source-bound typing method image.
+            if visits + 16 > remaining:
+                _compiled_frontier_refuse()
+            visits += 16
+            _compiled_typing_binding()
+        holder_mro = _COMPILED_TYPE_MRO.__get__(holder)
+        if type(holder_mro) is not tuple or visits + len(holder_mro) > remaining:
+            _compiled_frontier_refuse()
+        visits += len(holder_mro)
+        # Exact type, or the one approved pure metaclass branch: an absent
+        # file in every class dictionary cannot invoke an arbitrary descriptor.
+        for base in holder_mro:
+            class_file, _unused_getter, _unused_fallback = _compiled_namespace_fields(
+                _COMPILED_TYPE_DICT.__get__(base))
+            if class_file is not _COMPILED_FILE_ABSENT:
+                _compiled_frontier_refuse()
+        file = None
+    if file is not None and (type(file) is not str or len(file) > _COMPILED_PATH_CHARS):
+        _compiled_frontier_refuse()
+    return file, visits
+
+
+def _compiled_preexpansion(modules, maps_path, library_roots):
+    if type(modules) is not dict:
+        _compiled_frontier_refuse()
+    m = len(modules)
+    _compiled_population(m, 0, 0, 0, 0)
+    roots = site.getsitepackages() if library_roots is None else library_roots
+    if type(roots) is not list:
+        _compiled_frontier_refuse()
+    r = len(roots)
+    _compiled_population(m, 0, 0, r, 0)
+    for root in roots:
+        if type(root) is not str or len(root) > _COMPILED_PATH_CHARS:
+            _compiled_frontier_refuse()
+    data = _compiled_maps_data(maps_path)
+    v = _compiled_maps_rows(data)
+    _compiled_population(m, 0, v, r, 0)
+    suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
+    admitted, e, k = {}, 0, 0
+    try:
+        for name, holder in modules.items():
+            if type(name) is not str or len(name) > _COMPILED_NAME_CHARS:
+                _compiled_frontier_refuse()
+            # Each static check produces one current proxy at a time. Its
+            # retained pair is created only after this owner's admission.
+            remaining = _COMPILED_FRONTIER_LIMIT - _compiled_population(m, e, v, r, k)
+            file, visits = _compiled_static_file(holder, remaining)
+            k += visits
+            e += int(file is not None and file.endswith(suffixes))
+            _compiled_population(m, e, v, r, k)
+            admitted[name] = (holder, file)
+    except RuntimeError:
+        _compiled_frontier_refuse(changed=True)
+    if len(modules) != m or len(roots) != r or len(admitted) != m:
+        _compiled_frontier_refuse(changed=True)
+    return admitted, data, roots
+
+
+def _compiled_admitted_file(modules, name, admitted):
+    try:
+        holder, file = admitted[name]
+        current = modules[name]
+    except KeyError:
+        _compiled_frontier_refuse(changed=True)
+    if len(modules) != len(admitted) or current is not holder:
+        _compiled_frontier_refuse(changed=True)
+    actual = getattr(holder, '__file__', None) if holder is not None else None
+    if actual is not file:
+        _compiled_frontier_refuse(changed=True)
+    return actual
+
+
+def _mapped_libraries(maps_path: str, roots: list[str], *, _maps_data=_COMPILED_MAPS_UNREAD) -> list[str]:
+    """Same parser and result; raw row/root eligibility precedes expansion."""
+    if type(roots) is not list:
+        _compiled_frontier_refuse()
+    r = len(roots)
+    _compiled_population(0, 0, 0, r, 0)
+    for root in roots:
+        if type(root) is not str or len(root) > _COMPILED_PATH_CHARS:
+            _compiled_frontier_refuse()
+    if len(roots) != r:
+        _compiled_frontier_refuse(changed=True)
+    data = _compiled_maps_data(maps_path) if _maps_data is _COMPILED_MAPS_UNREAD else _maps_data
+    _compiled_population(0, 0, _compiled_maps_rows(data), r, 0)
+    if data is None:
+        return []
     found = set()
     for line in data.decode("utf-8", "surrogateescape").splitlines():
         fields = line.split(None, 5)
@@ -247,18 +545,18 @@ def compiled_identities(modules: Mapping[str, Any], *, max_count: int, max_bytes
     """sha256 of every loaded extension module plus every shared library mapped from the environment's site
     directories (e.g. NumPy's bundled BLAS), bounded in count and total bytes. Exceeding a bound refuses; nothing
     is silently truncated."""
+    admitted, maps_data, raw_roots = _compiled_preexpansion(modules, maps_path, library_roots)
     suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
     entries: dict[str, dict[str, Any]] = {}
     for name in sorted(modules):
-        module = modules[name]
-        file = getattr(module, "__file__", None) if module is not None else None
+        file = _compiled_admitted_file(modules, name, admitted)
         if isinstance(file, str) and file.endswith(suffixes):
             entry = entries.setdefault(os.path.realpath(file), {"kind": "extension_module", "modules": []})
             if len(entry["modules"]) < 20:
                 entry["modules"].append(name)
     if library_roots is None:
-        library_roots = sorted({os.path.realpath(p) for p in site.getsitepackages()})
-    for path in _mapped_libraries(maps_path, library_roots):
+        library_roots = sorted({os.path.realpath(p) for p in raw_roots})
+    for path in _mapped_libraries(maps_path, library_roots, _maps_data=maps_data):
         entries.setdefault(path, {"kind": "mapped_library", "modules": []})
     if len(entries) > max_count:
         raise WorkerRefusal("compiled_identity_bound_exceeded",
@@ -633,18 +931,18 @@ def _compiled_identities_body(modules: Mapping[str, Any], *, max_count: int, max
     """sha256 of every loaded extension module plus every shared library mapped from the environment's site
     directories (e.g. NumPy's bundled BLAS), bounded in count and total bytes. Exceeding a bound refuses; nothing
     is silently truncated."""
+    admitted, maps_data, raw_roots = _compiled_preexpansion(modules, maps_path, library_roots)
     suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
     entries: dict[str, dict[str, Any]] = {}
     for name in sorted(modules):
-        module = modules[name]
-        file = getattr(module, "__file__", None) if module is not None else None
+        file = _compiled_admitted_file(modules, name, admitted)
         if isinstance(file, str) and file.endswith(suffixes):
             entry = entries.setdefault(os.path.realpath(file), {"kind": "extension_module", "modules": []})
             if len(entry["modules"]) < 20:
                 entry["modules"].append(name)
     if library_roots is None:
-        library_roots = sorted({os.path.realpath(p) for p in site.getsitepackages()})
-    for path in _mapped_libraries(maps_path, library_roots):
+        library_roots = sorted({os.path.realpath(p) for p in raw_roots})
+    for path in _mapped_libraries(maps_path, library_roots, _maps_data=maps_data):
         entries.setdefault(path, {"kind": "mapped_library", "modules": []})
     if len(entries) > max_count:
         raise WorkerRefusal("compiled_identity_bound_exceeded",
@@ -701,20 +999,25 @@ def _compiled_function_image(function):
         return None
     closure, cells = function.__closure__, ()
     if closure is not None:
-        owner = _COMPILED_REUSE_REFUSAL_IMAGE
-        if (type(owner) is not tuple or len(owner) != 5
-                or WorkerRefusal is not owner[0] or function is not owner[1]
-                or function is not WorkerRefusal.__init__ or function.__code__ is not owner[2]
-                or function.__code__.co_freevars != ('__class__',)
-                or closure is not owner[3] or len(closure) != 1 or closure[0] is not owner[4]):
-            return None
-        try:
-            contents = closure[0].cell_contents
-        except ValueError:  # An emptied real cell is ineligible, never a cache hit.
-            return None
-        if contents is not owner[0]:
-            return None
-        cells = ((closure[0], contents),)
+        if function is _COMPILED_TYPING_GETTER:
+            if not _compiled_typing_current():
+                return None
+            cells = ((closure[0], _COMPILED_TYPING_META),)
+        else:
+            owner = _COMPILED_REUSE_REFUSAL_IMAGE
+            if (type(owner) is not tuple or len(owner) != 5
+                    or WorkerRefusal is not owner[0] or function is not owner[1]
+                    or function is not WorkerRefusal.__init__ or function.__code__ is not owner[2]
+                    or function.__code__.co_freevars != ('__class__',)
+                    or closure is not owner[3] or len(closure) != 1 or closure[0] is not owner[4]):
+                return None
+            try:
+                contents = closure[0].cell_contents
+            except ValueError:  # An emptied real cell is ineligible, never a cache hit.
+                return None
+            if contents is not owner[0]:
+                return None
+            cells = ((closure[0], contents),)
     kw = function.__kwdefaults__
     if kw is not None and (type(kw) is not dict or len(kw) > 4
                            or any(type(name) is not str for name in kw)):
@@ -730,7 +1033,12 @@ def _compiled_reuse_image():
                  _compiled_identities_scoped, _new_compiled_reuse,
                  _compiled_function_image, _compiled_reuse_image,
                  _same_compiled_image, _compiled_reuse_charge, _compiled_frame_charge,
-                 _compiled_image_charge,
+                 _compiled_image_charge, _compiled_preexpansion_charge,
+                 _compiled_frontier_refuse, _compiled_population, _compiled_maps_data,
+                 _compiled_maps_rows, _compiled_typing_current, _compiled_typing_binding,
+                 _compiled_namespace_fields, _compiled_static_file,
+                 _compiled_preexpansion, _compiled_admitted_file,
+                 _COMPILED_TYPING_GETTER,
                  _CompiledRow.__init__, _CompiledRow.__setattr__, _CompiledRow.__delattr__,
                  _CompiledRow.__reduce_ex__,
                  _CompiledReuse.__init__, _CompiledReuse.__reduce_ex__,
@@ -743,16 +1051,36 @@ def _compiled_reuse_image():
     if any(x is None for x in images):
         return None
     operators = (os, os.path, hashlib, stat, site, importlib.machinery,
+                 sys, sys.modules, _COMPILED_SYS_MODULES,
                  os.lstat, os.open, os.fstat, os.read, os.close, os.path.realpath,
                  os.getpid, threading.get_ident, hashlib.sha256, stat.S_ISREG,
                  site.getsitepackages, sys.getsizeof, sys._getframe, os.stat_result,
                  WorkerRefusal, _CompiledRow, _CompiledReuse,
-                 FunctionType, _COMPILED_REUSE_REFUSAL_IMAGE)
+                 FunctionType, _COMPILED_REUSE_REFUSAL_IMAGE,
+                 builtins, CodeType, ModuleType, type, dict, list, tuple, str, bytes,
+                 frozenset, range, dict.__dict__['fromkeys'], dict.items, dict.get,
+                 _COMPILED_PROXY_TYPE, _COMPILED_PROXY_TYPE.items, _COMPILED_PROXY_TYPE.get,
+                 open, getattr, len, sorted, int, sum, any, iter,
+                 bytes.count, bytes.endswith, bytes.decode, str.splitlines, str.split,
+                 str.startswith, str.endswith, str.strip, os.path.basename, os.sep,
+                 _COMPILED_TYPE_DICT, _COMPILED_TYPE_MRO, _COMPILED_MODULE_DICT,
+                 type(_COMPILED_TYPE_DICT).__get__,
+                 type(_COMPILED_TYPE_MRO).__get__,
+                 _COMPILED_MODULE_GETATTRIBUTE, _COMPILED_TYPE_GETATTRIBUTE,
+                 _COMPILED_MAPS_UNREAD, _COMPILED_FILE_ABSENT,
+                 _COMPILED_SUPER, builtins.super, _COMPILED_GETATTR,
+                 _COMPILED_TYPING_MODULE, _COMPILED_TYPING_GLOBALS,
+                 _COMPILED_TYPING_META, _COMPILED_TYPING_IO, _COMPILED_TYPING_RE,
+                 _COMPILED_TYPING_GETTER, _COMPILED_TYPING_CLOSURE,
+                 _COMPILED_TYPING_TEMPLATE, _COMPILED_TYPING_CODE)
     constants = (_IDENTITY_FIELDS, _CHUNK, MAX_MAPS_BYTES, MAX_MESSAGE,
                  tuple(importlib.machinery.EXTENSION_SUFFIXES),
                  _COMPILED_REUSE_MAX_COUNT, _COMPILED_REUSE_MAX_BYTES,
                  _COMPILED_REUSE_PATH_CHARS, _COMPILED_REUSE_SCALAR,
-                 os.O_RDONLY, getattr(os, 'O_NOFOLLOW', 0), getattr(os, 'O_NONBLOCK', 0))
+                 os.O_RDONLY, getattr(os, 'O_NOFOLLOW', 0), getattr(os, 'O_NONBLOCK', 0),
+                 _COMPILED_FRONTIER_LIMIT, _COMPILED_NAME_CHARS, _COMPILED_PATH_CHARS,
+                 _COMPILED_LINE_ENDINGS, b'\r\n', _COMPILED_TYPING_SOURCE,
+                 _COMPILED_TYPING_SIZE, _COMPILED_TYPING_SHA, _COMPILED_TYPING_DECLARATION)
     return (images, operators, constants)
 
 
@@ -834,6 +1162,57 @@ def _compiled_image_charge(image):
     return total
 
 
+def _compiled_preexpansion_charge():
+    """Additional positive logical owners; not an allocator/whole-heap law."""
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    scalar = sys.getsizeof(_COMPILED_REUSE_SCALAR)
+    n = _COMPILED_FRONTIER_LIMIT // 7
+    # The admitted dictionary uses existing names/holders/paths as references.
+    # This plain integer-key construction has a complete insert-only history;
+    # count its temporary keys, range and dictionary separately as well.
+    keys = range(n)
+    bank = dict.fromkeys(keys)
+    one = (sys.getsizeof(bank) + sys.getsizeof(keys) + n * scalar
+           + n * (2 * sys.getsizeof((None, None)) + 3 * pointer))
+    total = 2 * one + sys.getsizeof((_COMPILED_MAPS_UNREAD, None, None))
+    # Eleven byte counts and one endswith use a single retained bounded buffer.
+    # Current/next raw buffers, counter/results and fixed error roles positive.
+    total += 2 * (sys.getsizeof(b'') + MAX_MAPS_BYTES + 1) + 32 * scalar
+    total += 2 * (sys.getsizeof('') + 4 * MAX_MESSAGE)
+    total += sys.getsizeof(_COMPILED_LINE_ENDINGS)
+    total += sum(sys.getsizeof(part) for part in _COMPILED_LINE_ENDINGS)
+    # Every finite Source-compiled code/constant occurrence is owned; no alias
+    # subtraction. This is the fixed two-level class/method tree, not imports.
+    pending = [_COMPILED_TYPING_TEMPLATE]
+    while pending:
+        total += sys.getsizeof(pending)
+        value = pending.pop()
+        total += sys.getsizeof(value)
+        if type(value) is CodeType:
+            fields = (value.co_consts, value.co_names, value.co_varnames,
+                      value.co_freevars, value.co_cellvars, value.co_code,
+                      value.co_linetable, value.co_exceptiontable,
+                      value.co_filename, value.co_name, value.co_qualname)
+            total += sys.getsizeof(fields)
+            pending.extend(fields)
+        elif type(value) in (tuple, frozenset):
+            pending.extend(value)
+        elif value is not None and type(value) not in (str, bytes, int):
+            _compiled_frontier_refuse()
+    total += sys.getsizeof(_COMPILED_TYPING_DECLARATION) + sys.getsizeof('\n' * 3275)
+    total += sys.getsizeof('import warnings\n' + '\n' * 3275)
+    total += sys.getsizeof('import warnings\n' + '\n' * 3275 + _COMPILED_TYPING_DECLARATION)
+    # Explicit current/next proxy and streaming MRO/counter/error projections.
+    proxy = _COMPILED_TYPE_DICT.__get__(ModuleType)
+    view = bank.items()
+    iterator = iter(view)
+    stream = (sys.getsizeof(proxy) + sys.getsizeof(view) + sys.getsizeof(iterator)
+              + sys.getsizeof((None, None)) + sys.getsizeof((None, None, None))
+              + pointer + scalar)
+    total += 2 * _COMPILED_FRONTIER_LIMIT * stream
+    return total
+
+
 def _compiled_reuse_charge():
     """Additive logical metadata projection, never a whole-heap fit claim."""
     n, length = _COMPILED_REUSE_MAX_COUNT, _COMPILED_REUSE_PATH_CHARS
@@ -863,6 +1242,7 @@ def _compiled_reuse_charge():
     comparisons = 4 * (sys.getsizeof((None,) * 6)
                        + 6 * sys.getsizeof(_COMPILED_REUSE_SCALAR))
     fixed += 2 * stat_role + comparisons
+    fixed += _compiled_preexpansion_charge()
     # All named functions and their finite nested code objects are additive.
     frames = _compiled_frame_charge(tuple(record[0] for record in image[0]))
     return {'rows': rows, 'fixed': fixed + 2 * image_bytes + frames,

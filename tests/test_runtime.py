@@ -1168,8 +1168,11 @@ class WorkerHelperTests(RuntimeCase):
         write(library, "synthetic library bytes\n")
         maps = write(self.tmp / "maps", f"7f00-7f01 r-xp 00000000 00:00 0 {library}\n"
                                         "7f01-7f02 r--p 00000000 00:00 0 /elsewhere/libother.so\n")
-        modules = {"fixture_ext": types.SimpleNamespace(__file__=str(extension)),
-                   "plain": types.SimpleNamespace(__file__=str(self.tmp / "plain.py")), "builtin": None}
+        extension_module = types.ModuleType("fixture_ext")
+        extension_module.__file__ = str(extension)
+        plain_module = types.ModuleType("plain")
+        plain_module.__file__ = str(self.tmp / "plain.py")
+        modules = {"fixture_ext": extension_module, "plain": plain_module, "builtin": None}
 
         def identities(**bounds):
             return runtime_worker.compiled_identities(modules, maps_path=str(maps),
