@@ -6,13 +6,50 @@ transports water on that evolving bed. It does not reconstruct the landscape
 from the DEM at event transitions. This is a new case policy; the historical
 Small and Dense qualification profiles are unchanged.
 
-Use the actual scripts with an existing MAPLE interpreter. There is no
-installed `masy` console command:
+The [October 26 qualification](../case_cpu_qualification.md) exercised the real
+cold CLI on one labelled synthetic imported 9 × 8, two-class case with 20 voxels per column. Its
+reference values are interface-test inputs, not defaults for another landscape.
+No user DEM has been selected or run by that qualification.
+
+## Prepare your inputs
+
+1. Author the normal MAPLE package: `case.yaml`, `model.yaml`, `wind.yaml`,
+   and the original DEM under `source/`. The first qualified reader accepts a
+   C-order float64 NPY DEM. Keep MAPLE's explicit `import.elevation` units,
+   row order, masks, classes, layers and physical choices; see
+   [complete case adoption](maple-case-adoption.md).
+2. Supply the complete hydraulic ring/outlet masks, soil/wet-class parameters,
+   water controls, rain intervals and recession guard. The
+   [water-input guide](case-water-inputs.md) lists the required fields and units.
+   A DEM alone does not provide these scientific inputs; the synthetic fixture
+   is not a calibration or a source of user-case defaults.
+3. Write explicit input/copy/runner/process quotas and the closed `run.json`
+   described below. Use the digest returned by `inspect`. Wind ranges refer to
+   the authored MAPLE record and must partition it in order; they do not settle
+   each forcing block separately.
+4. Configure `runtime.toml` from the [runtime example](../../examples/runtime.example.toml) for the reviewed
+   Source checkouts and existing CPU interpreter. The accepted reference used
+   feature sources listed in the qualification record; unrelated current main
+   branches are not that reference. A new run selects current committed heads
+   and must pass their compatibility/currentness checks.
+5. Obtain a five-owner `CPU_CODE.json` issued for that exact new lock, Source
+   selection and interpreter. `prepare` does not mint this machine qualification
+   contract. Its identities must be authenticated by the runtime qualification
+   owner; copying another machine's file or changing its HEAD label is invalid.
+6. Select one actually allowed CPU and apply singleton affinity before launching
+   the cold CLI. Keep `LC_ALL=C` before interpreter exec so the real startup
+   flags match the locked profile. Changing the environment after startup does
+   not repair an incompatible interpreter flag.
+
+Use the actual scripts from the reviewed MASY checkout with an existing MAPLE
+CPU interpreter. Commands below show the qualified host's interpreter spelling;
+substitute your own qualified existing MAPLE interpreter and issue its own lock
+and machine contract. There is no installed `masy` console command:
 
 ```sh
-/home/okin/MAPLE/.venv/bin/python -I -B tools/masy_case.py prepare --config runtime.toml
-/home/okin/MAPLE/.venv/bin/python -I -B tools/masy_case.py verify --store /absolute/runtime-store --lock LOCK_ID
-/home/okin/MAPLE/.venv/bin/python -I -B tools/masy_case.py inspect --case /absolute/maple-case --input-limits input_limits.json
+LC_ALL=C /home/okin/MAPLE/.venv/bin/python -I -B tools/masy_case.py prepare --config runtime.toml
+LC_ALL=C /home/okin/MAPLE/.venv/bin/python -I -B tools/masy_case.py verify --store /absolute/runtime-store --lock LOCK_ID
+LC_ALL=C /home/okin/MAPLE/.venv/bin/python -I -B tools/masy_case.py inspect --case /absolute/maple-case --input-limits input_limits.json
 ```
 
 `prepare` and `verify` execute the unchanged `tools/masy_runtime.py` launcher.
@@ -120,7 +157,7 @@ thread/JAX environment override or automatic affinity selection is added.
 After selecting the CPU, the command is:
 
 ```sh
-taskset -c SELECTED_ALLOWED_CPU /home/okin/MAPLE/.venv/bin/python -I -B tools/masy_case.py run \
+LC_ALL=C taskset -c SELECTED_ALLOWED_CPU /home/okin/MAPLE/.venv/bin/python -I -B tools/masy_case.py run \
   --store /absolute/runtime-store --lock LOCK_ID --request /absolute/run.json --cpu-extensions /absolute/CPU_CODE.json --run-id case-example
 ```
 
@@ -134,8 +171,14 @@ the input-test harness, not established as a CLI prerequisite. Every original
 compiled file identity remains mandatory; unknown additions and changed bytes
 refuse. All other original stable fields remain exact. Full actual rows and
 aliases are retained unchanged; alias/module-load-set equality is not used.
-The first run needs this Root-issued file for its new lock, not an old receipt
-with a relabelled HEAD. See the task's UNBOUND template for the closed schema.
+The first run needs a file issued by the runtime qualification owner for its
+new lock, not an old receipt with a relabelled HEAD. The owner supplies the
+closed schema with the contract. Its fields are `schema`, `lock_id`,
+`source_heads`, `packages`, `interpreter_identity`, `extensions` and
+`qualification_origin`; every extension row has `owner`, `path`, `size` and
+`sha256`. The exact owner IDs are `jaxlib_mlir_hlo`, `numpy_fft`,
+`stdlib_readline`, `stdlib_resource` and `stdlib_mmap`. The
+[owning parser](../../src/masy/case_cli.py) enforces that schema.
 
 The parent imports no Native/provider package. It authenticates the readonly
 MASY Source tree before importing the sealed parent and pins this new real
@@ -178,11 +221,13 @@ identities remain mandatory; full locked-plus-qualified count/byte limits and
 unknown/changed-file refusal remain. Preparation checks its actual loaded
 subset against the same complete authority without inventing loaded modules.
 
-A new committed Source/lock and a genuinely issued five-owner code contract
-are required. A previous generic unknown-file failure does not establish which
-file caused that failure and is not a successful CLI qualification. On future
-compiled-identity refusal the existing error/stderr includes bounded expected/
-actual file pins and a path (with a truthful truncation flag if necessary);
-secondary diagnostic failure retains the original refusal. No actual file pin,
-runtime result, generic future-import allowance or peak/fit claim is issued by
-this Source update.
+The owner declaration is a Source-level compatibility change. A new committed
+Source/lock and a genuinely issued five-owner code contract are required for a
+run. The earlier generic unknown-file refusal still does not identify its
+unnamed offending file. The executed result is recorded separately in the
+[qualification record](../case_cpu_qualification.md); it does not pin identities
+for other machines or locks. On future product-worker compiled-identity refusal,
+the existing error/stderr includes bounded expected/actual file pins and a path
+(with a truthful truncation flag if necessary); secondary diagnostic failure
+retains the original refusal. This adds no generic future-import or peak/fit
+claim.

@@ -2,9 +2,19 @@
 
 MAPLE-SYRUP is designed to alternate actual MAPLE wind events and actual SYRUP water events over one evolving MAPLE sediment landscape. Wind physics stays in `~/MAPLE` and water physics stays in `~/SYRUP`. SYRUP's existing `maple_syrup` package name remains unchanged, and the combined wrapper uses `masy`. The wrapper contains no copied transport physics, no re-created sediment bed between events and no simultaneous wind/water transport.
 
-**October 25 qualification:** a bounded, labelled synthetic Dense GPU run completed wind → water → wind → water and matched a separate native GPU control for the captured records at all four event boundaries. [Exact sources, scope and remaining work](docs/dense_gpu_qualification_20261025.md). Full CPU–GPU comparison, windowed coupling, combined persisted restart, scale qualification and production calibration remain open.
+**October 26 case CPU workflow:** the real command-line entry completed a labelled
+synthetic imported MAPLE case through wind → rain/recession → wind on one evolving
+bed: 9 × 8 cells, 2 classes, 20 voxels per column. Start with the
+[MAPLE case CPU guide](docs/user-guide/case-cpu-workflow.md); the
+[qualification record](docs/case_cpu_qualification.md) gives the exact executed
+sources, limits and exclusions. A real user DEM and its scientific water inputs
+must still be supplied. This is a bounded CPU qualification; it does not establish
+large-case, windowed, GPU, calibration or restart support. Earlier source-specific
+milestones below retain their original scope.
 
-Separate bounded CPU windowed wind records also passed their native dense oracles: six-class attached flow and one-class topographic wind/separation/creep/avalanching. [Exact sources, scope and limits](docs/windowed_wind_qualification_20261025.md). Windowed wind–water coupling remains open.
+**October 25 qualification:** a bounded, labelled synthetic Dense GPU run completed wind → water → wind → water and matched a separate native GPU control for the captured records at all four event boundaries. [Exact sources, scope and remaining work](docs/dense_gpu_qualification_20261025.md). Full CPU–GPU comparison, GPU windowed coupling, combined persisted restart, scale qualification and production calibration remain open.
+
+Separate bounded CPU windowed wind records also passed their native dense oracles: six-class attached flow and one-class topographic wind/separation/creep/avalanching. [Exact sources, scope and limits](docs/windowed_wind_qualification_20261025.md). [Bounded CPU windowed wind–water coupling](docs/windowed_cpu_integration.md) is separately qualified on its own sources and fixture; broader and GPU windowed coupling retain separate qualification requirements.
 
 **October 19 reference:** the restricted Dense CPU Python integration passes on committed MAPLE `39bcf79` + SYRUP
 `d05d8c6`, using MASY runtime `22aa6ab`. Claude accepted the source-only qualification review, followed by Codex
@@ -34,11 +44,11 @@ windowed or full-scale support is claimed. The project goal of full alternating 
 
 The [schedule and bed adapter](docs/dense_integration.md), [Python event runner](docs/dense_runner.md), and
 [native finalization adapter](docs/wind_finalization.md) reuse the actual upstream physics. MAPLE's clock-origin
-extension is committed and included in this merge. Shared-storage libraries are present; windowed wind execution
-remains unqualified. The [private device runner](docs/dense_device_runner.md) now has the bounded, source-specific GPU qualification linked above. Large cases, general
-combined restart and a collaborator transport CLI require later work.
+extension is committed and included in this merge. The separately qualified [bounded CPU windowed integration](docs/windowed_cpu_integration.md)
+retains its own exact source and fixture scope; the case CPU CLI described here uses a Dense bed. The [private device runner](docs/dense_device_runner.md) now has the bounded, source-specific GPU qualification linked above. The bounded case CPU CLI is described above; large cases and general
+combined restart require separate qualification.
 The [runtime tools](docs/runtime.md) still report `transport_ready=false` because they have no transport entry point;
-source delivery and the separately tested Python API have distinct acceptance evidence.
+runtime identity, the separately tested Python API and the case CPU CLI have distinct acceptance evidence.
 
 The [shared vegetation and soil-water plan](docs/vegetation_information_plan.md) defines versioned updates between
 events, read by both models. Manual CPU updates of the five native fields now exist. Joint soil-water exchange is
