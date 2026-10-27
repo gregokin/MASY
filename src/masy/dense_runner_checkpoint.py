@@ -2990,6 +2990,8 @@ def save_passive_boundary(
     artifact_root = Path(artifact_root).absolute()
     oi._source_identity(source_identity)
     _digest(environment_sha256, "environment")
+    _mixed_static_writer_gate(path, runner, artifact_root, originals,
+        source_identity, environment_sha256, limits)
     manifest, arrays = _snapshot(
         runner,
         originals,
@@ -3046,6 +3048,8 @@ def _write_passive_boundary(
     arrays,
     artifacts,
 ):
+    _mixed_static_writer_gate(path, runner, artifact_root, originals,
+        source_identity, environment_sha256, limits, manifest=manifest)
     # _snapshot already admitted the closed5/7 native array layouts and numeric
     # cap. Live native routing is writable; reader preparation requires private
     # readonly carriers. Pre-check the combined reservation before allocation;
@@ -3178,6 +3182,8 @@ def _write_passive_boundary(
         }
         manifest["manifest_sha256"] = _sha(unsigned)
         raw = oi._json(manifest)
+        _mixed_static_writer_gate(path, runner, artifact_root, originals,
+            source_identity, environment_sha256, limits, manifest=manifest, raw=raw)
         if (
             len(raw) > limits.max_metadata_bytes
             or used + len(raw) > limits.max_serialized_bytes
@@ -5110,3 +5116,225 @@ def _write_passive_boundary_v2(
         if directory is not None:
             os.close(directory)
         os.close(parent)
+
+
+# Source-only authoring excerpt. Appended to B by author_b_01.py; never imported here.
+
+_STATIC_PLAN_KEY = object()
+
+
+class _StaticMetadataPlan:
+    """Issued scalar forecast, never a snapshot, physical owner or B manifest."""
+    __slots__ = ('_key', 'events', 'accepted', 'max_receipt_bytes', 'wire_upper',
+                 'original_manifest_bytes', 'original_manifest_sha256')
+
+    def __init__(self, key, events, accepted, receipt, wire, raw, digest):
+        if key is not _STATIC_PLAN_KEY:
+            _fail('metadata_plan', 'owning static planner required')
+        for name, value in zip(self.__slots__,
+                (key, events, accepted, receipt, wire, raw, digest), strict=True):
+            object.__setattr__(self, name, value)
+
+    def __setattr__(self, name, value):
+        raise AttributeError('static metadata plans are immutable')
+
+    def __delattr__(self, name):
+        raise AttributeError('static metadata plans are immutable')
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError('static metadata plans are operation-local')
+
+
+def _wire_string(text):
+    # Only bounded ASCII Source literals reach this helper, never user strings.
+    if (type(text) is not str or not text.isascii() or len(text) > 128
+            or any(ord(character) < 32 or ord(character) == 127 for character in text)):
+        _fail('metadata_plan', 'bounded Source literal required')
+    return 2 + len(text) + text.count('"') + text.count('\\')
+
+
+def _wire_object(fields):
+    return 2 + sum(_wire_string(k) + 1 + n for k, n in fields.items()) + max(0, len(fields) - 1)
+
+
+def _wire_array(widths):
+    return 2 + sum(widths) + max(0, len(widths) - 1)
+
+
+def _static_metadata_wire_upper(accepted):
+    """591's Source-width derivation, not a measured-size/default allowance.
+
+    The static v1 serializer/closed keysets and scalar bounds are inverse-bound
+    by the Source auditor. Root must also qualify their selected implementations.
+    No metadata values, arrays, routing factory, clock or Native decoder is run.
+    """
+    _int(accepted, 8, 'prospective accepted count')
+    sha, encoded_time, fraction = 66, 1006, 962
+    source = _wire_object({'kind': _wire_string('source_manifest_prototype'),
+        'masy': sha, 'maple': sha, 'syrup': sha})
+    caller = _wire_object({'schema': _wire_string('masy.dense_runner_boundary_native.v1'),
+        'source_identity': source, 'environment_sha256': sha, 'static_sha256': sha})
+    identity = _wire_object({'schema': _wire_string(bridge.SCHEMA),
+        'original_inputs_sha256': sha, 'case_sha256': sha, 'bed_identity_sha256': sha,
+        'caller': caller})
+    path = 2 + 6 * 4096
+    original = _wire_object({'format': _wire_string(_ORIGINAL_FORMAT),
+        'relative_path': path, 'manifest_file_sha256': sha, 'identity': sha})
+    native = _wire_object({'format': _wire_string(_NATIVE_FORMAT),
+        'relative_path': path, 'manifest_file_sha256': sha, 'identity': identity})
+    entry = _wire_object({'index': 2, 'kind': _wire_string('event'),
+        'native_start': encoded_time, 'native_end': encoded_time,
+        'global_start': fraction, 'global_end': fraction, 'endpoint_elapsed': fraction,
+        'commit_before': encoded_time, 'commit_after': encoded_time,
+        'returned_elapsed': encoded_time, 'endpoint_discrepancy': fraction})
+    ledger = _wire_object({'schema': _wire_string('masy.clock_ledger.v1'),
+        'native_epoch': encoded_time,
+        'global_elapsed_definition': _wire_string('Fraction(native_t) - Fraction(native_epoch)'),
+        'entries': _wire_array([entry] * accepted)})
+    totals = _wire_object({'export': _wire_string('total_export'),
+        'input': _wire_string('total_input'), 'bound': _wire_string('total_bound'),
+        'internal_terminal_deposition': _wire_string('total_internal_terminal_deposition'),
+        'water': _wire_object({k: encoded_time for k in WATER_FIELDS}),
+        'n_entry_reroutes': 10, 'n_event_reroutes': 10})
+    routing_fields = {k: sha for k in ROUTING_FIELDS}
+    routing_fields.update(source_array=_wire_string('routing_source'),
+        velocity_array=_wire_string('routing_velocity'), phase=4)
+    shared = _wire_object({'schema': _wire_string('masy.shared_surface_resources.v0'),
+        'version': 1, 'profile': _wire_string('static_prescribed_native_dry_reset_v0'),
+        'prescribed_identity_sha256': sha, 'soil_array': _wire_string('current_soil'),
+        'update_cursor': 1, 'update_receipts': 2})
+    descriptor = _wire_object({'name': _wire_string('a_0006.npy'),
+        'dtype': _wire_string('<f8'), 'shape': _wire_array([2, 2, 2]),
+        'data_bytes': 7, 'data_sha256': sha, 'file_bytes': 7, 'sha256': sha})
+    state = _wire_object({'next_index': 1, 'n_accepted': 1, 'n_classes': 1,
+        'inventory_elements': 4, 'native_time': encoded_time,
+        'accepted_bed_sha256': sha, 'accepted_private_sha256': sha,
+        'receipt_chain_sha256': sha})
+    receipt = _wire_object({'body': 256 << 10, 'bytes': 6, 'sha256': sha})
+    return _wire_object({'schema': _wire_string(SCHEMA), 'profile': _wire_string(PROFILE),
+        'source_identity': source, 'environment_sha256': sha,
+        'originals': original, 'genesis': native, 'physical': native, 'state': state,
+        'totals': totals, 'ledger': ledger, 'receipts': _wire_array([receipt] * accepted),
+        'routing': _wire_object(routing_fields), 'shared_resources': shared,
+        'arrays': _wire_array([descriptor] * 7), 'manifest_sha256': sha})
+
+
+def _flat_metadata_node(table, index, tag, keys):
+    if type(table) is not list or type(index) is not int or not 0 <= index < len(table):
+        _fail('metadata_plan', 'bounded exact Original flat node index')
+    node = table[index]
+    _keys(node, keys, 'prospective Original node')
+    if node['t'] != tag:
+        _fail('metadata_plan', 'exact Original scalar/container tag')
+    return node
+
+
+def _flat_metadata_fields(table, index, tag, names, *, class_name=None):
+    keys = ('t', 'v') if class_name is None else ('t', 'c', 'v')
+    node = _flat_metadata_node(table, index, tag, keys)
+    if class_name is not None and node['c'] != class_name:
+        _fail('metadata_plan', 'genuine Original controlling class tag')
+    rows = node['v']
+    if type(rows) is not list or len(rows) != len(names):
+        _fail('metadata_plan', 'closed exact Original field count')
+    fields = {}
+    for row in rows:
+        if (type(row) is not list or len(row) != 2 or type(row[0]) is not str
+                or row[0] not in names or row[0] in fields):
+            _fail('metadata_plan', 'missing/duplicate/foreign Original field')
+        fields[row[0]] = row[1]
+    return fields
+
+
+def _static_original_scalar_plan(raw, reference, expected_source, kinds, limits, accepted):
+    """Metadata only; the unchanged Original/native reader remains mandatory."""
+    BoundaryImageLimits.__post_init__(limits)
+    if limits.max_receipt_bytes > 256 << 10:
+        _fail('metadata_plan', 'owning Source receipt-width ceiling before planning')
+    if type(raw) is not bytes or not 1 <= len(raw) <= 4 << 20:
+        _fail('metadata_plan', 'raw Original metadata admission before parse')
+    _reference(reference, _ORIGINAL_FORMAT)
+    if hashlib.sha256(raw).hexdigest() != reference['manifest_file_sha256']:
+        _fail('metadata_plan', 'exact Original raw hash required')
+    original_limits = oi.OriginalPackLimits(max_cells=limits.max_cells,
+        max_classes=limits.max_classes, max_voxels=limits.max_voxels,
+        max_cohorts=limits.max_cohorts, max_events=limits.max_events)
+    manifest = oi._strict_json(raw, original_limits)
+    _keys(manifest, ('schema', 'profile', 'content_sha256', 'wire', 'files',
+                     'manifest_sha256'), 'prospective Original manifest')
+    unsigned = {k: v for k, v in manifest.items() if k != 'manifest_sha256'}
+    if (manifest['schema'] != oi.SCHEMA or manifest['profile'] != oi.PROFILE
+            or manifest['content_sha256'] != reference['identity']
+            or hashlib.sha256(oi._json(unsigned)).hexdigest() != manifest['manifest_sha256']
+            or oi._json(manifest) != raw):
+        _fail('metadata_plan', 'exact canonical Original Source/identity/seal')
+    wire = manifest['wire']
+    _keys(wire, ('anchors', 'body', 'nodes'), 'prospective Original wire')
+    table = wire['nodes']
+    if type(table) is not list or not 1 <= len(table) <= original_limits.max_nodes:
+        _fail('metadata_plan', 'bounded Original metadata node table')
+    root = _flat_metadata_fields(table, wire['body'], 'dict',
+                                tuple(k for k in oi._ROOT_FIELDS if k != 'content_sha256'))
+    source = _flat_metadata_fields(table, root['source_identity'], 'dict',
+                                  ('kind', 'masy', 'maple', 'syrup'))
+    actual_source = {}
+    for name, index in source.items():
+        value = _flat_metadata_node(table, index, 'str', ('t', 'v'))['v']
+        if type(value) is not str:
+            _fail('metadata_plan', 'exact Source identity strings')
+        actual_source[name] = value
+    oi._source_identity(actual_source)
+    if actual_source != expected_source:
+        _fail('metadata_plan', 'same actual Source as the accepted store')
+    schedule = _flat_metadata_fields(table, root['schedule'], 'dict', ('schema', 'events'))
+    events = _flat_metadata_node(table, schedule['events'], 'list', ('t', 'v'))['v']
+    if (type(kinds) is not list or type(events) is not list
+            or not 1 <= len(events) == len(kinds) <= limits.max_events
+            or any(kind not in ('wind', 'rain') for kind in kinds)):
+        _fail('metadata_plan', 'same finite original ordered event count')
+    for index, event_index in enumerate(events):
+        event = _flat_metadata_node(table, event_index, 'dict', ('t', 'v'))['v']
+        if type(event) is not list or len(event) > 8:
+            _fail('metadata_plan', 'bounded Original event record')
+        candidates = [row[1] for row in event if type(row) is list and len(row) == 2
+                      and row[0] == 'kind']
+        if len(candidates) != 1 or _flat_metadata_node(table, candidates[0], 'str',
+                ('t', 'v'))['v'] != kinds[index]:
+            _fail('metadata_plan', 'actual Original event kinds differ')
+    producer_names = ('max_events', 'max_wind_accounting_steps', 'max_storm_steps',
+                      'max_report_rows', 'max_work_bytes', 'max_receipt_bytes')
+    producer = _flat_metadata_fields(table, root['runner_limits'], 'class',
+        producer_names, class_name='masy.dense_runner:DenseRunnerLimits')
+    values = {}
+    for name in producer_names:
+        value = _flat_metadata_node(table, producer[name], 'int', ('t', 'v'))['v']
+        if type(value) is not int or not 1 <= value <= 1 << 40:
+            _fail('metadata_plan', 'positive finite producer scalar limit')
+        values[name] = value
+    if values['max_events'] < len(events) or values['max_receipt_bytes'] > limits.max_receipt_bytes:
+        _fail('metadata_plan', 'actual producer receipt cap must precede transport')
+    _int(accepted, len(events), 'planned accepted count')
+    if limits.max_receipts_bytes < accepted * values['max_receipt_bytes']:
+        _fail('metadata_plan', 'aggregate future receipts admitted before Native')
+    wire_upper = _static_metadata_wire_upper(accepted)
+    if wire_upper > limits.max_metadata_bytes:
+        _fail('metadata_plan', 'entire Source-derived future B wire must fit original cap')
+    return _StaticMetadataPlan(_STATIC_PLAN_KEY, len(events), accepted,
+        values['max_receipt_bytes'], wire_upper, len(raw), reference['manifest_file_sha256'])
+
+
+def _mixed_static_bridge():
+    # sys is an interpreter-owned module; do not import AW/default subjects here.
+    import sys
+    module = sys.modules.get('masy.dense_active_water_store')
+    if module is None or vars(module).get('_MIXED_OPERATION_SLOT') is None:
+        return None
+    return module
+
+
+def _mixed_static_writer_gate(path, runner, root, originals, source, environment, limits,
+                              *, manifest=None, raw=None):
+    module = _mixed_static_bridge()
+    if module is not None:
+        module._mixed_writer_check(path, runner, root, originals, source,
+                                   environment, limits, manifest=manifest, raw=raw)

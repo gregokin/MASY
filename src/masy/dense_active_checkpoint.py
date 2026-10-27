@@ -111,6 +111,9 @@ def _parent(parent, runner):
 def _parent_record(parent, runner):
     from masy import dense_boundary_store as c
     _parent(parent, runner)
+    if getattr(parent, "_selection", None) is not None:
+        from masy import dense_active_water_store as active
+        return active._parent_record(parent, runner)
     h = parent._handle
     _record, head_raw = h._head()
     return {"store_id": h._header["store_id"], "token": parent._token,
@@ -312,6 +315,8 @@ def _schedule_record(schedule):
 
 
 def _capture(parent, runner, lease, semantic, attempt):
+    if type(lease.prepared) is _ColdPrepared:
+        return _capture_cold(parent, runner, lease, semantic, attempt)
     p, n = lease.prepared, lease.prepared.n
     from masy import dense_runner as dr
     if type(p) is not dr._RainEntry:
@@ -516,6 +521,8 @@ def _header_admission(path, layout, native, c, *, bounds):
     """Actual Native header parser, then bounded context-derived admission."""
     if type(layout) is not dict or type(layout.get("archives")) is not list or len(layout["archives"]) != 2:
         _fail("active_layout", "actual writer's two-archive layout metadata required")
+    if _CANONICAL_METADATA_SCOPE is not None:
+        _canonical_register_wet(path, native)
     used = 0
     for index, name in enumerate(("maple_state.npz", "continuation.npz")):
         observed, count = native._audit_archive(path / name, _NATIVE_BYTES - used)
@@ -732,7 +739,7 @@ def _export_check(parent, runner, lease, token, declared):
     runner._precheck()
     pause._runtime(c, None, lease)
     bounds = pause._bounds(runner, lease.plan)
-    if pause._entry_digest(runner, lease.prepared, n, schemas, bounds, lease.resolved) != lease.entry_sha256:
+    if _export_entry_seal(parent, runner, lease, n, schemas, bounds) != lease.entry_sha256:
         _fail("active_export_entry", "original warm entry changed")
     if pause._wet(runner, lease, lease.progress, n, checkpoint, schemas)["sha256"] != lease.progress_sha256:
         _fail("active_export_progress", "original warm progress changed")
@@ -746,7 +753,9 @@ def export_water_pause(parent, runner, token, *, attempt):
     """
     from masy import dense_runner as dr, dense_water_pause as pause
     lease = pause._lease(runner, token)
-    if type(lease.prepared) is not dr._RainEntry:
+    if type(lease.prepared) is _ColdPrepared:
+        _cold_export_parent(parent, runner, lease)
+    elif type(lease.prepared) is not dr._RainEntry:
         _fail("active_export_entry", "only the genuine original warm entry can export in StageA")
     declared = _declare()
     n, checkpoint, schemas, c, backend, _snapshot, _native = declared
@@ -764,6 +773,8 @@ def export_water_pause(parent, runner, token, *, attempt):
     preliminary = {"parent": _parent_record(parent, runner), "operation": _operation(parent, runner)}
     projection_layout = checkpoint.checkpoint_write_budget(lease.progress, runner._bed.context,
         runner._water.column, runner._water.sediment, preliminary, limits=limits)
+    if _CANONICAL_METADATA_SCOPE is not None:
+        _canonical_write_layout(path / "native", projection_layout, checkpoint, _native)
     _reserve_active(runner, lease.plan, phase="writer", layout=projection_layout)
     semantic = _native_projection(lease.progress, n, checkpoint, backend, schemas, pause._bounds(runner, lease.plan))
     capsule = _capture(parent, runner, lease, semantic, _sha(uuid.uuid4().bytes))
@@ -772,6 +783,8 @@ def export_water_pause(parent, runner, token, *, attempt):
     identity = _native_identity(capsule, capsule_sha)
     layout = checkpoint.checkpoint_write_budget(lease.progress, runner._bed.context,
         runner._water.column, runner._water.sediment, identity, limits=limits)
+    if _CANONICAL_METADATA_SCOPE is not None:
+        _canonical_write_layout(path / "native", layout, checkpoint, _native)
     _reserve_active(runner, lease.plan, phase="writer", layout=layout)
     _space(parent, path, layout, len(capsule_raw), c)
     _export_check(parent, runner, lease, token, declared)
@@ -913,3 +926,115 @@ def load_water_pause(parent, runner, *, attempt, expected_export_sha256, runtime
         os.close(rootfd)
 
 
+
+
+def _cold_export_parent(parent, runner, lease):
+    from masy import dense_active_water_store as active
+    _check_prepared(runner, lease.prepared)
+    if lease.prepared.parent() is not parent:
+        _fail("active_parent", "cold export requires the original entry actual C parent")
+    active._checked_selection(parent, runner)
+    return parent
+
+
+def _export_entry_seal(parent, runner, lease, n, schemas, bounds):
+    from masy import dense_water_pause as pause
+    if type(lease.prepared) is _ColdPrepared:
+        _cold_export_parent(parent, runner, lease)
+        return pause._entry_seal(runner, lease.prepared, n, schemas, bounds, lease.resolved)
+    return pause._entry_digest(runner, lease.prepared, n, schemas, bounds, lease.resolved)
+
+
+def _capture_cold(parent, runner, lease, semantic, attempt):
+    _cold_export_parent(parent, runner, lease)
+    p = lease.prepared
+    facts = p.facts
+    if (p.parent() is not parent or facts["index"] != lease.index
+            or facts["source"] != lease.source or facts["environment"] != lease.environment
+            or facts["origin"] != _hex(lease.origin)
+            or facts["plan"] != [_hex(x) for x in lease.plan]
+            or [_hex(x) for x in p.plan] != facts["plan"]
+            or _metadata(facts["resolved"], _CAPSULE_BYTES, "original resolved rain")
+                != _metadata(lease.resolved, _CAPSULE_BYTES, "current resolved rain")
+            or _metadata(facts["schedule"], _CAPSULE_BYTES, "original schedule")
+                != _metadata(_schedule_record(p.schedule), _CAPSULE_BYTES, "current schedule")):
+        _fail("active_export_entry", "cold export changed original entry/plan/source/forcing")
+    return {"schema": SCHEMA, "parent": _parent_record(parent, runner),
+            "source": lease.source, "environment": lease.environment,
+            "operation": _operation(parent, runner), "attempt": attempt,
+            "index": lease.index, "resolved": lease.resolved, "origin": _hex(lease.origin),
+            "plan": [_hex(x) for x in lease.plan], "ordinal": lease.ordinal, "pauses": lease.pauses,
+            "entry": facts["entry"], "schedule": facts["schedule"],
+            "native_semantic_sha256": semantic}
+
+
+_CANONICAL_METADATA_SCOPE = None
+
+
+def _canonical_register_wet(path, native):
+    scope = _CANONICAL_METADATA_SCOPE
+    if native is not scope._native:
+        _fail('mixed_implementation', 'same genuine Native metadata owner')
+    scope.register(path / 'maple_state.npz', 'wet_snapshot', 'water')
+    scope.register(path / 'continuation.npz', 'wet_companion', 'water')
+
+
+def _canonical_write_layout(path, layout, checkpoint, native):
+    # The genuine P1 already used the real selected formatter and actual arrays.
+    # Its exact class/fields are authenticated before the metadata projection.
+    scope = _CANONICAL_METADATA_SCOPE
+    scope.prewrite()
+    if (checkpoint is not sys.modules.get('maple_syrup.checkpoint')
+            or native is not scope._native or type(layout) is not checkpoint.CheckpointWriteBudget
+            or type(layout.archives) is not tuple or len(layout.archives) != 2):
+        _fail('mixed_implementation', 'actual current typed P1 layout required')
+    for index, archive in enumerate(layout.archives):
+        role, filename = (('wet_snapshot', 'maple_state.npz') if index == 0
+                          else ('wet_companion', 'continuation.npz'))
+        selected, matches = None, 0
+        for spec in native._CANONICAL_ARCHIVE_ROWS:
+            if spec[0] == role:
+                selected, matches = spec, matches + 1
+        if (matches != 1 or selected[1] != filename
+                or type(archive) is not checkpoint.ArchiveLayout or archive.filename != filename
+                or type(archive.members) is not tuple
+                or not 1 <= len(archive.members) <= selected[4]):
+            _fail('mixed_implementation', 'canonical genuine P1 archive role/count')
+        infos = []
+        for row in archive.members:
+            if (type(row) is not checkpoint.NpyMemberLayout
+                    or type(row.key) is not str or not row.key.isascii() or not 1 <= len(row.key) <= 196
+                    or type(row.dtype) is not str or len(row.dtype) > 10
+                    or type(row.shape) is not tuple or len(row.shape) > 4
+                    or row.fortran_order is not False
+                    or type(row.npy_header_bytes) is not int or row.npy_header_bytes != 128
+                    or type(row.data_bytes) is not int or not 0 <= row.data_bytes <= _NATIVE_BYTES
+                    or type(row.npy_bytes) is not int or row.npy_bytes != row.data_bytes + 128):
+                _fail('mixed_implementation', 'canonical actual P1 primitive header metadata')
+            for axis in row.shape:
+                if type(axis) is not int or not 0 <= axis <= 16000:
+                    _fail('mixed_implementation', 'canonical actual P1 shape')
+            # Source-selected P1 formatter version=None emitsv1 for these ASCII
+            # primitive rank4 descriptors. Size alone is NOT version authority.
+            descriptor = row.dtype.encode('ascii')
+            literal = (b"{'descr': '" + descriptor + b"', 'fortran_order': False, 'shape': "
+                       + str(row.shape).encode('ascii') + b', }')
+            if len(literal) > 117:
+                _fail('mixed_implementation', 'canonical P1 literal width')
+            native._canonical_metadata((118).to_bytes(2, 'little')
+                + literal + b' ' * (117 - len(literal)) + b'\n', (1, 0))
+            itemsize = int(row.dtype[2:]) * (4 if row.dtype[1] == 'U' else 1)
+            elements = 1
+            for axis in row.shape:
+                if elements and axis > _NATIVE_BYTES // itemsize // elements:
+                    _fail('mixed_implementation', 'canonical P1 shape byte domain')
+                elements *= axis
+            if row.data_bytes != elements * itemsize:
+                _fail('mixed_implementation', 'actual P1 data bytes must equal shape times itemsize')
+            # Real Source-owned ZipInfo metadata only, no archive/data written.
+            infos.append(native.zipfile.ZipInfo(row.key + '.npy'))
+        native._canonical_member_roster(role, filename, infos)
+    # All primitive header/type/shape bounds now precede this unchanged genuine
+    # bounded P1 aggregate/call/byte validator. No SYRUP body is copied.
+    checkpoint._child_layout(layout, _p1_limits(checkpoint))
+    _canonical_register_wet(path, native)

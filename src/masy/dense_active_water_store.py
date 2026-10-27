@@ -1,0 +1,4573 @@
+"""Opt-in static Dense CPU active-water store; HEAD remains the only authority.
+
+This module owns bounded control metadata and calls the existing C/B/StageA
+owners. It implements no Native clock, sediment, water, checkpoint or reset law.
+Importing it does not import NumPy or either Native model.
+"""
+from __future__ import annotations
+
+import copy
+import dataclasses
+import os
+import re
+import stat
+import sys
+import threading
+import uuid
+from pathlib import Path
+
+from masy import dense_boundary_store as c
+
+SCHEMA = "masy.dense_boundary_store.activewater.v1"
+PROFILE = "default_dense_numpy_activewater_v1"
+_MAX_REVISION = 24
+_MAX_CHAIN = 25
+_MAX_PAUSES = 2
+_ACTIVE_RAW_BYTES = 22 << 20
+_ACTIVE_ENTRIES = 8
+_PATH_CHARS = 4096
+_KINDS = ("genesis", "water_paused", "event_accepted")
+_STORE = (*c._STORE[:-1], "managed_water", "native_work_bytes", "schedule_sha256", "store_sha256")
+_HEAD = ("schema", "store_id", "store_file_sha256", "revision", "accepted_sequence",
+         "kind", "generation_name", "generation_file_sha256", "generation_sha256",
+         "anchor_generation", "event_operation_id", "request_id", "pause_ordinal",
+         "pause_count", "head_sha256")
+_INTENT = ("schema", "store_id", "attempt_id", "revision", "accepted_sequence",
+           "expected_parent_head_file_sha256", "expected_parent_generation",
+           "entry_anchor_head_file_sha256", "event_operation_id", "request_id",
+           "request_intent", "source_identity", "environment_sha256", "intent_sha256")
+_GENERATION = ("schema", "store_id", "store_file_sha256", "attempt_id", "revision",
+               "accepted_sequence", "kind", "parent_head_record",
+               "parent_head_file_sha256", "parent_generation", "entry_anchor_head_record",
+               "event_operation_id", "request_id", "request_intent", "intent_file_sha256",
+               "image", "accepted_summary", "accepted_receipt_sha256", "water_ref",
+               "ack_core", "ack_core_sha256", "generation_sha256")
+_ACK = ("schema", "store_id", "event_operation_id", "request_id", "request_intent",
+        "returned_kind", "revision", "accepted_sequence", "selected_parent_token",
+        "pause_ordinal", "pause_count", "completion_receipt_sha256")
+_MANAGED = ("path", "dev", "ino", "parent_path", "parent_dev", "parent_ino", "fs_id")
+_WATER = ("attempt_name", "export_sha256", "ordinal", "pauses", "origin_s",
+          "native_time_s", "plan_sha256")
+_SELECTION_KEY = object()
+
+# Closed opt-in sibling format. The old constants and old intent arithmetic are
+# unchanged; selectors below have only these two Source-owned specializations.
+SCHEMA_PROCESS = "masy.dense_boundary_store.activeprocess.v1"
+PROFILE_PROCESS = "default_dense_numpy_activeprocess_v1"
+_PROCESS_SCHEMAS = tuple(SCHEMA_PROCESS + suffix for suffix in
+    ("", ".head", ".intent", ".generation", ".ack", ".request", ".storage", ".report"))
+_PROCESS_KINDS = (*_KINDS, "wind_paused")
+_PROCESS_STORE = (*tuple("managed_active" if x == "managed_water" else x for x in _STORE[:-1]),
+                  "event_kinds", _STORE[-1])
+_PROCESS_GENERATION = tuple("active_ref" if x == "water_ref" else x for x in _GENERATION)
+_PROCESS_REF = ("process_kind", *_WATER)
+# Cold wind re-export changes the encoded native/local/global clocks and step
+# index as well as ordinal.  A signed finite binary64 difference has at most
+# 632 numerator digits and 324 denominator digits: two quoted rational values
+# (960 each), one encoded native time (1006), step index (4), and ordinal growth
+# (3).  This bounds constructor bytes BEFORE the unchanged 1 MiB wire refusal.
+_COMBINED_CAPSULE_GROWTH_BYTES = 2933
+
+
+def _combined(value):
+    return type(value) is dict and type(value.get("schema")) is str and value["schema"] in _PROCESS_SCHEMAS
+
+
+def _schema(value):
+    return SCHEMA_PROCESS if _combined(value) else SCHEMA
+
+
+def _profile_name(value):
+    return PROFILE_PROCESS if _combined(value) else PROFILE
+
+
+def _kinds(value):
+    return _PROCESS_KINDS if _combined(value) else _KINDS
+
+
+def _store_fields(value):
+    return _PROCESS_STORE if _combined(value) else _STORE
+
+
+def _generation_fields_list(value):
+    return _PROCESS_GENERATION if _combined(value) else _GENERATION
+
+
+def _water_fields(value):
+    return _PROCESS_REF if _combined(value) else _WATER
+
+
+def _ref_key(value):
+    return "active_ref" if _combined(value) else "water_ref"
+
+
+def _managed_key(value):
+    return "managed_active" if _combined(value) else "managed_water"
+
+
+def _progress_key(value):
+    return "active_process" if _combined(value) else "active_water"
+
+
+def _sibling_prefix(value):
+    return ".masy-active-" if _combined(value) else ".masy-water-"
+
+
+def _paused(value):
+    return value["kind"] == "water_paused" or (_combined(value) and value["kind"] == "wind_paused")
+
+
+def _same_format(header, *values):
+    if any(_combined(value) != _combined(header) for value in values):
+        c._fail("active_format", "every selected control belongs to its actual STORE format")
+
+
+def _pause_fields_for(value):
+    kind = "water_paused" if _combined(value) and value["kind"] == "wind_paused" else value["kind"]
+    return _pause_fields(kind, value["pause_ordinal"], value["pause_count"])
+
+
+def _intent_for(kind, ordinal, header):
+    if not _combined(header) or kind != "checkpoint_wind":
+        return _intent(kind, ordinal)
+    # Same bounded original-plan ordinal law, a distinct closed process tag.
+    answer = _intent("checkpoint_water", ordinal)
+    return {**answer, "kind": "checkpoint_wind"}
+
+
+def _check_intent_for(value, header):
+    if not _combined(header):
+        return _check_intent(value)
+    c._keys(value, ("kind", "boundary_ordinal"), "active process request intent")
+    expected = _intent_for(value["kind"], value["boundary_ordinal"], header)
+    if c.oi._json(value) != c.oi._json(expected):
+        c._fail("active_request", "canonical closed process request required")
+    return expected
+
+
+def _active_reference(root, header, limits, head, generation):
+    if _combined(header) and head["kind"] == "wind_paused":
+        from masy import dense_active_wind_checkpoint as wind
+        identity = (header["storage_contract"]["root_dev"], header["storage_contract"]["root_ino"])
+        return wind.validate_retained_reference(root, header, limits, head, generation,
+                                                _managed_at(root, header, identity))
+    return _water_reference(root, header, limits, head, generation)
+
+
+def _declare_for(header):
+    _declare()
+    if _combined(header):
+        from masy import dense_active_wind_checkpoint as wind
+        wind._declare()
+
+
+def _next_kind(owner):
+    return None if owner._next == len(owner._schedule.events) else owner._schedule.events[owner._next].kind
+
+
+def _wind_profile(runner, reference):
+    from masy import dense_wind_pause as wind
+    api = wind._declare()
+    wind._profile(runner, api)
+    wind._runtime(api, reference)
+
+
+@dataclasses.dataclass(frozen=True)
+class ActiveWaterAcknowledgement:
+    """Prepared immutable wire bytes; contains no runner, Native holder or token."""
+    schema: str
+    store_id: str
+    event_operation_id: str
+    request_id: str
+    revision: int
+    accepted_sequence: int
+    head_token: str
+    ack_bytes: bytes
+    receipt_bytes: bytes | None
+
+
+def _intent(kind, ordinal=None):
+    if type(kind) is not str:
+        c._fail("active_request", "plain request kind required")
+    if kind == "finish":
+        if ordinal is not None:
+            c._fail("active_request", "finish has no ordinal")
+        return {"kind": "finish", "boundary_ordinal": None}
+    if kind == "checkpoint_water":
+        if type(ordinal) is not int or not 1 <= ordinal <= 4096:
+            c._fail("active_request", "plain positive original plan ordinal required")
+        return {"kind": kind, "boundary_ordinal": ordinal}
+    c._fail("active_request", "closed checkpoint_water/finish intent only")
+
+
+def _check_intent(value):
+    c._keys(value, ("kind", "boundary_ordinal"), "active request intent")
+    expected = _intent(value["kind"], value["boundary_ordinal"])
+    if c.oi._json(value) != c.oi._json(expected):
+        c._fail("active_request", "canonical closed request intent required")
+    return expected
+
+
+def _request_id(header, anchor, selected, parent_raw, intent, schedule):
+    """Validated accepted A fixes event operation; canonical selected R fixes request."""
+    limits = c._limits_load(header["limits"])
+    _head_fields(anchor, limits, header=header)
+    _head_fields(selected, limits, header=header)
+    _check_intent_for(intent, header)
+    _same_format(header, anchor, selected)
+    c._digest(schedule, "schedule_sha256")
+    if (anchor["kind"] not in ("genesis", "event_accepted")
+            or anchor["store_id"] != header["store_id"]
+            or selected["store_id"] != header["store_id"]):
+        c._fail("active_anchor", "actual accepted same-store anchor required")
+    if (type(parent_raw) is not bytes or not 1 <= len(parent_raw) <= limits.max_head_bytes
+            or parent_raw != c.oi._json(selected)):
+        c._fail("active_request", "stat-admitted canonical selected raw HEAD required")
+    operation = c._operation(header["store_id"], anchor,
+                             anchor["accepted_sequence"], schedule)
+    if _paused(selected):
+        if (selected["anchor_generation"] != anchor["generation_name"]
+                or selected["accepted_sequence"] != anchor["accepted_sequence"]
+                or selected["event_operation_id"] != operation):
+            c._fail("active_anchor", "selected pause differs from actual event anchor")
+    elif parent_raw != c.oi._json(anchor):
+        c._fail("active_anchor", "selected accepted HEAD must itself be the anchor")
+    request = c._sha(c.oi._json({"schema": _schema(header) + ".request",
+        "store_id": header["store_id"], "event_operation_id": operation,
+        "selected_parent_head_file_sha256": c._sha(parent_raw),
+        "request_intent": intent}))
+    return operation, request
+
+
+def _name(value, revision):
+    match = c._GEN.fullmatch(value) if type(value) is str else None
+    if match is None or int(match[1]) != revision:
+        c._fail("active_generation", "exact bounded revision/nonce path required")
+    return match[2]
+
+
+def _pause_fields(kind, ordinal, count):
+    if kind == "water_paused":
+        if (type(ordinal) is not int or not 1 <= ordinal <= 4096
+                or type(count) is not int or not 1 <= count <= _MAX_PAUSES):
+            c._fail("active_pause", "original ordinal and pause count have distinct bounds")
+    elif ordinal is not None or count is not None:
+        c._fail("active_pause", "only water_paused carries original ordinal/count")
+
+
+def _head_fields(value, limits, *, header=None):
+    descriptor = value if header is None else header
+    c._check_seal(value, _HEAD, "head_sha256", _schema(descriptor) + ".head")
+    if type(value["store_id"]) is not str or not c._NONCE.fullmatch(value["store_id"]):
+        c._fail("metadata_nonce", "active store id")
+    revision = c._integer(value["revision"], _MAX_REVISION, "active revision")
+    sequence = c._integer(value["accepted_sequence"], min(8, limits.max_accepted - 1),
+                          "active accepted sequence")
+    kind = value["kind"]
+    if type(kind) is not str or kind not in _kinds(descriptor) or sequence > revision:
+        c._fail("active_head", "kind/cursor/revision")
+    _name(value["generation_name"], revision)
+    for field in ("store_file_sha256", "generation_file_sha256", "generation_sha256",
+                  "event_operation_id", "request_id"):
+        c._digest(value[field], field)
+    if type(value["anchor_generation"]) is not str or not c._GEN.fullmatch(value["anchor_generation"]):
+        c._fail("active_anchor", "bounded generation path required")
+    _pause_fields_for(value)
+    if kind == "genesis":
+        if revision != 0 or sequence != 0:
+            c._fail("active_head", "genesis is revision/cursor zero")
+    elif revision == 0 or (kind == "event_accepted" and sequence == 0):
+        c._fail("active_head", "non-genesis revision/cursor")
+    if _paused(value):
+        anchor_match = c._GEN.fullmatch(value["anchor_generation"])
+        if int(anchor_match[1]) >= revision:
+            c._fail("active_anchor", "paused anchor must be a strict prior generation")
+    if not _paused(value) and value["anchor_generation"] != value["generation_name"]:
+        c._fail("active_anchor", "accepted HEAD is its next event anchor")
+    return value
+
+
+def _intent_fields(value, limits, *, header=None):
+    descriptor = value if header is None else header
+    c._check_seal(value, _INTENT, "intent_sha256", _schema(descriptor) + ".intent")
+    if (type(value["store_id"]) is not str or not c._NONCE.fullmatch(value["store_id"])
+            or type(value["attempt_id"]) is not str or not c._NONCE.fullmatch(value["attempt_id"])):
+        c._fail("metadata_nonce", "actual active store/attempt nonce")
+    revision = c._integer(value["revision"], _MAX_REVISION, "intent revision")
+    sequence = c._integer(value["accepted_sequence"], min(8, limits.max_accepted - 1), "intent cursor")
+    if sequence > revision or (revision == 0 and sequence != 0):
+        c._fail("active_intent", "typed accepted cursor/revision")
+    for field in ("event_operation_id", "request_id", "environment_sha256"):
+        c._digest(value[field], field)
+    parent = value["expected_parent_generation"]
+    if revision == 0:
+        if any(value[key] is not None for key in ("expected_parent_head_file_sha256",
+                "expected_parent_generation", "entry_anchor_head_file_sha256", "request_intent")):
+            c._fail("active_intent", "genesis has no input parent/request")
+    else:
+        if type(parent) is not str or not c._GEN.fullmatch(parent) or int(c._GEN.fullmatch(parent)[1]) != revision - 1:
+            c._fail("active_intent", "original selected parent generation")
+        for field in ("expected_parent_head_file_sha256", "entry_anchor_head_file_sha256"):
+            c._digest(value[field], field)
+        _check_intent_for(value["request_intent"], descriptor)
+    return value
+
+
+def _head_record(header, store_sha, name, generation, file_sha):
+    water = generation[_ref_key(header)]
+    anchor_name = (generation["entry_anchor_head_record"]["generation_name"]
+                   if _paused(generation) else name)
+    result = _seal_control({"schema": _schema(header) + ".head", "store_id": header["store_id"],
+        "store_file_sha256": store_sha, "revision": generation["revision"],
+        "accepted_sequence": generation["accepted_sequence"], "kind": generation["kind"],
+        "generation_name": name, "generation_file_sha256": file_sha,
+        "generation_sha256": generation["generation_sha256"], "anchor_generation": anchor_name,
+        "event_operation_id": generation["event_operation_id"], "request_id": generation["request_id"],
+        "pause_ordinal": None if water is None else water["ordinal"],
+        "pause_count": None if water is None else water["pauses"]}, "head_sha256",
+        c._limits_load(header["limits"]).max_head_bytes, "active HEAD")
+    return _head_fields(result, c._limits_load(header["limits"]), header=header)
+
+
+def _ack_fields(value, head, parent, *, header=None):
+    descriptor = head if header is None else header
+    c._keys(value, _ACK, "active ACK core")
+    if (value["schema"] != _schema(descriptor) + ".ack" or value["store_id"] != head["store_id"]
+            or value["event_operation_id"] != head["event_operation_id"]
+            or value["request_id"] != head["request_id"]
+            or value["returned_kind"] != head["kind"]):
+        c._fail("active_ack", "ACK/head identity")
+    for field, expected in (("revision", head["revision"]),
+            ("accepted_sequence", head["accepted_sequence"]),
+            ("pause_ordinal", head["pause_ordinal"]), ("pause_count", head["pause_count"])):
+        if type(value[field]) is not type(expected) or value[field] != expected:
+            c._fail("active_ack", "typed ACK cursor/progress")
+    if (parent is None) != (head["kind"] == "genesis"):
+        c._fail("active_ack", "only genesis lacks a direct parent")
+    if parent is not None:
+        expected_sequence = parent["accepted_sequence"] + (head["kind"] == "event_accepted")
+        if head["revision"] != parent["revision"] + 1 or head["accepted_sequence"] != expected_sequence:
+            c._fail("active_ack", "direct child revision/accepted-cursor step")
+        c._digest(value["selected_parent_token"], "actual selected parent token")
+    if value["selected_parent_token"] != (None if parent is None else c._token(parent)):
+        c._fail("active_ack", "direct selected parent token")
+    if parent is None:
+        if value["request_intent"] is not None or value["completion_receipt_sha256"] is not None:
+            c._fail("active_ack", "genesis has no request/completion")
+    else:
+        intent = _check_intent_for(value["request_intent"], descriptor)
+        if _paused(head) and (intent["kind"] != ("checkpoint_wind" if head["kind"] == "wind_paused" else "checkpoint_water")
+                or intent["boundary_ordinal"] != head["pause_ordinal"]):
+            c._fail("active_ack", "wet ACK must match requested original boundary")
+        receipt = value["completion_receipt_sha256"]
+        if head["kind"] == "event_accepted":
+            c._digest(receipt, "exact completion receipt")
+        elif receipt is not None:
+            c._fail("active_ack", "wet request has no completion receipt")
+    return value
+
+
+def _metadata_bytes(value, maximum, where):
+    """Use existing bounded plain-metadata and encoder; no copied JSON codec."""
+    c._plain_metadata(value, maximum, where)
+    raw = c.oi._json(value)
+    if len(raw) > maximum:
+        c._fail("metadata_cap", where)
+    return raw
+
+
+def _seal_control(value, field, maximum, where):
+    # The largest closed seal key plus its 64 hex characters fits 256 bytes.
+    # Admit the unsealed body before the unchanged native C encoder is invoked.
+    if field not in ("head_sha256", "intent_sha256", "generation_sha256", "store_sha256"):
+        c._fail("metadata_seal", "closed owning control seal only")
+    if type(maximum) is not int or maximum < 256:
+        c._fail("metadata_cap", "finite control envelope required")
+    c._plain_metadata(value, maximum - 256, where)
+    sealed = c._seal(value, field)
+    _metadata_bytes(sealed, maximum, where)
+    return sealed
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Selection:
+    """Issued by this C owner, additionally checked against actual live files/state."""
+    key: object
+    state: object
+    selected_raw: bytes
+    anchor_raw: bytes
+    image_raw: bytes
+    intent_raw: bytes | None
+    diagnostics_raw: bytes | None = None
+
+
+def _anchor_row(chain):
+    for row in chain:
+        if row[0]["kind"] in ("genesis", "event_accepted"):
+            return row
+    c._fail("active_anchor", "selected chain has no genuine accepted ancestor")
+
+
+def _selection(parent):
+    if type(parent) is not c._WaterParent or type(parent._selection) is not _Selection:
+        c._fail("active_parent", "actual C-issued active-water parent required")
+    selection = parent._selection
+    if selection.key is not _SELECTION_KEY or type(selection.state) is not c._State:
+        c._fail("active_parent", "foreign private selection")
+    return selection
+
+
+def _parent_light(parent, handle):
+    if _MONITORED_RESTART_SLOT is not None:
+        _monitored_check(handle._root, handle._limits, handle._header)
+    parent._own()
+    selection = _selection(parent)
+    if type(handle) is not c.DenseBoundaryStore or not c._active_store(handle._header):
+        c._fail("active_parent", "exact active C handle required")
+    handle._binding()
+    if (handle._entered is not True or handle._state is not selection.state
+            or handle._state.phase not in ("busy_before_head", "initializing")
+            or c.oi._json(handle._header["source_identity"]) != parent._source
+            or handle._header["environment_sha256"] != parent._environment):
+        c._fail("active_parent", "selected handle/state/source binding changed")
+    handle._stable()
+    selected, selected_raw = handle._head()
+    if selected_raw != selection.selected_raw:
+        c._fail("active_parent", "selected R changed during private operation")
+    chain = _generation_chain(handle._root, handle._header, c._sha(handle._store_raw),
+                              selected, handle._limits)
+    anchor, generation, _manifest = _anchor_row(chain)
+    anchor_raw = c.oi._json(anchor)
+    if (anchor_raw != selection.anchor_raw or parent._head != anchor_raw
+            or parent._token != c._token(anchor)
+            or parent._image != selection.image_raw
+            or c.oi._json(generation["image"]) != selection.image_raw
+            or anchor["accepted_sequence"] != selected["accepted_sequence"]):
+        c._fail("active_parent", "accepted A/image no longer matches genuine selected ancestry")
+    if selection.intent_raw is not None:
+        if type(selection.intent_raw) is not bytes or not 1 <= len(selection.intent_raw) <= handle._limits.max_intent_bytes:
+            c._fail("active_parent", "bounded retained intent bytes required before parser")
+        intent = c._plain_metadata(c.oi._strict_json(selection.intent_raw, c._JSON),
+                                    handle._limits.max_intent_bytes, "reserved active intent")
+        _intent_fields(intent, handle._limits, header=handle._header)
+        path = handle._root / "generations" / f"g-{intent['revision']:04d}-{intent['attempt_id']}" / "intent.json"
+        if (intent["attempt_id"] != handle._state.attempt_id
+                or intent["expected_parent_head_file_sha256"] != c._sha(selected_raw)
+                or intent["entry_anchor_head_file_sha256"] != c._sha(anchor_raw)
+                or c._read(path, handle._limits.max_intent_bytes) != selection.intent_raw):
+            c._fail("active_parent", "real reserved intent/current selection changed")
+    elif handle._state.phase != "initializing":
+        c._fail("active_parent", "only explicit recovery has no new intent")
+    return selection
+
+
+def _checked_selection(parent, runner):
+    parent._own()
+    if (parent._phase != "entered" or parent._issued is None
+            or parent._issued() is not runner):
+        c._fail("active_parent", "foreign or unissued actual runner")
+    return _parent_light(parent, parent._handle)
+
+
+def _parent_record(parent, runner):
+    selection = _checked_selection(parent, runner)
+    handle = parent._handle
+    # selection.anchor_raw comes from the fully checked accepted chain record.
+    # handle._head() is selected R and must not be its hash source.
+    return {"store_id": handle._header["store_id"], "token": parent._token,
+            "accepted_sequence": c.oi._strict_json(selection.anchor_raw, c._JSON)["accepted_sequence"],
+            "store_file_sha256": c._sha(handle._store_raw),
+            "head_file_sha256": c._sha(selection.anchor_raw),
+            "image": c.oi._strict_json(selection.image_raw, c._JSON),
+            "originals": handle._header["originals"]}
+
+
+def _borrow_parent(handle, intent):
+    if type(handle) is not c.DenseBoundaryStore or not c._active_store(handle._header):
+        c._fail("active_parent", "exact active C handle required")
+    handle._binding()
+    if (handle._entered is not True or type(handle._state) is not c._State
+            or handle._state.phase not in ("busy_before_head", "initializing")):
+        c._fail("active_parent", "only the real reserved operation or explicit recovery borrows")
+    handle._stable()
+    selected, raw = handle._head()
+    chain = _generation_chain(handle._root, handle._header, c._sha(handle._store_raw),
+                              selected, handle._limits)
+    anchor, generation, _manifest = _anchor_row(chain)
+    anchor_raw = c.oi._json(anchor)
+    image_raw = c.oi._json(generation["image"])
+    context = c._WaterParent(c._WATER_PARENT_KEY, handle, c._token(anchor), anchor_raw,
+                            c.oi._json(handle._header["source_identity"]),
+                            handle._header["environment_sha256"])
+    context._image = image_raw
+    context._selection = _Selection(_SELECTION_KEY, handle._state, raw, anchor_raw, image_raw,
+                                    None if intent is None else c.oi._json(intent))
+    del chain, anchor, generation, _manifest
+    _parent_light(context, handle)
+    return context
+
+
+def _enter_parent(parent):
+    parent._own()
+    if parent._phase != "new":
+        c._fail("active_parent", "one-shot active parent already entered/closed")
+    handle = parent._handle
+    _parent_light(parent, handle)
+    parent._phase = "entered"
+    prepared = owner = None
+    try:
+        selection = _selection(parent)
+        anchor = c.oi._strict_json(selection.anchor_raw, c._JSON)
+        prepared = _prepare_anchor(handle, anchor)
+        diagnostics_raw = _metadata_bytes(prepared.diagnostics(), handle._limits.max_generation_bytes,
+                                           "actual accepted-anchor diagnostics")
+        owner = c._owner_for(handle._header, prepared)
+        prepared = None
+        if (owner._next != anchor["accepted_sequence"]
+                or owner._limits.max_work_bytes != handle._header["native_work_bytes"]):
+            c._fail("active_parent", "actual accepted owner cursor/work budget differs")
+        parent._image = selection.image_raw
+        parent._selection = dataclasses.replace(selection, diagnostics_raw=diagnostics_raw)
+        parent._owner, owner = owner, None
+    except BaseException:
+        prepared = owner = None
+        parent._image = None
+        parent._outcome = "entry_failed"
+        _release_parent(parent)
+        raise
+    return parent
+
+
+def _release_parent(parent):
+    # Outer C operation owns handle._entered until all temporary contexts close
+    # and publication completes. This context must not clear that outer guard.
+    parent._handle = None
+    parent._owner = parent._issued = None
+    parent._selection = None
+    parent._phase = "closed"
+
+
+def _close_parent(parent):
+    """Normal publication requires the actual context to complete its close."""
+    if type(parent) is not c._WaterParent:
+        c._fail("active_parent", "exact C context close required")
+    parent.close()
+    if parent._phase != "closed":
+        c._fail("active_parent", "non-closed context cannot precede publication")
+
+
+def _managed(handle):
+    return _managed_at(handle._root, handle._header, handle._root_identity)
+
+
+def _managed_at(root, header, root_identity):
+    value = header[_managed_key(header)]
+    c._keys(value, _MANAGED, "managed sibling")
+    expected = root.parent / ((_sibling_prefix(header)) + header["store_id"])
+    if (type(value["path"]) is not str or len(value["path"]) > _PATH_CHARS
+            or value["path"] != str(expected) or os.path.realpath(expected) != str(expected)
+            or value["parent_path"] != str(root.parent)):
+        c._fail("active_sibling", "canonical code-owned final sibling/parent required")
+    for field in ("dev", "ino", "parent_dev", "parent_ino", "fs_id"):
+        if type(value[field]) is not int or value[field] < 0:
+            c._fail("active_sibling", "plain actual filesystem identity fields")
+    outer = c.oi._open_dir(root.parent)
+    sibling = None
+    try:
+        info = os.fstat(outer)
+        if c._identity(info) != (value["parent_dev"], value["parent_ino"]):
+            c._fail("active_sibling", "recorded sibling parent inode differs")
+        sibling = c.oi._open_dir(expected)
+        info = os.fstat(sibling)
+        if (c._identity(info) != (value["dev"], value["ino"])
+                or info.st_dev != root_identity[0]
+                or os.fstatvfs(sibling).f_fsid != value["fs_id"]
+                or value["fs_id"] != header["storage_contract"]["observed_fs_id"]):
+            c._fail("active_sibling", "same verified filesystem/inode required")
+        c._same_directory(expected, sibling)
+        c._same_directory(root.parent, outer)
+    finally:
+        if sibling is not None:
+            os.close(sibling)
+        os.close(outer)
+    return expected
+
+
+def _inventory(handle, *, sibling=True):
+    return _inventory_at(handle._root, handle._header, handle._limits,
+                         handle._root_identity, sibling=sibling)
+
+
+def _inventory_at(root, header, limits, root_identity, *, sibling=True):
+    """Closed operational stat inventory before any new metadata hash/parse.
+
+    It uses the existing C directory/identity primitives. Only C plus its named
+    sibling is visited, never neighboring stores. No archive/model is opened.
+    """
+    count = used = 0
+    generations, temps, water = set(), set(), set()
+
+    def role(relative, name, is_water):
+        if is_water:
+            if not relative:
+                _name(name, int(c._GEN.fullmatch(name)[1]) if type(name) is str and c._GEN.fullmatch(name) else -1)
+                if int(c._GEN.fullmatch(name)[1]) > _MAX_REVISION:
+                    c._fail("active_inventory", "water attempt revision")
+                if _MIXED_OPERATION_SLOT is not None and _mixed_v2_active():
+                    _mixed_v2_insert(root, limits, 'water', water, name)
+                water.add(name)
+                return True, 0
+            pieces = relative.split("/")
+            if len(pieces) == 1:
+                if name == "entry" or name == "native" or re.fullmatch(r"\.native\.partial-[A-Za-z0-9_-]{1,64}", name):
+                    return True, 0
+                if name == "export.json":
+                    return False, 1 << 20
+            if len(pieces) == 2:
+                if pieces[1] == "entry" and name == "capsule.json":
+                    return False, 1 << 20
+                if (pieces[1] == "native" or re.fullmatch(r"\.native\.partial-[A-Za-z0-9_-]{1,64}", pieces[1])):
+                    if _combined(header) and pieces[1] == "native" and name == "continuation.bin":
+                        return False, 8 << 20
+                    if name == "checkpoint.json":
+                        return False, 2 << 20
+                    if name in ("maple_state.npz", "continuation.npz"):
+                        return False, 9 << 20
+            c._fail("active_inventory", "unknown caller-linked Native staging/child role")
+        if not relative:
+            match = c._TEMP.fullmatch(name)
+            if match:
+                if _MIXED_OPERATION_SLOT is not None and _mixed_v2_active():
+                    _mixed_v2_insert(root, limits, 'temps', temps, match[1])
+                temps.add(match[1]);return False, limits.max_head_bytes
+            if name in ("originals", "generations", ".storage_probe"):
+                return True, 0
+            if name in ("STORE.json", "STORE.tmp"):
+                return False, 128 << 10
+            if name == "HEAD":
+                return False, limits.max_head_bytes
+            if name == ".writer.lock":
+                return False, 0
+        elif relative == "generations":
+            match = c._GEN.fullmatch(name)
+            if match and int(match[1]) <= _MAX_REVISION:
+                if _MIXED_OPERATION_SLOT is not None and _mixed_v2_active():
+                    _mixed_v2_insert(root, limits, 'generations', generations, name)
+                generations.add(name);return True, 0
+        elif re.fullmatch(r"generations/g-[0-9]{4}-[0-9a-f]{32}", relative):
+            if name in ("physical", "image"):
+                return True, 0
+            if name in ("generation.json", "generation.tmp"):
+                return False, limits.max_generation_bytes
+            if name in ("intent.json", "failure.json"):
+                return False, limits.max_intent_bytes
+        elif relative == "originals":
+            if re.fullmatch(r"o-[0-9a-f]{32}", name):
+                return True, 0
+        elif relative == ".storage_probe":
+            if name in ("original", "linked", "result.json"):
+                return False, 32 << 10
+        elif re.fullmatch(r"originals/o-[0-9a-f]{32}", relative):
+            if name in ("manifest.json", "manifest.tmp"):
+                return False, 4 << 20
+            if re.fullmatch(r"a_[0-9]{4}\.npy", name):
+                return False, (64 << 20) + 4096
+        elif re.fullmatch(r"generations/g-[0-9]{4}-[0-9a-f]{32}/image", relative):
+            if name in ("manifest.json", "manifest.tmp"):
+                return False, limits.image.max_metadata_bytes
+            if re.fullmatch(r"a_000[0-6]\.npy", name):
+                return False, limits.image.max_numeric_bytes + limits.image.max_header_bytes
+        elif re.fullmatch(r"generations/g-[0-9]{4}-[0-9a-f]{32}/physical", relative):
+            if name in ("checkpoint.json", "native_state.npz", "pending_state.npz") or re.fullmatch(r"\.manifest-[0-9a-f]{32}", name):
+                return False, (1 << 20) if not name.endswith(".npz") else c._native_reservation(limits)
+        c._fail("active_inventory", "unknown closed C directory/file role")
+
+    def walk(path, relative, is_water, expected):
+        nonlocal count, used
+        if len(relative.split("/")) > 3:
+            c._fail("active_inventory", "finite admitted directory depth")
+        fd = c.oi._open_dir(path)
+        try:
+            if c._identity(os.fstat(fd)) != expected:
+                c._fail("identity_drift", "admitted inventory directory changed")
+            local = {}
+            with os.scandir(fd) as iterator:
+                for entry in iterator:
+                    count += 1
+                    if count > limits.max_entries:
+                        c._fail("entry_cap", "combined C+sibling count before append/hash")
+                    name = entry.name
+                    if len(str(path / name)) > _PATH_CHARS:
+                        c._fail("active_inventory", "bounded operational path before retention")
+                    info = entry.stat(follow_symlinks=False)
+                    directory, cap = role(relative, name, is_water)
+                    local[name] = info
+                    if directory:
+                        if not stat.S_ISDIR(info.st_mode):
+                            c._fail("active_inventory", "known directory type required")
+                        walk(path / name, name if not relative else relative + "/" + name,
+                             is_water, c._identity(info))
+                    else:
+                        if (not stat.S_ISREG(info.st_mode) or info.st_size > cap
+                                or info.st_nlink not in ((1,) if is_water else (1, 2))):
+                            c._fail("active_inventory", "exact regular/link/raw-size role required")
+                        if is_water and (info.st_uid != os.geteuid()):
+                            c._fail("active_inventory", "own Native attempt required")
+                        used += info.st_size
+                        if used > limits.max_store_bytes:
+                            c._fail("store_raw_cap", "combined bytes before hash/parse")
+            # Preserve original C's only allowed own manifest hardlink pairs.
+            if not is_water:
+                for name, info in local.items():
+                    if not stat.S_ISREG(info.st_mode):
+                        continue
+                    partner = {"STORE.json":"STORE.tmp", "STORE.tmp":"STORE.json",
+                               "generation.json":"generation.tmp", "generation.tmp":"generation.json",
+                               "manifest.json":"manifest.tmp", "manifest.tmp":"manifest.json"}.get(name)
+                    if name == "checkpoint.json":
+                        matches = [n for n in local if re.fullmatch(r"\.manifest-[0-9a-f]{32}", n)]
+                        partner = matches[0] if len(matches) == 1 else None
+                    elif re.fullmatch(r"\.manifest-[0-9a-f]{32}", name):
+                        partner = "checkpoint.json"
+                    other = local.get(partner)
+                    if (info.st_nlink == 2 or other is not None) and (other is None
+                            or not stat.S_ISREG(other.st_mode) or info.st_nlink != 2
+                            or other.st_nlink != 2 or c._identity(info) != c._identity(other)):
+                        c._fail("manifest_leftover", "only exact original own hardlink pair")
+            c._same_directory(path, fd)
+        finally:
+            os.close(fd)
+
+    walk(root, "", False, root_identity)
+    if sibling:
+        managed = _managed_at(root, header, root_identity)
+        walk(managed, "", True, (header[_managed_key(header)]["dev"], header[_managed_key(header)]["ino"]))
+        if not water <= generations:
+            c._fail("active_inventory", "Native attempt has no retained owning C intent generation")
+    if not temps <= {n.rsplit("-", 1)[1] for n in generations}:
+        c._fail("active_inventory", "HEAD temporary lacks its own retained attempt")
+    return {"entries": count, "bytes": used, "generations": generations,
+            "temps": temps, "water_attempts": water}
+
+
+def _parse_charge(raw_bytes):
+    if type(raw_bytes) is not int or not 0 <= raw_bytes <= 8 << 20:
+        c._fail("active_memory", "bounded exact raw metadata occurrence required")
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    coefficient = (sys.getsizeof({}) + sys.getsizeof([]) + sys.getsizeof(0.0)
+                   + 8 * pointer + 5)
+    return 2 * raw_bytes * coefficient + 6 * raw_bytes
+
+
+def _context_charge(limits):
+    """Fixed Source projection over finite metadata constructors, never arrays."""
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    # Three heads, intent, generation and separately retained ACK canonical view.
+    records = (3 * _parse_charge(limits.max_head_bytes)
+               + _parse_charge(limits.max_intent_bytes)
+               + 2 * _parse_charge(limits.max_generation_bytes))
+    # Name/stat/index/path records have <=64 scalar/ref slots, no alias credit.
+    entry = (4 * sys.getsizeof({}) + 4 * sys.getsizeof(()) + sys.getsizeof([])
+             + sys.getsizeof(os.stat_result((0,) * 10))
+             + 64 * (pointer + sys.getsizeof(0))
+             + 4 * sys.getsizeof("") + 4 * 4 * _PATH_CHARS)
+    # Named non-array receivers, counted independently even when inherited C
+    # already charges its own copy. No alias/phase-overlap subtraction.
+    holders = ("old_idle", "old_identity_halt", "busy", "attempt_halt",
+        "proposed_base", "proposed_halt", "proposed_idle", "publisher_possible",
+        "publisher_uncertain", "work_parent", "work_selection", "reader_parent",
+        "reader_selection", "ack_record", "chain_index", "report_mapping")
+    fixed = len(holders) * (sys.getsizeof({}) + sys.getsizeof(())
+                 + 64 * (pointer + sys.getsizeof(0)) + 4 * 4 * _PATH_CHARS)
+    # One selected raw capsule is borrowed while actual three-file hashes run.
+    # Parsed cold facts/readback are separately under each real active W.
+    return records + limits.max_entries * entry + fixed + (1 << 20)
+
+
+def _metadata_stat_charge(handle, inventory):
+    """Exact stat sizes before reading/parsing old chain control metadata.
+
+    Every potential row is charged independently; sharing an accepted image
+    across several paused revisions gives no subtraction.
+    """
+    limits = handle._limits
+    metadata_sizes = []
+    image_max = 0
+    generation_count = 0
+    combined_future_peak = 0
+    root = handle._root
+    directory = c.oi._open_dir(root / "generations")
+    try:
+        with os.scandir(directory) as iterator:
+            for entry in iterator:
+                generation_count += 1
+                if generation_count > _MAX_CHAIN + limits.max_orphans:
+                    c._fail("active_chain", "finite selected+orphan generation count")
+                name = entry.name
+                match = c._GEN.fullmatch(name)
+                if not match or int(match[1]) > _MAX_REVISION or not entry.is_dir(follow_symlinks=False):
+                    c._fail("active_chain", "exact bounded generation name before metadata")
+                path = root / "generations" / name
+                for child, cap in (("intent.json", limits.max_intent_bytes),
+                                   ("generation.json", limits.max_generation_bytes)):
+                    file = path / child
+                    if file.exists():
+                        info = file.lstat()
+                        if not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= cap:
+                            c._fail("active_memory", "raw chain cap before metadata parse")
+                        if len(metadata_sizes) >= 2 * (_MAX_CHAIN + limits.max_orphans):
+                            c._fail("active_memory", "finite metadata occurrences before append")
+                        metadata_sizes.append(info.st_size)
+                file = path / "image/manifest.json"
+                if file.exists():
+                    info = file.lstat()
+                    if not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= limits.image.max_metadata_bytes:
+                        c._fail("active_memory", "raw B metadata cap before parse")
+                    image_max = max(image_max, info.st_size)
+    finally:
+        os.close(directory)
+    # Old per-revision B metadata, head/intent/generation and a proposed B image.
+    # C's original decode/native reservation remains fully additive.
+    existing = sum(_parse_charge(x) for x in metadata_sizes)
+    existing += min(generation_count, _MAX_CHAIN) * _parse_charge(image_max)
+    managed = _managed(handle)
+    # Each retained export parsed by chain validation is a separate occurrence;
+    # capsule bytes are hashed without decoding here, and a.load separately
+    # admits its own two parsed capsule/native reader graphs under real W.
+    for name in inventory["water_attempts"]:
+        path = managed / name / "export.json"
+        if path.exists():
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= 1 << 20:
+                c._fail("active_memory", "actual raw export cap before chain parser")
+            existing += _parse_charge(info.st_size)
+        capsule = managed / name / "entry/capsule.json"
+        if capsule.exists():
+            info = capsule.lstat()
+            if not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= 1 << 20:
+                c._fail("active_memory", "actual raw capsule cap before future capture metadata")
+            if _combined(handle._header):
+                # Keep EVERY current capsule occurrence.  Only one selected
+                # cold child can be exported by an operation; its future two
+                # constructor/comparison families are bounded by the maximum
+                # over all candidates, including orphans.  Do not clamp a
+                # constructor to the wire cap: it may exist before refusal.
+                existing += _parse_charge(info.st_size)
+                combined_future_peak = max(combined_future_peak, _parse_charge(
+                    info.st_size + _COMBINED_CAPSULE_GROWTH_BYTES))
+            else:
+                # Preserve the original water-only arithmetic and wire domain.
+                future = min(1 << 20, info.st_size + 3)
+                existing += 2 * _parse_charge(future)
+    # _load -> _prepare_anchor can retain a caller chain while validating a
+    # second. _operate -> _borrow_parent -> _parent_light, including the
+    # temporary-HEAD validation within _stable, has at most THREE chain
+    # receiver families. Charge every row/parse/hash occurrence at all three
+    # roles without alias credit; current early local drops do not lower U.
+    # Preserve all three current history/descriptor/capsule receiver families.
+    # The two prospective families are still paid at EACH of those three
+    # roles, including primary/export-close OR primary/reader/work-close errors.
+    if _combined(handle._header) and _MIXED_OPERATION_SLOT is not None:
+        return _mixed_account_charge(handle, existing, image_max, generation_count,
+                                     combined_future_peak)
+    return 3 * existing + 6 * combined_future_peak
+
+
+def _reservation(limits, work_bytes, chain_charge=0, *, combined=False):
+    original = c._reservation(limits, work_bytes)
+    if type(chain_charge) is not int or chain_charge < 0:
+        c._fail("active_memory", "actual bounded chain charge required")
+    memory = (original["memory_bytes"] + 2 * work_bytes + chain_charge
+              + _context_charge(limits) + _parse_charge(limits.image.max_metadata_bytes)
+              + (2 << 20))
+    extra = 0
+    if combined:
+        from masy import dense_active_wind_checkpoint as wind
+        extra = wind.reservation_increment()["required_bytes"]
+        memory += extra
+    if memory > limits.max_memory_bytes:
+        c._fail("memory_cap", "complete C+two active W+chain/context/future-B reservation")
+    answer = {**original, "memory_bytes": memory,
+            "disk_bytes": original["disk_bytes"] + _ACTIVE_RAW_BYTES,
+            "entries": original["entries"] + _ACTIVE_ENTRIES,
+            "active_native_work_roles": 2,
+            "active_native_work_bytes_each": work_bytes,
+            "active_chain_metadata_bytes": chain_charge,
+            "active_context_metadata_bytes": _context_charge(limits),
+            "active_future_image_metadata_bytes": _parse_charge(limits.image.max_metadata_bytes),
+            "logical_Source_reservation_not_heap_fit": True}
+    if combined:
+        answer["active_wind_codec_increment_bytes"] = extra
+    return answer
+
+
+def _admit(handle, retained, max_work_bytes, *, initial=False):
+    inventory = _inventory(handle)
+    if type(max_work_bytes) is not int or max_work_bytes != handle._header["native_work_bytes"]:
+        c._fail("active_memory", "same genuine original Native work limit required")
+    if not initial and len(retained) > _MAX_CHAIN:
+        c._fail("active_chain", "bounded selected revision chain")
+    nonces = {name.rsplit("-", 1)[1] for name in inventory["generations"] - set(retained)} | inventory["temps"]
+    if len(nonces) + (0 if initial else 1) > handle._limits.max_orphans:
+        c._fail("orphan_cap", "retained failed attempts exhaust original allowance")
+    if (handle._limits.max_head_bytes, handle._limits.max_generation_bytes,
+            handle._limits.max_intent_bytes) != (32 << 10, 128 << 10, 32 << 10):
+        c._fail("metadata_cap", "unchanged complete finite control envelope required")
+    reservation = _reservation_for_handle(handle, max_work_bytes, _metadata_stat_charge(handle, inventory))
+    if type(reservation) is _MonitoredRestartReservation:
+        if initial:
+            c._fail('monitored_restart', 'new operational admission cannot create genesis')
+        owner = _monitored_check(handle._root, handle._limits, handle._header)
+        forecast = c.oi._strict_json(_mixed_read_ref(owner._record['linkage']['wire_forecast'],
+                                                  'Root retained-union forecast'), c._JSON)
+        if (inventory['bytes'] > forecast['retained_union_upper_bytes']
+                or inventory['bytes'] + reservation.disk_bytes > handle._limits.max_store_bytes
+                or inventory['entries'] + reservation.entries > handle._limits.max_entries):
+            c._fail('store_cap', 'complete retained union plus original C/sibling attempt')
+        free = os.fstatvfs(handle._rootfd)
+        if (free.f_bavail * free.f_frsize < handle._limits.free_reserve_bytes + reservation.disk_bytes
+                or free.f_favail < handle._limits.free_reserve_inodes + reservation.entries):
+            c._fail('storage_cap', 'unchanged full free disk/inode reserves')
+        handle._reservation_record = reservation
+        return inventory
+    if initial:
+        reservation = {**reservation, "disk_bytes": reservation["disk_bytes"] + (72 << 20)}
+    if (inventory["bytes"] + reservation["disk_bytes"] > handle._limits.max_store_bytes
+            or inventory["entries"] + reservation["entries"] > handle._limits.max_entries):
+        c._fail("store_cap", "complete C+sibling attempt before Native/decode work")
+    free = os.fstatvfs(handle._rootfd)
+    if (free.f_bavail * free.f_frsize < handle._limits.free_reserve_bytes + reservation["disk_bytes"]
+            or free.f_favail < handle._limits.free_reserve_inodes + reservation["entries"]):
+        c._fail("storage_cap", "same filesystem free disk/inodes plus original reserves")
+    handle._reservation_record = reservation
+    return inventory
+
+
+def _water_reference(root, header, limits, head, generation):
+    water = generation[_ref_key(header)]
+    if head["kind"] != "water_paused":
+        if water is not None:
+            c._fail("active_water_reference", "only a wet generation has a Native child")
+        return
+    c._keys(water, _water_fields(header), "native water reference")
+    if _combined(header) and water["process_kind"] != "water":
+        c._fail("active_water_reference", "actual water tag required")
+    if (water["attempt_name"] != head["generation_name"]
+            or type(water["ordinal"]) is not int or water["ordinal"] != head["pause_ordinal"]
+            or type(water["pauses"]) is not int or water["pauses"] != head["pause_count"]):
+        c._fail("active_water_reference", "actual owned attempt/progress identity")
+    c._digest(water["export_sha256"], "actual original-writer export SHA")
+    c._digest(water["plan_sha256"], "original plan identity")
+    from masy import dense_active_checkpoint as a
+    from maple_syrup import checkpoint
+    a._float(water["origin_s"])
+    a._float(water["native_time_s"])
+    root_identity = (header["storage_contract"]["root_dev"], header["storage_contract"]["root_ino"])
+    path = _managed_at(root, header, root_identity) / water["attempt_name"]
+    if (path / "export.json").lstat().st_mode & 0o222:
+        c._fail("active_water_reference", "original descriptor must remain readonly")
+    raw = c._read(path / "export.json", 1 << 20)
+    if c._sha(raw) != water["export_sha256"]:
+        c._fail("active_water_reference", "retained original-writer descriptor bytes differ")
+    export = a._decode(raw, 1 << 20)
+    c._keys(export, ("schema", "capsule_sha256", "capsule_bytes", "identity", "raw_files", "layout"), "retained export")
+    if export["schema"] != a.EXPORT_SCHEMA:
+        c._fail("active_water_reference", "exact StageA export schema")
+    c._digest(export["capsule_sha256"], "original entry capsule")
+    c._integer(export["capsule_bytes"], 1 << 20, "actual capsule raw cap")
+    if (path / "entry/capsule.json").lstat().st_mode & 0o222:
+        c._fail("active_water_reference", "original capsule must remain readonly")
+    capsule_raw = c._read(path / "entry/capsule.json", 1 << 20)
+    if len(capsule_raw) != export["capsule_bytes"] or c._sha(capsule_raw) != export["capsule_sha256"]:
+        c._fail("active_water_reference", "retained capsule bytes differ")
+    a._raw_files(path / "native", checkpoint, c, expected=export["raw_files"])
+
+
+def _generation_fields(value, head, header, limits):
+    c._check_seal(value, _generation_fields_list(header), "generation_sha256", _schema(header) + ".generation")
+    _head_fields(head, limits, header=header)
+    _same_format(header, head, value)
+    if any(type(value[k]) is not type(head[k]) or value[k] != head[k] for k in
+           ("store_id", "store_file_sha256", "revision", "accepted_sequence", "kind",
+            "event_operation_id", "request_id")):
+        c._fail("active_generation", "typed HEAD/generation identity")
+    nonce = _name(head["generation_name"], head["revision"])
+    if value["attempt_id"] != nonce or type(value["attempt_id"]) is not str:
+        c._fail("active_generation", "real attempt nonce")
+    for k in ("intent_file_sha256", "ack_core_sha256"):
+        c._digest(value[k], k)
+    parent = value["parent_head_record"]
+    if head["kind"] == "genesis":
+        if any(value[k] is not None for k in ("parent_head_record", "parent_head_file_sha256",
+                "parent_generation", "entry_anchor_head_record", "request_intent")):
+            c._fail("active_generation", "genesis has no previous revision or request")
+    else:
+        _head_fields(parent, limits, header=header)
+        if (parent["revision"] + 1 != head["revision"]
+                or value["parent_generation"] != parent["generation_name"]
+                or c._sha(c.oi._json(parent)) != value["parent_head_file_sha256"]):
+            c._fail("active_generation", "exact direct selected-parent bytes")
+        _check_intent_for(value["request_intent"], head)
+        anchor = value["entry_anchor_head_record"]
+        _head_fields(anchor, limits, header=header)
+        if anchor["kind"] not in ("genesis", "event_accepted"):
+            c._fail("active_anchor", "input anchor must be genuinely accepted")
+        expected_anchor = (anchor["generation_name"] if _paused(head)
+                           else head["generation_name"])
+        if (head["anchor_generation"] != expected_anchor
+                or anchor["store_id"] != head["store_id"]
+                or (_paused(head)
+                    and anchor["accepted_sequence"] != head["accepted_sequence"])):
+            c._fail("active_anchor", "HEAD anchor differs from recorded entry anchor")
+    if head["store_id"] != header["store_id"]:
+        c._fail("active_generation", "foreign store")
+    core = _ack_fields(value["ack_core"], head, parent, header=header)
+    if (c.oi._json(core["request_intent"]) != c.oi._json(value["request_intent"])
+            or c._sha(c.oi._json(core)) != value["ack_core_sha256"]):
+        c._fail("active_ack", "exact canonical request/ACK bytes")
+    return value
+
+
+
+
+# Opt-in operation-owned compact ancestry. No default/wire migration.
+_COMPACT_ROW_KEY = object()
+_MIXED_OPERATION_SLOT = None
+
+class _CompactChainRow:
+    __slots__ = ('_key', 'full_receipts_raw', 'parent_receipts_raw', 'last_receipt_raw')
+    def __init__(self, key, full, parent, last):
+        if key is not _COMPACT_ROW_KEY or type(full) is not bytes or type(parent) is not bytes or (last is not None and type(last) is not bytes):
+            c._fail('compact_row', 'only the ordinary complete validator issues byte projections')
+        object.__setattr__(self,'_key',key)
+        object.__setattr__(self,'full_receipts_raw',full)
+        object.__setattr__(self,'parent_receipts_raw',parent)
+        object.__setattr__(self,'last_receipt_raw',last)
+    def __setattr__(self, name, value):
+        raise TypeError('compact ancestry bytes are immutable')
+    def __delattr__(self, name):
+        raise TypeError('compact ancestry bytes are immutable')
+    def __reduce_ex__(self, protocol):
+        raise TypeError('compact ancestry is operation-local, never wire')
+
+def _checked_compact_row(value):
+    if type(value) is not _CompactChainRow or value._key is not _COMPACT_ROW_KEY:
+        c._fail('compact_row','unissued or foreign compact ancestry projection')
+    if type(value.full_receipts_raw) is not bytes or type(value.parent_receipts_raw) is not bytes or (value.last_receipt_raw is not None and type(value.last_receipt_raw) is not bytes):
+        c._fail('compact_row','exact immutable receipt bytes required')
+    return value
+
+def _validated_compact_chain_row(root, header, store_sha, current, limits, child, seen):
+    """Ordinary complete original validation/close frame; no B graph returns."""
+    _head_fields(current, limits, header=header)
+    name = current["generation_name"]
+    if name in seen or current["store_id"] != header["store_id"] or current["store_file_sha256"] != store_sha:
+        c._fail("active_chain", "cycle or foreign store")
+    seen.add(name)
+    path = root / "generations" / name
+    generation, raw = c._record(path / "generation.json", limits.max_generation_bytes,
+                                 links=c._published_links(path, "generation.json"))
+    _generation_fields(generation, current, header, limits)
+    if c._sha(raw) != current["generation_file_sha256"] or generation["generation_sha256"] != current["generation_sha256"]:
+        c._fail("active_chain", "actual generation file/semantic seal differs")
+    intent, intent_raw = c._record(path / "intent.json", limits.max_intent_bytes)
+    _intent_fields(intent, limits, header=header)
+    if c._sha(intent_raw) != generation["intent_file_sha256"]:
+        c._fail("active_chain", "actual reserved intent differs")
+    for field in ("store_id", "attempt_id", "revision", "event_operation_id", "request_id", "request_intent"):
+        if c.oi._json(intent[field]) != c.oi._json(generation[field]):
+            c._fail("active_chain", "intent/generation binding")
+    if (c.oi._json(intent["source_identity"]) != c.oi._json(header["source_identity"])
+            or intent["environment_sha256"] != header["environment_sha256"]
+            or intent["expected_parent_generation"] != generation["parent_generation"]
+            or intent["expected_parent_head_file_sha256"] != generation["parent_head_file_sha256"]):
+        c._fail("active_chain", "input parent/runtime binding")
+    expected_input_sequence = (0 if generation["parent_head_record"] is None
+                               else generation["parent_head_record"]["accepted_sequence"])
+    if intent["accepted_sequence"] != expected_input_sequence:
+        c._fail("active_chain", "intent binds input cursor before unknown Native completion/pause outcome")
+    entry_anchor = generation["entry_anchor_head_record"]
+    if intent["entry_anchor_head_file_sha256"] != (None if entry_anchor is None else c._sha(c.oi._json(entry_anchor))):
+        c._fail("active_chain", "input accepted-anchor bytes differ")
+    image = generation["image"]
+    owner_name = current["anchor_generation"] if _paused(current) else name
+    if type(image) is not dict or image.get("relative_path") != f"generations/{owner_name}/image":
+        c._fail("active_chain", "image must belong to genuine accepted anchor")
+    manifest, wrapper_raw = c._image_for(header, root, image, limits)
+    c._preflight_for(header, manifest, header["source_identity"], header["environment_sha256"], limits.image)
+    if (c.oi._json(manifest["originals"]) != c.oi._json(header["originals"])
+            or c.oi._json(manifest["genesis"]) != c.oi._json(header["genesis_physical"])
+            or manifest["physical"]["relative_path"] != f"generations/{owner_name}/physical"):
+        c._fail("active_chain", "original/genesis/own physical reference")
+    artifacts = c._artifacts_for(header, root, manifest["originals"], manifest["genesis"],
+                                  manifest["physical"], limits.image, wrapper_raw)
+    try:
+        for ref in artifacts.refs:
+            artifacts.hashed(ref)
+        artifacts.check()
+    finally:
+        artifacts.close()
+    sequence = current["accepted_sequence"]
+    if _combined(header) and _paused(current):
+        expected_kind = "wind" if current["kind"] == "wind_paused" else "rain"
+        if sequence >= len(header["event_kinds"]) or header["event_kinds"][sequence] != expected_kind:
+            c._fail("active_process_kind", "selected pause differs from the STORE-bound original event kind")
+    if (manifest["state"]["next_index"] != sequence or manifest["state"]["n_accepted"] != sequence
+            or len(manifest["receipts"]) != sequence
+            or c.oi._json(generation["accepted_summary"]) != c.oi._json(c._summary(manifest))):
+        c._fail("active_chain", "accepted image/cursor/summary")
+    receipt = c._receipt(manifest)
+    if generation["accepted_receipt_sha256"] != (None if receipt is None else c._sha(receipt)):
+        c._fail("active_chain", "last accepted receipt identity")
+    if generation["ack_core"]["completion_receipt_sha256"] != (c._sha(receipt) if current["kind"] == "event_accepted" else None):
+        c._fail("active_ack", "request completion receipt differs from actual B receipt")
+    _mixed_row_serializers_prepaid(root, header, limits, image)
+    full_receipts_raw = c.oi._json(manifest["receipts"])
+    if child is not None:
+        child_head, child_gen, child_projection = child
+        advance = child_head["kind"] == "event_accepted"
+        if (child_head["revision"] != current["revision"] + 1
+                or child_head["accepted_sequence"] != sequence + advance
+                or _checked_compact_row(child_projection).parent_receipts_raw
+                    != full_receipts_raw):
+            c._fail("active_chain", "exact accepted prefix across paused/accepted revisions")
+        anchor = current if not _paused(current) else generation["entry_anchor_head_record"]
+        if c.oi._json(child_gen["entry_anchor_head_record"]) != c.oi._json(anchor):
+            c._fail("active_anchor", "nearest genuine accepted input anchor differs")
+        operation, request = _request_id(header, anchor, current, c.oi._json(current),
+                                         child_gen["request_intent"], header["schedule_sha256"])
+        if (child_gen["event_operation_id"] != operation or child_gen["request_id"] != request):
+            c._fail("active_request", "actual schedule/parent/request identity differs")
+        if _paused(child_head):
+            if _combined(header) and _paused(current) and child_head["kind"] != current["kind"]:
+                c._fail("active_process_kind", "one unaccepted event cannot switch Native process")
+            previous_count = current["pause_count"] if _paused(current) else 0
+            if child_head["pause_count"] != previous_count + 1:
+                c._fail("active_pause", "pause count must advance independently of original ordinal")
+            if _paused(current) and child_head["pause_ordinal"] <= current["pause_ordinal"]:
+                c._fail("active_pause", "original pause ordinal must increase")
+    _active_reference(root, header, limits, current, generation)
+    if current["kind"] == "genesis":
+        if c.oi._json(manifest["physical"]) != c.oi._json(header["genesis_physical"]):
+            c._fail("active_chain", "actual genesis physical differs")
+    parent_receipts_raw = c.oi._json(manifest["receipts"][:-1]
+        if current["kind"] == "event_accepted" else manifest["receipts"])
+    projection = _CompactChainRow(_COMPACT_ROW_KEY, full_receipts_raw, parent_receipts_raw, receipt)
+    return current, generation, projection
+
+def _compact_generation_chain(root, header, store_sha, head, limits):
+    _header_fields(header, limits)
+    if not _combined(header):
+        c._fail('compact_row', 'explicit combined ancestry only')
+    _mixed_context_check(root, header, limits, where='ancestry')
+    root_identity = (header['storage_contract']['root_dev'], header['storage_contract']['root_ino'])
+    _inventory_at(root, header, limits, root_identity)
+    c._digest(header['schedule_sha256'], 'actual original resolved schedule')
+    chain, seen = [], set()
+    current, child = head, None
+    while True:
+        if len(chain) >= _MAX_CHAIN:
+            c._fail('active_chain','derived25-row chain before append')
+        if _mixed_v2_active():
+            _mixed_v2_row_check(root, limits, len(chain))
+        row = _validated_compact_chain_row(root, header, store_sha, current, limits, child, seen)
+        chain.append(row)
+        child = row
+        if current['kind'] == 'genesis':
+            break
+        current = row[1]['parent_head_record']
+    return chain
+
+
+def _generation_chain(root, header, store_sha, head, limits):
+    """Actual new-format ancestry validation; no Native LOAD or transport."""
+    if _combined(header) and _MIXED_OPERATION_SLOT is not None:
+        return _compact_generation_chain(root, header, store_sha, head, limits)
+    _header_fields(header, limits)
+    root_identity = (header["storage_contract"]["root_dev"], header["storage_contract"]["root_ino"])
+    _inventory_at(root, header, limits, root_identity)
+    c._digest(header["schedule_sha256"], "actual original resolved schedule")
+    # The whole metadata/owner reservation additionally precedes this parser
+    # from its genuine facade entry and every new owner decode/copy.
+
+    chain, seen = [], set()
+    current = head
+    child = None
+    while True:
+        if len(chain) >= _MAX_CHAIN:
+            c._fail("active_chain", "derived25-row chain before append")
+        _head_fields(current, limits, header=header)
+        name = current["generation_name"]
+        if name in seen or current["store_id"] != header["store_id"] or current["store_file_sha256"] != store_sha:
+            c._fail("active_chain", "cycle or foreign store")
+        seen.add(name)
+        path = root / "generations" / name
+        generation, raw = c._record(path / "generation.json", limits.max_generation_bytes,
+                                     links=c._published_links(path, "generation.json"))
+        _generation_fields(generation, current, header, limits)
+        if c._sha(raw) != current["generation_file_sha256"] or generation["generation_sha256"] != current["generation_sha256"]:
+            c._fail("active_chain", "actual generation file/semantic seal differs")
+        intent, intent_raw = c._record(path / "intent.json", limits.max_intent_bytes)
+        _intent_fields(intent, limits, header=header)
+        if c._sha(intent_raw) != generation["intent_file_sha256"]:
+            c._fail("active_chain", "actual reserved intent differs")
+        for field in ("store_id", "attempt_id", "revision", "event_operation_id", "request_id", "request_intent"):
+            if c.oi._json(intent[field]) != c.oi._json(generation[field]):
+                c._fail("active_chain", "intent/generation binding")
+        if (c.oi._json(intent["source_identity"]) != c.oi._json(header["source_identity"])
+                or intent["environment_sha256"] != header["environment_sha256"]
+                or intent["expected_parent_generation"] != generation["parent_generation"]
+                or intent["expected_parent_head_file_sha256"] != generation["parent_head_file_sha256"]):
+            c._fail("active_chain", "input parent/runtime binding")
+        expected_input_sequence = (0 if generation["parent_head_record"] is None
+                                   else generation["parent_head_record"]["accepted_sequence"])
+        if intent["accepted_sequence"] != expected_input_sequence:
+            c._fail("active_chain", "intent binds input cursor before unknown Native completion/pause outcome")
+        entry_anchor = generation["entry_anchor_head_record"]
+        if intent["entry_anchor_head_file_sha256"] != (None if entry_anchor is None else c._sha(c.oi._json(entry_anchor))):
+            c._fail("active_chain", "input accepted-anchor bytes differ")
+        image = generation["image"]
+        owner_name = current["anchor_generation"] if _paused(current) else name
+        if type(image) is not dict or image.get("relative_path") != f"generations/{owner_name}/image":
+            c._fail("active_chain", "image must belong to genuine accepted anchor")
+        manifest, wrapper_raw = c._image_for(header, root, image, limits)
+        c._preflight_for(header, manifest, header["source_identity"], header["environment_sha256"], limits.image)
+        if (c.oi._json(manifest["originals"]) != c.oi._json(header["originals"])
+                or c.oi._json(manifest["genesis"]) != c.oi._json(header["genesis_physical"])
+                or manifest["physical"]["relative_path"] != f"generations/{owner_name}/physical"):
+            c._fail("active_chain", "original/genesis/own physical reference")
+        artifacts = c._artifacts_for(header, root, manifest["originals"], manifest["genesis"],
+                                      manifest["physical"], limits.image, wrapper_raw)
+        try:
+            for ref in artifacts.refs:
+                artifacts.hashed(ref)
+            artifacts.check()
+        finally:
+            artifacts.close()
+        sequence = current["accepted_sequence"]
+        if _combined(header) and _paused(current):
+            expected_kind = "wind" if current["kind"] == "wind_paused" else "rain"
+            if sequence >= len(header["event_kinds"]) or header["event_kinds"][sequence] != expected_kind:
+                c._fail("active_process_kind", "selected pause differs from the STORE-bound original event kind")
+        if (manifest["state"]["next_index"] != sequence or manifest["state"]["n_accepted"] != sequence
+                or len(manifest["receipts"]) != sequence
+                or c.oi._json(generation["accepted_summary"]) != c.oi._json(c._summary(manifest))):
+            c._fail("active_chain", "accepted image/cursor/summary")
+        receipt = c._receipt(manifest)
+        if generation["accepted_receipt_sha256"] != (None if receipt is None else c._sha(receipt)):
+            c._fail("active_chain", "last accepted receipt identity")
+        if generation["ack_core"]["completion_receipt_sha256"] != (c._sha(receipt) if current["kind"] == "event_accepted" else None):
+            c._fail("active_ack", "request completion receipt differs from actual B receipt")
+        if child is not None:
+            child_head, child_gen, child_manifest = child
+            advance = child_head["kind"] == "event_accepted"
+            if (child_head["revision"] != current["revision"] + 1
+                    or child_head["accepted_sequence"] != sequence + advance
+                    or c.oi._json(child_manifest["receipts"][:-1] if advance else child_manifest["receipts"])
+                        != c.oi._json(manifest["receipts"])):
+                c._fail("active_chain", "exact accepted prefix across paused/accepted revisions")
+            anchor = current if not _paused(current) else generation["entry_anchor_head_record"]
+            if c.oi._json(child_gen["entry_anchor_head_record"]) != c.oi._json(anchor):
+                c._fail("active_anchor", "nearest genuine accepted input anchor differs")
+            operation, request = _request_id(header, anchor, current, c.oi._json(current),
+                                             child_gen["request_intent"], header["schedule_sha256"])
+            if (child_gen["event_operation_id"] != operation or child_gen["request_id"] != request):
+                c._fail("active_request", "actual schedule/parent/request identity differs")
+            if _paused(child_head):
+                if _combined(header) and _paused(current) and child_head["kind"] != current["kind"]:
+                    c._fail("active_process_kind", "one unaccepted event cannot switch Native process")
+                previous_count = current["pause_count"] if _paused(current) else 0
+                if child_head["pause_count"] != previous_count + 1:
+                    c._fail("active_pause", "pause count must advance independently of original ordinal")
+                if _paused(current) and child_head["pause_ordinal"] <= current["pause_ordinal"]:
+                    c._fail("active_pause", "original pause ordinal must increase")
+        _active_reference(root, header, limits, current, generation)
+        chain.append((current, generation, manifest))
+        child = chain[-1]
+        if current["kind"] == "genesis":
+            if c.oi._json(manifest["physical"]) != c.oi._json(header["genesis_physical"]):
+                c._fail("active_chain", "actual genesis physical differs")
+            break
+        current = generation["parent_head_record"]
+    return chain
+
+
+def _header_fields(header, limits):
+    c._check_seal(header, _store_fields(header), "store_sha256", _schema(header))
+    if (type(header["profile"]) is not str or header["profile"] != _profile_name(header)
+            or type(header["store_id"]) is not str or not c._NONCE.fullmatch(header["store_id"])):
+        c._fail("store_identity", "actual explicit active-water store/profile")
+    if c._limits_record(c._limits_load(header["limits"])) != c._limits_record(limits):
+        c._fail("limit_identity", "actual original persisted limits required")
+    c._integer(header["native_work_bytes"], 6 << 30, "genuine original work cap")
+    if header["native_work_bytes"] == 0:
+        c._fail("active_memory", "actual positive original Native work limit required")
+    c._digest(header["schedule_sha256"], "actual resolved original schedule")
+    c._digest(header["environment_sha256"], "actual controlling environment")
+    c.b._reference(header["originals"], c.oi.SCHEMA)
+    c.b._reference(header["genesis_physical"], "maple-exact-physical-checkpoint/1")
+    if (not re.fullmatch(r"originals/o-[0-9a-f]{32}", header["originals"]["relative_path"])
+            or not re.fullmatch(r"generations/g-0000-[0-9a-f]{32}/physical",
+                                 header["genesis_physical"]["relative_path"])):
+        c._fail("store_identity", "actual original/genesis paths")
+    c._keys(header[_managed_key(header)], _MANAGED, "managed sibling")
+    if _combined(header):
+        kinds = header["event_kinds"]
+        if (type(kinds) is not list or not 1 <= len(kinds) <= min(8, limits.image.max_events)
+                or any(type(kind) is not str or kind not in ("wind", "rain") for kind in kinds)):
+            c._fail("active_process_kind", "bounded actual original event-kind list required")
+    return header
+
+
+def _head(handle):
+    value, raw = c._record(handle._root / "HEAD", handle._limits.max_head_bytes)
+    _head_fields(value, handle._limits, header=handle._header)
+    _same_format(handle._header, value)
+    if value["store_id"] != handle._header["store_id"] or value["store_file_sha256"] != c._sha(handle._store_raw):
+        c._fail("active_head", "actual selected store identity")
+    return value, raw
+
+
+def _temporary_heads(handle, inventory):
+    for nonce in inventory["temps"]:
+        head, _raw = c._record(handle._root / f"HEAD.{nonce}.tmp", handle._limits.max_head_bytes)
+        _head_fields(head, handle._limits, header=handle._header)
+        if _name(head["generation_name"], head["revision"]) != nonce or head["generation_name"] not in inventory["generations"]:
+            c._fail("head_temporary", "exact own retained generation/nonce")
+        _generation_chain(handle._root, handle._header, c._sha(handle._store_raw), head, handle._limits)
+
+
+def _stable(handle):
+    handle._binding()
+    _header_fields(handle._header, handle._limits)
+    inventory = _inventory(handle)
+    # Existing and maximum proposed metadata are charged before read/hash/parse.
+    _reservation_for_handle(handle, handle._header["native_work_bytes"],
+                            _metadata_stat_charge(handle, inventory))
+    raw = c._read(handle._root / "STORE.json", 128 << 10,
+                  links=c._published_links(handle._root, "STORE.json"))
+    if raw != handle._store_raw:
+        c._fail("identity_drift", "immutable actual STORE changed")
+    handle._storage()
+    _managed(handle)
+    source, environment = c._operation_runtime_binding(handle)
+    if c.oi._json(source) != c.oi._json(handle._header["source_identity"]) or environment != handle._header["environment_sha256"]:
+        c._fail("identity_drift", "actual current Source/environment differs")
+    _temporary_heads(handle, inventory)
+
+
+def _prepare_anchor(handle, anchor):
+    _head_fields(anchor, handle._limits, header=handle._header)
+    if anchor["kind"] not in ("genesis", "event_accepted"):
+        c._fail("active_anchor", "accepted anchor preparation only")
+    inventory = _inventory(handle)
+    _reservation_for_handle(handle, handle._header["native_work_bytes"], _metadata_stat_charge(handle, inventory))
+    chain = _generation_chain(handle._root, handle._header, c._sha(handle._store_raw), anchor, handle._limits)
+    image = chain[0][1]["image"]
+    prepared = c._prepare_for(handle._header, handle._root / image["relative_path"],
+        artifact_root=handle._root, expected_manifest_sha256=image["manifest_sha256"],
+        expected_source_identity=handle._header["source_identity"],
+        expected_environment_sha256=handle._header["environment_sha256"], limits=handle._limits.image)
+    owner = c._owner_for(handle._header, prepared)
+    if (owner._limits.max_work_bytes != handle._header["native_work_bytes"]
+            or owner._schedule.digest != handle._header["schedule_sha256"]
+            or c.oi._json(prepared.diagnostics()["accepted"]) != c.oi._json(chain[0][1]["accepted_summary"])):
+        c._fail("readback_identity", "actual Native/original owner limits/schedule/accepted state differ")
+    if _combined(handle._header) and [event.kind for event in owner._schedule.events] != handle._header["event_kinds"]:
+        c._fail("active_process_kind", "genuine original schedule differs from STORE-bound event kinds")
+    return prepared
+
+
+def _load(handle, head):
+    inventory = _inventory(handle)
+    _reservation_for_handle(handle, handle._header["native_work_bytes"], _metadata_stat_charge(handle, inventory))
+    chain = _generation_chain(handle._root, handle._header, c._sha(handle._store_raw), head, handle._limits)
+    prepared = _prepare_anchor(handle, _anchor_row(chain)[0])
+    return prepared, chain
+
+
+def _acknowledgement(header, head, generation, manifest):
+    core_raw = _metadata_bytes(generation["ack_core"], 128 << 10, "bounded actual ACK")
+    if _combined(header) and type(manifest) is _CompactChainRow:
+        receipt = (_checked_compact_row(manifest).last_receipt_raw
+                   if head["kind"] == "event_accepted" else None)
+    else:
+        receipt = c._receipt(manifest) if head["kind"] == "event_accepted" else None
+    return ActiveWaterAcknowledgement(_schema(header) + ".ack", header["store_id"],
+        head["event_operation_id"], head["request_id"], head["revision"],
+        head["accepted_sequence"], c._token(head), core_raw, receipt)
+
+
+def _idle_state(handle, head, prepared, generation):
+    owner = c._owner_for(handle._header, prepared)
+    diagnostics = prepared.diagnostics()
+    diagnostics[_progress_key(handle._header)] = copy.deepcopy(generation[_ref_key(handle._header)])
+    if _combined(handle._header):
+        diagnostics["next_event_kind"] = _next_kind(owner)
+    # Keep only immutable bounded metadata on the facade, no live Native owner.
+    ack = _acknowledgement(handle._header, head, generation,
+                           c._image_for(handle._header, handle._root, generation["image"], handle._limits)[0])
+    base = c._State("idle", copy.deepcopy(head), c._token(head), owner.report(), diagnostics, ack,
+        sequence=head["accepted_sequence"], intended=c._token(head),
+        max_work_bytes=owner._limits.max_work_bytes, schedule_sha256=owner._schedule.digest)
+    halt = dataclasses.replace(base, phase="halted_before_head", intended=None)
+    return dataclasses.replace(base, identity_halt=halt)
+
+
+def report(handle):
+    if _MONITORED_RESTART_SLOT is not None:
+        owner = _monitored_check(handle._root, handle._limits, handle._header)
+        if not owner._seen:
+            c._fail('monitored_restart', 'explicit readonly entry before report')
+    handle._binding()
+    head = handle._state.head
+    progress = None if head is None or not _paused(head) else {
+        "revision": head["revision"], "original_boundary_ordinal": head["pause_ordinal"],
+        "pause_count": head["pause_count"], "accepted_sequence": head["accepted_sequence"],
+        "native_time_s": handle._state.diagnostics[_progress_key(handle._header)]["native_time_s"],
+        "native_origin_s": handle._state.diagnostics[_progress_key(handle._header)]["origin_s"],
+        "scope": "unaccepted Native progress; no accepted elapsed/cursor increment"}
+    return {"schema": _schema(handle._header) + ".report", "phase": handle._state.phase,
+        "head_token": handle._state.token, "intended_token": handle._state.intended,
+        "store_file_sha256": None if handle._store_raw is None else c._sha(handle._store_raw),
+        "accepted": copy.deepcopy(handle._state.report), "diagnostics": copy.deepcopy(handle._state.diagnostics),
+        _progress_key(handle._header): progress, "reservation": (_monitored_record(handle._reservation_record)
+                        if type(handle._reservation_record) is _MonitoredRestartReservation
+                        else copy.deepcopy(handle._reservation_record)),
+        "failure_evidence_error": handle._evidence_write_error,
+        "scope": ("opt-in static Dense CPU active-process; production/dynamic/GPU/windowed separate"
+                  if _combined(handle._header) else
+                  "opt-in static Dense CPU active-water; default/dynamic/wind-active/GPU/windowed separate")}
+
+
+def _declare():
+    """Existing actual lazy declarations precede genuine C environment binding."""
+    from masy import dense_active_checkpoint as a
+    a._declare()
+    c.oi._native()
+    c.oi._registry()
+
+
+def _make_managed(handle, store_id, probe, *, combined=False):
+    path = handle._root.parent / ((".masy-active-" if combined else ".masy-water-") + store_id)
+    if len(str(path)) > _PATH_CHARS:
+        c._fail("active_sibling", "bounded canonical final sibling path")
+    parent = c.oi._open_dir(handle._root.parent)
+    sibling = None
+    try:
+        outer = os.fstat(parent)
+        os.mkdir(path.name, 0o700, dir_fd=parent)
+        os.fsync(parent)
+        sibling = c.oi._open_dir(path)
+        info = os.fstat(sibling)
+        if info.st_dev != handle._root_identity[0] or os.fstatvfs(sibling).f_fsid != probe["f_fsid"]:
+            c._fail("active_sibling", "same verified filesystem required before any child")
+        c._same_directory(path, sibling)
+        c._same_directory(path.parent, parent)
+        return {"path": str(path), "dev": info.st_dev, "ino": info.st_ino,
+                "parent_path": str(path.parent), "parent_dev": outer.st_dev,
+                "parent_ino": outer.st_ino, "fs_id": os.fstatvfs(sibling).f_fsid}
+    finally:
+        if sibling is not None:
+            os.close(sibling)
+        os.close(parent)
+
+
+def _create_active_store(path, *, runner, originals, runtime_reference,
+                         limits=c._DEFAULT, storage_contract, combined=False):
+    """Create the new opt-in format from an untouched genuine static runner only."""
+    if _MONITORED_RESTART_SLOT is not None:
+        c._fail('monitored_restart', 'genesis remains outside all metadata operation contexts')
+    _protocol = {"schema": SCHEMA_PROCESS if combined else SCHEMA,
+                 "profile": PROFILE_PROCESS if combined else PROFILE}
+    if combined and _MIXED_OPERATION_SLOT is not None:
+        c._fail('mixed_implementation', 'creation retains the original complete profile; create outside this operation lane')
+    c.BoundaryStoreLimits.__post_init__(limits)
+    c.StorageContract.__post_init__(storage_contract)
+    if type(runner) is not c.dr.DenseRunner:
+        c._fail("runner_profile", "exact static Dense CPU genesis runner required")
+    if hasattr(runner, '_case_policy') or hasattr(runner._bed, '_adopted_case_inputs'):
+        c._fail("runner_profile", "case-driven/adopted runners require separate restart qualification")
+    c.dr.DenseRunnerLimits.__post_init__(runner._limits)
+    _reservation(limits, runner._limits.max_work_bytes, combined=combined)
+    _declare_for(_protocol)
+    c.b._runner_admission(runner, limits.image)
+    if combined:
+        _wind_profile(runner, runtime_reference)
+    if (runner._next != 0 or runner._n_accepted != 0 or runner._receipts
+            or runner._stop_receipt is not None or runner._active_evidence is not None):
+        c._fail("fresh_runner_required", "no store migration or progressed runner import")
+    if type(originals) is not c.oi.OriginalInputs:
+        c._fail("original_identity", "actual newly captured static OriginalInputs required")
+    source, environment = c._runtime_binding(runtime_reference, limits)
+    if originals.source_identity != source:
+        c._fail("original_identity", "actual complete Source differs from originals")
+    handle = c.DenseBoundaryStore._open(path, limits, create=True)
+    handle._runtime_validation = None
+    try:
+        probe, probe_sha = c._probe(handle._root, handle._rootfd)
+        os.mkdir(handle._root / "originals", 0o700)
+        os.mkdir(handle._root / "generations", 0o700)
+        store_id = uuid.uuid4().hex
+        managed = _make_managed(handle, store_id, probe, combined=combined)
+        handle._header = {"schema": _schema(_protocol), "store_id": store_id, "profile": _profile_name(_protocol),
+            "source_identity": source, "runtime_reference": copy.deepcopy(runtime_reference),
+            "environment_sha256": environment,
+            "storage_contract": {"schema": _schema(_protocol) + ".storage", "operator_declares_local": True,
+                "operator_declares_fsync_durable": True,
+                "observed_fs_type": probe["observation"]["fs_type"], "observed_fs_id": probe["f_fsid"],
+                "root_path": str(handle._root), "root_dev": probe["root_dev"], "root_ino": probe["root_ino"],
+                "probe_file_sha256": probe_sha}, "limits": c._limits_record(limits),
+            "originals": None, "genesis_physical": None, _managed_key(_protocol): managed,
+            "native_work_bytes": runner._limits.max_work_bytes, "schedule_sha256": runner._schedule.digest}
+        if combined:
+            handle._header["event_kinds"] = [event.kind for event in runner._schedule.events]
+        _admit(handle, [], runner._limits.max_work_bytes, initial=True)
+        # Both memory and combined free/disk/inodes were admitted before recapture.
+        captured = c.oi.capture_original_inputs(runner, source_identity=originals.source_identity)
+        if (captured.content_sha256 != originals.content_sha256
+                or captured.static_sha256 != originals.static_sha256
+                or originals.runner_limits.max_work_bytes != runner._limits.max_work_bytes
+                or originals.schedule.digest != runner._schedule.digest):
+            c._fail("original_identity", "independently recaptured original/limits/schedule differ")
+        del captured
+        original_path = handle._root / "originals" / ("o-" + uuid.uuid4().hex)
+        c.oi.save_original_inputs(original_path, originals,
+            limits=c.oi.OriginalPackLimits(max_cells=limits.image.max_cells,
+                max_classes=limits.image.max_classes, max_voxels=limits.image.max_voxels,
+                max_cohorts=limits.image.max_cohorts, max_events=limits.image.max_events))
+        handle._header["originals"] = c._reference(original_path, c.oi.SCHEMA,
+                                                   originals.content_sha256, handle._root)
+        operation = c._operation(store_id, None, 0, runner._schedule.digest)
+        request = c._sha(c.oi._json([_schema(_protocol) + ".genesis", store_id, runner._schedule.digest]))
+        directory, intent, halt = _reserve_attempt(handle, None, None, None, operation, request)
+        physical = handle._save_physical(directory / "physical", runner, originals)
+        handle._header["genesis_physical"] = physical
+        handle._header = _seal_control(handle._header, "store_sha256", 128 << 10, "active STORE")
+        c._sealed_write(handle._root, "STORE.json", handle._header, 128 << 10)
+        handle._store_raw = c.oi._json(handle._header)
+        image = handle._save_image(directory / "image", runner, physical)
+        head = _seal_generation(handle, directory, intent, None, None, image, "genesis", None)
+        prepared = _prepare_anchor(handle, head)
+        c._compare_owners(runner, c._owner_for(handle._header, prepared), limits.image)
+        generation = c._record(directory / "generation.json", limits.max_generation_bytes,
+                               links=c._published_links(directory, "generation.json"))[0]
+        state = _idle_state(handle, head, prepared, generation)
+        del prepared
+        _inventory(handle)
+        c._sync_tree(_managed(handle))
+        c._sync_tree(handle._root)
+        handle._state = halt
+        handle._entered = False
+        handle._publish(head, state, None, halt)
+        return handle
+    except BaseException as primary:
+        try:
+            handle._entered = False
+            handle.close()
+        except BaseException as closing:
+            primary.add_note("closing unpublished active store refused: " + type(closing).__name__[:64])
+        raise
+
+
+def _load_selected_water(handle, context, runner, generation):
+    from masy import dense_active_checkpoint as a
+    water = generation[_ref_key(handle._header)]
+    path = _managed(handle) / water["attempt_name"]
+    token = a.load_water_pause(context, runner, attempt=path,
+        expected_export_sha256=water["export_sha256"], runtime_reference=handle._header["runtime_reference"])
+    from masy import dense_water_pause as pause
+    lease = pause._lease(runner, token)
+    if (lease.ordinal != water["ordinal"] or lease.pauses != water["pauses"]
+            or lease.origin.hex() != water["origin_s"]
+            or float(lease.progress.result.state.t_s).hex() != water["native_time_s"]
+            or c._sha(c.oi._json([x.hex() for x in lease.plan])) != water["plan_sha256"]):
+        c._fail("active_water_reference", "genuine Native LOAD progress differs from selected metadata")
+    return token
+
+
+def _load_selected_wind(handle, context, runner, generation):
+    from masy import dense_active_wind_checkpoint as wind, dense_wind_pause as pause
+    from masy.clock import decode_time
+    ref = generation["active_ref"]
+    token = wind.load_wind_pause(context, runner, attempt=_managed(handle) / ref["attempt_name"],
+        expected_export_sha256=ref["export_sha256"], runtime_reference=handle._header["runtime_reference"])
+    lease = pause._lease(runner, token)
+    if (lease.ordinal != ref["ordinal"] or lease.pauses != ref["pauses"]
+            or lease.origin.hex() != ref["origin_s"]
+            or decode_time(lease.progress["native_time"]).hex() != ref["native_time_s"]
+            or c._sha(c.oi._json([x.hex() for x in lease.prepared.plan])) != ref["plan_sha256"]):
+        c._fail("active_wind_reference", "genuine Native restore progress differs from selected metadata")
+    return token
+
+
+def _load_selected(handle, context, runner, generation):
+    if _combined(handle._header) and generation["active_ref"]["process_kind"] == "wind":
+        return _load_selected_wind(handle, context, runner, generation)
+    return _load_selected_water(handle, context, runner, generation)
+
+
+def _recover_active_store(path, *, expected_store_file_sha256, limits=c._DEFAULT, combined=False):
+    """Validate exactly selected revision, with real wet LOAD and zero transport."""
+    if _MONITORED_RESTART_SLOT is not None:
+        if not combined:
+            c._fail('monitored_restart', 'only the explicit combined process profile')
+        _monitored_entry(path, limits, 'recover')
+    if combined and _MIXED_OPERATION_SLOT is not None:
+        _mixed_entry(path, 'recover')
+    c.BoundaryStoreLimits.__post_init__(limits)
+    c._digest(expected_store_file_sha256, "external exact active STORE SHA")
+    # Unknown stored W is not used until typed header admission; this fixed
+    # metadata prefix is admitted against the original independent C bound.
+    _protocol = {"schema": SCHEMA_PROCESS if combined else SCHEMA,
+                 "profile": PROFILE_PROCESS if combined else PROFILE}
+    if combined and _MONITORED_RESTART_SLOT is not None:
+        from masy import dense_active_wind_checkpoint as wind
+        owner = _monitored_check(path, limits)
+        _monitored_known_bank(limits, 0, wind.reservation_increment()['required_bytes'], 0,
+                             _monitored_control_charge(owner, owner._image))
+    elif combined and _MIXED_OPERATION_SLOT is not None and _mixed_v2_active():
+        _reservation(limits, 0, _mixed_v2_prefix_charge(path, limits), combined=combined)
+    else:
+        _reservation(limits, 0, combined=combined)
+    _declare_for(_protocol)
+    handle = c.DenseBoundaryStore._open(path, limits, create=False)
+    handle._runtime_validation = None
+    context = None
+    try:
+        _inventory_at(handle._root, None, limits, handle._root_identity, sibling=False)
+        header, raw = c._record(handle._root / "STORE.json", 128 << 10,
+                                links=c._published_links(handle._root, "STORE.json"))
+        if c._sha(raw) != expected_store_file_sha256:
+            c._fail("store_identity", "actual externally selected STORE differs")
+        _header_fields(header, limits)
+        if _combined(header) is not combined:
+            c._fail("store_identity", "explicit recovery format differs from stored profile")
+        handle._header, handle._store_raw = header, raw
+        handle._stable()
+        head, head_raw = handle._head()
+        handle._state = dataclasses.replace(handle._state, head=copy.deepcopy(head),
+            token=c._token(head), sequence=head["accepted_sequence"],
+            max_work_bytes=header["native_work_bytes"], schedule_sha256=header["schedule_sha256"])
+        prepared, chain = _load(handle, head)
+        state = _idle_state(handle, head, prepared, chain[0][1])
+        selected_generation = chain[0][1]
+        del prepared, chain
+        if _paused(head):
+            handle._entered = True
+            c._new_runtime_validation(handle)
+            context = _borrow_parent(handle, None)
+            context.__enter__()
+            runner = context.take_runner()
+            _load_selected(handle, context, runner, selected_generation)
+            _close_parent(context)
+            c._drop_runtime_validation(handle)
+            context = None
+            del runner
+            handle._entered = False
+        _inventory(handle)
+        c._sync_tree(_managed(handle))
+        c._sync_tree(handle._root)
+        handle._stable()
+        if handle._head()[1] != head_raw:
+            c._fail("parent_drift", "selected HEAD changed during real recovery")
+        os.fsync(handle._rootfd)
+        handle._state = state
+        return handle
+    except BaseException as primary:
+        c._drop_runtime_validation(handle)
+        unclosed = False
+        if context is not None:
+            try:
+                _close_parent(context)
+            except BaseException as closing:
+                primary.add_note("active recovery context close refused: " + type(closing).__name__[:64])
+            unclosed = context._phase != "closed"
+        handle._entered = unclosed
+        try:
+            handle.close()
+        except BaseException as closing:
+            primary.add_note("active recovery handle close refused: " + type(closing).__name__[:64])
+        raise
+
+
+def _reserve_attempt(handle, selected, anchor, request_intent, operation, request_id):
+    if _MONITORED_RESTART_SLOT is not None:
+        _monitored_check(handle._root, handle._limits, handle._header)
+    attempt = uuid.uuid4().hex
+    revision = c._integer(0 if selected is None else selected["revision"] + 1,
+                          _MAX_REVISION, "attempt revision")
+    sequence = 0 if selected is None else selected["accepted_sequence"]
+    name = f"g-{revision:04d}-{attempt}"
+    old = handle._state
+    busy = dataclasses.replace(old, phase="busy_before_head", attempt_id=attempt,
+                               sequence=sequence, intended=None)
+    halt = dataclasses.replace(busy, phase="halted_before_head")
+    handle._attempt_halt = halt
+    handle._state = busy
+    try:
+        path = handle._root / "generations" / name
+        directory = c.oi._open_dir(handle._root / "generations")
+        try:
+            os.mkdir(name, 0o700, dir_fd=directory)
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+        intent = _seal_control({"schema": _schema(handle._header) + ".intent", "store_id": handle._header["store_id"],
+            "attempt_id": attempt, "revision": revision, "accepted_sequence": sequence,
+            "expected_parent_head_file_sha256": None if selected is None else c._sha(c.oi._json(selected)),
+            "expected_parent_generation": None if selected is None else selected["generation_name"],
+            "entry_anchor_head_file_sha256": None if anchor is None else c._sha(c.oi._json(anchor)),
+            "event_operation_id": operation, "request_id": request_id,
+            "request_intent": copy.deepcopy(request_intent),
+            "source_identity": handle._header["source_identity"],
+            "environment_sha256": handle._header["environment_sha256"]}, "intent_sha256",
+            handle._limits.max_intent_bytes, "active reserved intent")
+        _intent_fields(intent, handle._limits, header=handle._header)
+        c._write(path / "intent.json", c.oi._json(intent))
+        fd = c.oi._open_dir(path)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        return path, intent, halt
+    except BaseException:
+        handle._state = halt
+        raise
+
+
+def _seal_generation(handle, directory, intent, selected, anchor, image, kind, water_ref):
+    if _MONITORED_RESTART_SLOT is not None:
+        _monitored_check(handle._root, handle._limits, handle._header)
+    header, limits = handle._header, handle._limits
+    manifest, _raw = c._image_for(header, handle._root, image, limits)
+    receipt = c._receipt(manifest)
+    sequence = manifest["state"]["next_index"]
+    if (kind not in _kinds(header)
+            or intent["revision"] != (0 if selected is None else selected["revision"] + 1)
+            or intent["expected_parent_generation"] != (None if selected is None else selected["generation_name"])
+            or intent["expected_parent_head_file_sha256"] != (None if selected is None else c._sha(c.oi._json(selected)))
+            or intent["entry_anchor_head_file_sha256"] != (None if anchor is None else c._sha(c.oi._json(anchor)))
+            or type(sequence) is not int
+            or sequence != intent["accepted_sequence"] + (kind == "event_accepted")):
+        c._fail("active_generation", "sealed intent/selected/anchor/output cursor")
+    store_sha = c._sha(handle._store_raw)
+    ack = {"schema": _schema(header) + ".ack", "store_id": header["store_id"],
+        "event_operation_id": intent["event_operation_id"], "request_id": intent["request_id"],
+        "request_intent": copy.deepcopy(intent["request_intent"]), "returned_kind": kind,
+        "revision": intent["revision"], "accepted_sequence": sequence,
+        "selected_parent_token": None if selected is None else c._token(selected),
+        "pause_ordinal": None if water_ref is None else water_ref["ordinal"],
+        "pause_count": None if water_ref is None else water_ref["pauses"],
+        "completion_receipt_sha256": (c._sha(receipt) if kind == "event_accepted" and receipt is not None
+                                      else None)}
+    generation = _seal_control({"schema": _schema(header) + ".generation", "store_id": header["store_id"],
+        "store_file_sha256": store_sha, "attempt_id": intent["attempt_id"],
+        "revision": intent["revision"], "accepted_sequence": sequence, "kind": kind,
+        "parent_head_record": copy.deepcopy(selected),
+        "parent_head_file_sha256": None if selected is None else c._sha(c.oi._json(selected)),
+        "parent_generation": None if selected is None else selected["generation_name"],
+        "entry_anchor_head_record": copy.deepcopy(anchor),
+        "event_operation_id": intent["event_operation_id"], "request_id": intent["request_id"],
+        "request_intent": copy.deepcopy(intent["request_intent"]),
+        "intent_file_sha256": c._sha(c.oi._json(intent)), "image": image,
+        "accepted_summary": c._summary(manifest),
+        "accepted_receipt_sha256": None if receipt is None else c._sha(receipt),
+        _ref_key(header): copy.deepcopy(water_ref), "ack_core": ack,
+        "ack_core_sha256": c._sha(c.oi._json(ack))}, "generation_sha256",
+        limits.max_generation_bytes, "active generation")
+    raw = _metadata_bytes(generation, limits.max_generation_bytes, "active generation")
+    head = _head_record(header, store_sha, directory.name, generation, c._sha(raw))
+    _generation_fields(generation, head, header, limits)
+    file_sha = c._sealed_write(directory, "generation.json", generation, limits.max_generation_bytes)
+    if file_sha != head["generation_file_sha256"]:
+        c._fail("metadata_readback", "sealed generation bytes")
+    return head
+
+
+def _lookup(handle, expected_parent, intent, chain):
+    for index, (head, generation, manifest) in enumerate(chain):
+        if c._token(head) != expected_parent:
+            continue
+        if index == 0:
+            c._fail("request_not_published", "current selected parent has no direct selected child")
+        child_head, child_generation, child_manifest = chain[index - 1]
+        if (c.oi._json(child_generation["parent_head_record"]) != c.oi._json(head)
+                or c.oi._json(child_generation["request_intent"]) != c.oi._json(intent)):
+            c._fail("request_conflict", "different direct-child request; no Native replay")
+        return _acknowledgement(handle._header, child_head, child_generation, child_manifest)
+    c._fail("stale_parent", "token is not selected ancestry; no orphan/fallback adoption")
+
+
+def acknowledge(handle, expected_parent, *, request_kind, boundary_ordinal=None):
+    """Metadata-only lost-ACK query; no Native LOAD, transport or implicit retry."""
+    if _MONITORED_RESTART_SLOT is not None:
+        _monitored_entry(handle._root, handle._limits, 'ack', handle._header)
+    handle._binding()
+    c._digest(expected_parent, "expected selected parent token")
+    intent = _intent_for(request_kind, boundary_ordinal, handle._header)
+    if _combined(handle._header) and _MIXED_OPERATION_SLOT is not None:
+        _mixed_entry(handle._root, 'ack')
+    if handle._entered:
+        c._fail("handle_reentrant", "one store operation at a time")
+    if handle._state.phase != "idle":
+        c._fail("store_halted", handle._state.phase)
+    handle._entered = True
+    try:
+        handle._stable()
+        head, _raw = handle._head()
+        if head != handle._state.head:
+            c._fail("parent_drift", "actual selected HEAD differs from facade")
+        chain = _generation_chain(handle._root, handle._header, c._sha(handle._store_raw), head, handle._limits)
+        return _lookup(handle, expected_parent, intent, chain)
+    finally:
+        handle._entered = False
+
+
+def _paused_state(handle, head, work, diagnostics_raw, generation):
+    # Actual B diagnostics were captured from the real loaded accepted A before
+    # Native work. Actual export checks reverified A before/after writer IO.
+    diagnostics = c.oi._strict_json(diagnostics_raw, c._JSON)
+    diagnostics[_progress_key(handle._header)] = copy.deepcopy(generation[_ref_key(handle._header)])
+    if _combined(handle._header):
+        diagnostics["next_event_kind"] = _next_kind(work)
+    report_ = work.report()
+    if c.oi._json(report_["accepted"]) != c.oi._json(generation["accepted_summary"]):
+        c._fail("readback_identity", "unaccepted water changed actual accepted A")
+    ack = _acknowledgement(handle._header, head, generation,
+        c._image_for(handle._header, handle._root, generation["image"], handle._limits)[0])
+    base = c._State("idle", copy.deepcopy(head), c._token(head), report_, diagnostics, ack,
+        sequence=head["accepted_sequence"], intended=c._token(head),
+        max_work_bytes=work._limits.max_work_bytes, schedule_sha256=work._schedule.digest)
+    halt = dataclasses.replace(base, phase="halted_before_head", intended=None)
+    return dataclasses.replace(base, identity_halt=halt)
+
+
+def _operate(handle, expected_parent, request_intent):
+    if _MONITORED_RESTART_SLOT is not None:
+        _monitored_entry(handle._root, handle._limits, 'operate', handle._header)
+    from masy import dense_active_checkpoint as a, dense_water_pause as pause
+    handle._binding()
+    c._digest(expected_parent, "expected selected parent token")
+    request_intent = _check_intent_for(request_intent, handle._header)
+    if handle._entered:
+        c._fail("handle_reentrant", "one store operation at a time")
+    if handle._state.phase != "idle":
+        c._fail("store_halted", handle._state.phase)
+    if _combined(handle._header) and _MIXED_OPERATION_SLOT is not None:
+        _mixed_entry(handle._root, 'ack' if expected_parent != handle._state.token else 'operate',
+                     request_kind=request_intent['kind'])
+    old = handle._state
+    halt = dataclasses.replace(old, phase="halted_before_head", intended=None)
+    handle._entered = True
+    handle._publication_uncertain = handle._attempt_halt = None
+    context = reader_context = None
+    directory = None
+    work = reader = prepared = lease = None
+    policy = False  # Error-origin classification only; never Native authority.
+    try:
+        c._new_runtime_validation(handle)
+        handle._stable()
+        selected, selected_raw = handle._head()
+        if selected != old.head:
+            c._fail("parent_drift", "durable selected R differs from facade")
+        chain = _generation_chain(handle._root, handle._header, c._sha(handle._store_raw),
+                                  selected, handle._limits)
+        policy = True
+        if expected_parent != old.token:
+            c._drop_runtime_validation(handle)
+            answer = _lookup(handle, expected_parent, request_intent, chain)
+            handle._entered = False
+            return answer
+        if old.report["status"] == "complete" or selected["accepted_sequence"] >= handle._limits.image.max_events:
+            c._fail("schedule_complete", "all original events accepted")
+        if _combined(handle._header):
+            expected_kind = old.diagnostics["next_event_kind"]
+            requested_kind = {"checkpoint_water": "rain", "checkpoint_wind": "wind"}.get(request_intent["kind"])
+            if requested_kind is not None and requested_kind != expected_kind:
+                c._fail("active_process_kind", "request differs from the actual next accepted-anchor event")
+            if _paused(selected) and request_intent["kind"] != "finish":
+                if selected["pause_count"] >= _MAX_PAUSES:
+                    c._fail("wind_pause_limit" if selected["kind"] == "wind_paused" else "water_pause_limit",
+                            "unchanged at most two pauses per event")
+                if request_intent["boundary_ordinal"] <= selected["pause_ordinal"]:
+                    c._fail("wind_pause_ordinal" if selected["kind"] == "wind_paused" else "water_pause_ordinal",
+                            "original ordinal must strictly increase")
+        if request_intent["kind"] == "checkpoint_water" and _paused(selected):
+            if selected["pause_count"] >= _MAX_PAUSES:
+                c._fail("water_pause_limit", "unchanged at most two wet pauses per event")
+            if request_intent["boundary_ordinal"] <= selected["pause_ordinal"]:
+                c._fail("water_pause_ordinal", "original ordinal must strictly increase")
+        policy = False
+        anchor, anchor_generation, _manifest = _anchor_row(chain)
+        operation, request_id = _request_id(handle._header, anchor, selected, selected_raw,
+                                             request_intent, old.schedule_sha256)
+        policy = True
+        _admit(handle, [r[0]["generation_name"] for r in chain], old.max_work_bytes)
+        policy = False
+        _mixed_before_native(handle, request_intent)
+        directory, intent, halt = _reserve_attempt(handle, selected, anchor, request_intent, operation, request_id)
+        _mixed_assign_attempt(handle, directory, intent)
+        context = _borrow_parent(handle, intent)
+        context.__enter__()
+        work = context.take_runner()
+        diagnostics_raw = _selection(context).diagnostics_raw
+        handle._failed_owner = work
+        token = (_load_selected(handle, context, work, chain[0][1])
+                 if _paused(selected) else None)
+        # Drop old full metadata rows before Native work; all accepted versions
+        # remain retained on disk and revalidated by actual parent checks.
+        chain = None
+        wind = None
+        if _combined(handle._header):
+            from masy import dense_wind_pause as wind
+            actual_kind = _next_kind(work)
+            if actual_kind != old.diagnostics["next_event_kind"]:
+                c._fail("active_process_kind", "actual loaded anchor schedule differs from preflight metadata")
+            if actual_kind == "wind" and request_intent["kind"] == "finish" and token is None:
+                # Checkpoint/resume already perform their unchanged owning
+                # profile/runtime checks. Ordinary step has no pause entry.
+                _wind_profile(work, handle._header["runtime_reference"])
+        if request_intent["kind"] == "checkpoint_wind":
+            ordinal = request_intent["boundary_ordinal"]
+            result = (wind.pause_wind(work, runtime_reference=handle._header["runtime_reference"],
+                                      boundary_ordinal=ordinal) if token is None
+                      else wind.resume_wind(work, token, boundary_ordinal=ordinal))
+        elif request_intent["kind"] == "checkpoint_water":
+            ordinal = request_intent["boundary_ordinal"]
+            result = (pause.pause_water(work, runtime_reference=handle._header["runtime_reference"],
+                                      boundary_ordinal=ordinal) if token is None
+                      else pause.resume_water(work, token, boundary_ordinal=ordinal))
+        else:
+            if wind is not None and selected["kind"] == "wind_paused":
+                result = wind.resume_wind(work, token)
+            else:
+                result = work.step() if token is None else pause.resume_water(work, token)
+        if type(result) is pause._WaterToken:
+            lease = pause._lease(work, result)
+            export_path = _managed(handle) / directory.name
+            export_sha = a.export_water_pause(context, work, result, attempt=export_path)
+            water = {"attempt_name": directory.name, "export_sha256": export_sha,
+                     "ordinal": lease.ordinal, "pauses": lease.pauses,
+                     "origin_s": lease.origin.hex(), "native_time_s": float(lease.progress.result.state.t_s).hex(),
+                     "plan_sha256": c._sha(c.oi._json([x.hex() for x in lease.plan]))}
+            if _combined(handle._header):
+                water = {"process_kind": "water", **water}
+            # A second real accepted-A parent and actual anchored Native LOAD
+            # prove the new child; metadata-only hash checks never replace it.
+            reader_context = _borrow_parent(handle, intent)
+            reader_context.__enter__()
+            reader = reader_context.take_runner()
+            _load_selected_water(handle, reader_context, reader, {_ref_key(handle._header): water})
+            _close_parent(reader_context)
+            reader_context = None
+            reader = None
+            image = anchor_generation["image"]
+            head = _seal_generation(handle, directory, intent, selected, anchor,
+                                     image, "water_paused", water)
+            generation = c._record(directory / "generation.json", handle._limits.max_generation_bytes,
+                                    links=c._published_links(directory, "generation.json"))[0]
+            state = _paused_state(handle, head, work, diagnostics_raw, generation)
+        elif wind is not None and type(result) is wind._WindToken:
+            from masy import dense_active_wind_checkpoint as checkpoint
+            from masy.clock import decode_time
+            lease = wind._lease(work, result)
+            export_sha = checkpoint.export_wind_pause(context, work, result,
+                                                       attempt=_managed(handle) / directory.name)
+            active = {"process_kind": "wind", "attempt_name": directory.name,
+                "export_sha256": export_sha, "ordinal": lease.ordinal, "pauses": lease.pauses,
+                "origin_s": lease.origin.hex(),
+                "native_time_s": decode_time(lease.progress["native_time"]).hex(),
+                "plan_sha256": c._sha(c.oi._json([x.hex() for x in lease.prepared.plan]))}
+            # Exactly the same fresh accepted-A context discipline as wet LOAD:
+            # real codec restore/progress, then genuine abandon before HEAD.
+            reader_context = _borrow_parent(handle, intent)
+            reader_context.__enter__()
+            reader = reader_context.take_runner()
+            _load_selected_wind(handle, reader_context, reader, {"active_ref": active})
+            _close_parent(reader_context)
+            reader_context = None
+            reader = None
+            head = _seal_generation(handle, directory, intent, selected, anchor,
+                                     anchor_generation["image"], "wind_paused", active)
+            generation = c._record(directory / "generation.json", handle._limits.max_generation_bytes,
+                                    links=c._published_links(directory, "generation.json"))[0]
+            state = _paused_state(handle, head, work, diagnostics_raw, generation)
+        elif (type(result) is dict and result.get("status") == "accepted"
+                and work._next == selected["accepted_sequence"] + 1):
+            # Genuine original finish/ordinary step only; no copied finish tail.
+            c._admit_owner_for(handle._header, work, handle._limits.image)
+            anchor_manifest, wrapper_raw = c._image_for(handle._header, handle._root,
+                                                         anchor_generation["image"], handle._limits)
+            originals = handle._extra_original(anchor_manifest, wrapper_raw)
+            _mixed_before_physical(handle, work)
+            physical = handle._save_physical(directory / "physical", work, originals)
+            image = handle._save_image(directory / "image", work, physical)
+            head = _seal_generation(handle, directory, intent, selected, anchor,
+                                     image, "event_accepted", None)
+            prepared = _prepare_anchor(handle, head)
+            c._compare_for(handle._header, work, c._owner_for(handle._header, prepared), handle._limits.image)
+            generation = c._record(directory / "generation.json", handle._limits.max_generation_bytes,
+                                    links=c._published_links(directory, "generation.json"))[0]
+            state = _idle_state(handle, head, prepared, generation)
+            prepared = originals = None
+        else:
+            c._fail("event_incomplete", "actual Native limit/error is not accepted completion")
+        # All real contexts/Native leases close before the unchanged publisher.
+        _close_parent(context)
+        context = None
+        work = token = result = lease = None
+        handle._failed_owner = None
+        _inventory(handle)
+        c._sync_tree(_managed(handle))
+        c._sync_tree(handle._root)
+        c._final_runtime_validation(handle)
+        handle._stable()
+        c._drop_runtime_validation(handle)
+        if handle._head()[1] != selected_raw:
+            c._fail("parent_drift", "selected parent changed before publication")
+        handle._state = halt
+        handle._entered = False
+    except BaseException as primary:
+        c._drop_runtime_validation(handle)
+        unclosed = False
+        for temporary in (reader_context, context):
+            if temporary is not None:
+                try:
+                    _close_parent(temporary)
+                except BaseException as closing:
+                    primary.add_note("prepublication context close refused: " + type(closing).__name__[:64])
+                unclosed = unclosed or temporary._phase != "closed"
+        if handle._publication_uncertain is not None:
+            handle._state = handle._publication_uncertain
+        elif handle._attempt_halt is not None:
+            handle._state = handle._attempt_halt
+        elif (policy and directory is None and context is None and reader_context is None
+                and handle._state is old and type(primary) is c.BoundaryStoreError
+                and primary.code in ("schedule_complete", "water_pause_limit",
+                    "water_pause_ordinal", "request_conflict", "request_not_published",
+                    "stale_parent", "memory_cap", "store_cap", "storage_cap",
+                    "orphan_cap", "metadata_cap") + (("active_process_kind", "wind_pause_limit",
+                    "wind_pause_ordinal") if _combined(handle._header) else ())):
+            # Closed known policy refusal: no reservation/Native work/file
+            # mutation occurred. Identity/source/IO/unknown failures still halt.
+            handle._state = old
+        else:
+            handle._state = halt
+        handle._entered = unclosed
+        if directory is not None:
+            try:
+                handle._failure(directory, primary)
+            except BaseException as evidence_error:
+                primary.add_note("optional failure evidence interrupted: " + type(evidence_error).__name__[:64])
+        raise
+    # Nothing with a close/scan/validation/finally remains around this call.
+    # Original _publish handles replace/fsync uncertainty and returns prepared ACK.
+    return handle._publish(head, state, selected, halt)
+
+
+def checkpoint_water(handle, expected_parent, *, boundary_ordinal):
+    return _operate(handle, expected_parent, _intent("checkpoint_water", boundary_ordinal))
+
+
+def step(handle, expected_parent):
+    return _operate(handle, expected_parent, _intent("finish"))
+
+
+def checkpoint_wind(handle, expected_parent, *, boundary_ordinal):
+    if not _combined(handle._header):
+        c._fail("store_profile", "wind pause requires the explicit active-process format")
+    return _operate(handle, expected_parent, _intent_for("checkpoint_wind", boundary_ordinal, handle._header))
+
+
+def create_active_water_boundary_store(path, *, runner, originals, runtime_reference,
+                                       limits=c._DEFAULT, storage_contract):
+    return _create_active_store(path, runner=runner, originals=originals,
+        runtime_reference=runtime_reference, limits=limits, storage_contract=storage_contract)
+
+
+def recover_active_water_boundary_store(path, *, expected_store_file_sha256, limits=c._DEFAULT):
+    return _recover_active_store(path, expected_store_file_sha256=expected_store_file_sha256, limits=limits)
+
+
+def create_active_process_boundary_store(path, *, runner, originals, runtime_reference,
+                                         limits=c._DEFAULT, storage_contract):
+    return _create_active_store(path, runner=runner, originals=originals,
+        runtime_reference=runtime_reference, limits=limits, storage_contract=storage_contract, combined=True)
+
+
+def recover_active_process_boundary_store(path, *, expected_store_file_sha256, limits=c._DEFAULT):
+    return _recover_active_store(path, expected_store_file_sha256=expected_store_file_sha256,
+                                  limits=limits, combined=True)
+
+
+def _reservation_for_handle(handle, work_bytes, chain_charge=0):
+    if _MONITORED_RESTART_SLOT is not None:
+        return _monitored_reservation(handle, work_bytes, chain_charge)
+    original = _reservation(handle._limits, work_bytes, chain_charge,
+                            combined=_combined(handle._header))
+    owner = c._checked_runtime_validation(handle)
+    if owner is None:
+        return original
+    charge = c._runtime_validation_charge()
+    if charge is None:
+        c._drop_runtime_validation(handle)
+        return original
+    # Independent reference admission and a conservative finite union of
+    # actual modified/new old-water metadata frame roles. Existing native
+    # arrays/codec admission is unchanged; this is not a heap/CPU-fit law.
+    extra = (charge['bytes'] + 2 * _parse_charge(c._RUNTIME_REUSE_REFERENCE_BYTES)
+             + c.rw._compiled_frame_charge((
+                 _reservation_for_handle, _reservation, _stable, _admit,
+                 _load, _prepare_anchor, _operate, _recover_active_store,
+                 recover_active_water_boundary_store, _load_selected, _load_selected_water, _combined,
+                 _schema, _profile_name, _kinds, _store_fields,
+                 _generation_fields_list, _water_fields, _ref_key, _managed_key,
+                 _progress_key, _sibling_prefix, _paused, _same_format,
+                 _pause_fields_for, _intent_for, _check_intent_for, _active_reference,
+                 _generation_chain, _generation_fields, _head, _head_fields,
+                 _head_record, _header_fields, _idle_state, _intent_fields,
+                 _inventory_at, _managed_at, _metadata_stat_charge, _parent_light,
+                 _paused_state, _request_id, _reserve_attempt, _seal_generation,
+                 _temporary_heads, _water_reference, _borrow_parent, _ack_fields,
+                 _acknowledgement, report, acknowledge,
+             )))
+    if original['memory_bytes'] + extra > handle._limits.max_memory_bytes:
+        # Optional optimization only: no cache rows, full original validation.
+        c._drop_runtime_validation(handle)
+        return original
+    owner._charge = extra
+    # Admission is separate from the existing report/consumer record.
+    return original
+
+
+# Additional opt-in ordinary Source contract; all genuine Root operands are absent.
+_MIXED_OWNER_KEY = object()
+_MIXED_PROOF_BYTES = 128 << 10
+_MIXED_OPERATION_ORDINAL = 0
+_MIXED_PUBLIC_CPYTHON = (
+    ('Modules/_json.c', '6a0eaa8a82a30d5e35b47bda64c0a9741924c0b925fa6a9445addb3a61a5b5b9'),
+    ('Lib/json/decoder.py', '9f02654649816145bc76f8c210a5fe3ba1de142d4d97a1c93105732e747c285b'),
+    ('Lib/json/scanner.py', '8604d9d03786d0d509abb49e9f069337278ea988c244069ae8ca2c89acc2cb08'),
+    ('Lib/copy.py', 'cbd25547933176fcf6bb05c2adc9f4796d15ac20b9b82dcf890daea7203daeab'),
+    ('Lib/json/encoder.py', 'af7bd40a0d0d0a3e726a9b4b3a2a543019f6ab97a340d0162a9c29ca9da97869'),
+    ('Lib/json/__init__.py', 'd5d41e2c29049515d295d81a6d40b4890fbec8d8482cfb401630f8ef2f77e4d5'),
+)
+
+
+def _mixed_ref(value, where):
+    c._keys(value, ('path', 'size', 'sha256'), where)
+    path = value['path']
+    if (type(path) is not str or not 1 <= len(path) <= _PATH_CHARS
+            or path != os.path.realpath(path) or not os.path.isabs(path)):
+        c._fail('mixed_implementation', 'one canonical immutable evidence path')
+    c._integer(value['size'], _MIXED_PROOF_BYTES, where)
+    if value['size'] == 0:
+        c._fail('mixed_implementation', 'positive immutable evidence size')
+    c._digest(value['sha256'], where)
+    return path, value['size'], value['sha256']
+
+
+def _mixed_read_ref(value, where):
+    path, size, digest = _mixed_ref(value, where)
+    before = os.lstat(path)
+    identity = (c.oi._stat_id(before), before.st_mode, before.st_nlink)
+    if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or before.st_mode & 0o222 or before.st_size != size):
+        c._fail('mixed_implementation', 'readonly ordinary single-link evidence')
+    # ONE fd is joined to that exact initial lstat. A delegated path reader's
+    # separate inner lstat would not prove this outer identity through an ABA.
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+    try:
+        opened = os.fstat(fd)
+        if (c.oi._stat_id(opened), opened.st_mode, opened.st_nlink) != identity:
+            c._fail('mixed_implementation', 'evidence changed between lstat and fd open')
+        parts, used = [], 0
+        while True:
+            part = os.read(fd, min(64 << 10, size + 1 - used))
+            if not part:
+                break
+            used += len(part)
+            if used > size:
+                c._fail('mixed_implementation', 'evidence grew during same-fd read')
+            parts.append(part)
+        raw = b''.join(parts)
+        held, after = os.fstat(fd), os.lstat(path)
+        if ((c.oi._stat_id(held), held.st_mode, held.st_nlink) != identity
+                or (c.oi._stat_id(after), after.st_mode, after.st_nlink) != identity
+                or used != size or len(raw) != size or c._sha(raw) != digest):
+            c._fail('mixed_implementation', 'actual same-fd evidence identity/bytes/currentness')
+        return raw
+    finally:
+        os.close(fd)
+
+
+def _mixed_observer_record():
+    monitoring = getattr(sys, 'monitoring', None)
+    if monitoring is None:
+        c._fail('mixed_implementation', 'unknown ordinary observer implementation')
+    traces = (sys.gettrace(), sys.getprofile(), threading.gettrace(), threading.getprofile())
+    # CPython3.12's six public monitoring tool slots0..5 are a separate
+    # Root-qualified API/ordinary-observer prerequisite, not inferred from Source.
+    tools = tuple(monitoring.get_tool(index) for index in range(6))
+    events = tuple(monitoring.get_events(index) for index in range(6))
+    if any(value is not None for value in traces + tools) or events != (0,) * 6:
+        c._fail('mixed_implementation', 'non-escaping ordinary execution required')
+    return (traces, tools, events)
+
+
+def _mixed_selected_record():
+    # No replacement, monkeypatch, fallback selection or fabricated parser result.
+    json = c.oi.json
+    scanner = json.scanner
+    encoder = json.encoder
+    native_json = sys.modules.get('_json')
+    if (native_json is None or scanner.c_make_scanner is not native_json.make_scanner
+            or scanner.make_scanner is not native_json.make_scanner
+            or encoder.c_make_encoder is not native_json.make_encoder
+            or json.decoder.scanstring is not native_json.scanstring):
+        c._fail('mixed_implementation', 'genuine selected C JSON implementations required')
+    dispatch = copy._deepcopy_dispatch
+    expected_dispatch = (copy._deepcopy_dict, copy._deepcopy_list, copy._deepcopy_tuple,
+                         copy._deepcopy_atomic, copy._deepcopy_atomic, copy._deepcopy_atomic,
+                         copy._deepcopy_atomic, copy._deepcopy_atomic)
+    if tuple(dispatch.get(cls) for cls in (dict, list, tuple, str, int, float, bool,
+                                         type(None))) != expected_dispatch:
+        c._fail('mixed_implementation', 'original exact JSON deepcopy dispatch')
+    values = (json.loads, json.dumps, json.JSONDecoder, json.JSONDecoder.__init__,
+        json.JSONDecoder.decode, json.JSONDecoder.raw_decode, json.JSONEncoder,
+        json.JSONEncoder.__init__, json.JSONEncoder.encode, json.JSONEncoder.iterencode,
+        scanner.make_scanner, scanner.c_make_scanner, encoder.c_make_encoder,
+        json.decoder.scanstring, copy.deepcopy, *expected_dispatch,
+        c.oi._strict_json, c.oi._json, c.dr._canonical_json, c._plain_metadata,
+        int, float, str, bytes, dict, list, tuple, set, sys.getsizeof,
+        sys.gettrace, sys.getprofile, threading.gettrace, threading.getprofile)
+    if any(id(value).bit_length() > 64 or id(getattr(value, '__code__', None)).bit_length() > 64
+           for value in values):
+        c._fail('mixed_implementation', 'unsupported object identity integer domain')
+    return tuple((id(value), id(getattr(value, '__code__', None)),
+                  getattr(value, '__module__', ''), getattr(value, '__qualname__', ''))
+                 for value in values)
+
+
+def _mixed_file_record(path, cap):
+    path = Path(path)
+    if len(str(path)) > _PATH_CHARS or str(path) != os.path.realpath(path):
+        c._fail('mixed_implementation', 'canonical actual implementation file')
+    digest, _blob, size, _raw = c.runtime._hash_path(path, budget=cap)
+    return (str(path), size, digest)
+
+
+def _mixed_implementation_files():
+    modules = (sys, c.oi.json, c.oi.json.decoder, c.oi.json.scanner, c.oi.json.encoder,
+               copy, sys.modules.get('_json'), sys.modules[__name__], c, c.b, c.oi,
+               c.dr, c.rw)
+    rows = [_mixed_file_record(os.path.realpath(sys.executable), 64 << 20)]
+    for module in modules[1:]:
+        path = getattr(module, '__file__', None)
+        if type(path) is not str:
+            c._fail('mixed_implementation', 'actual Source/compiled file owner required')
+        rows.append(_mixed_file_record(path, 64 << 20))
+    return tuple(rows)
+
+
+def _mixed_scope_image():
+    functions = (
+        _mixed_process_check,
+        _mixed_clear,
+        _mixed_pre_entry_charge,
+        _mixed_ref,
+        _mixed_read_ref,
+        _mixed_observer_record,
+        _mixed_selected_record,
+        _mixed_file_record,
+        _mixed_implementation_files,
+        _mixed_scope_image,
+        mixed_metadata_operation,
+        _mixed_cell_probe,
+        _mixed_units,
+        _mixed_validate_linkage,
+        _mixed_cycle_charge,
+        _mixed_operation_charge,
+        _mixed_entry,
+        _mixed_context_check,
+        _mixed_projection_charge,
+        _mixed_serializer_charge,
+        _mixed_original_raw,
+        _mixed_prospective,
+        _mixed_next_pause_sizes,
+        _mixed_account_charge,
+        _mixed_row_serializers_prepaid,
+        _mixed_before_native,
+        _mixed_before_physical,
+        _mixed_writer_check,
+        _mixed_assign_attempt,
+        _validated_compact_chain_row,
+        _compact_generation_chain,
+        _checked_compact_row,
+        _generation_chain,
+        _metadata_stat_charge,
+        _operate,
+        _recover_active_store,
+        acknowledge,
+        _CompactChainRow.__init__,
+        _CompactChainRow.__setattr__,
+        _CompactChainRow.__delattr__,
+        _CompactChainRow.__reduce_ex__,
+        _MixedMetadataOperation.__init__,
+        _MixedMetadataOperation.__enter__,
+        _MixedMetadataOperation.__exit__,
+        _MixedMetadataOperation.__reduce_ex__,
+        c.b._static_metadata_wire_upper,
+        c.b._static_original_scalar_plan,
+        c.b._flat_metadata_node,
+        c.b._flat_metadata_fields,
+        c.b._wire_string,
+        c.b._wire_object,
+        c.b._wire_array,
+        c.b._mixed_static_writer_gate,
+        c.b._mixed_static_bridge,
+        c.b._StaticMetadataPlan.__init__,
+        c.b._StaticMetadataPlan.__setattr__,
+        c.b._StaticMetadataPlan.__delattr__,
+        c.b._StaticMetadataPlan.__reduce_ex__,
+        c.b.save_passive_boundary,
+        c.b._write_passive_boundary,
+    )
+    images = tuple(c.rw._compiled_function_image(function) for function in functions)
+    if any(image is None for image in images):
+        c._fail('mixed_implementation', 'unsupported operation Source function layout')
+    return (images, (c, c.b, c.oi, c.dr, c.rw, copy, sys, os, threading,
+        _MIXED_OWNER_KEY, _COMPACT_ROW_KEY, _STATIC_CENSUS, _MIXED_CONTROL_FIELDS, _MIXED_PUBLIC_CPYTHON),
+        (_MIXED_PROOF_BYTES, _MAX_CHAIN, _MAX_REVISION, _COMBINED_CAPSULE_GROWTH_BYTES))
+
+def _mixed_process_check(owner):
+    if (os.getpid() != owner._pid or threading.get_ident() != owner._thread
+            or Path(f'/proc/{owner._pid}/stat').read_text().rsplit(')', 1)[1].split()[19] != owner._start
+            or Path('/proc/sys/kernel/random/boot_id').read_text().strip() != owner._boot):
+        c._fail('mixed_implementation', 'same operation PID/birth/thread before mutation')
+
+
+def _mixed_clear(owner):
+    if owner._counts is not None and owner._counts.get('canonical_scope') is not None:
+        primary = sys.exc_info()[1]
+        try:
+            _mixed_v3_drop(owner)
+        except Exception:
+            if primary is None:
+                raise
+        finally:
+            # Drop removes its count entry even if close fails. This bounded
+            # second call executes the ORIGINAL clear body, not another drop.
+            _mixed_clear(owner)
+        return
+    owner._phase = 'closed'
+    owner._record = owner._raw = owner._selected = owner._files = owner._image = None
+    owner._observer = owner._handle = owner._header_raw = None
+    owner._plan = owner._ticket = owner._counts = None
+    owner._nonce = owner._ordinal = None
+    owner._fixed = 0
+    owner._entry_kind = owner._request_kind = None
+
+
+def _mixed_pre_entry_charge(limits, image):
+    # Four independent immutable reference reads/strict parses, the retained
+    # runtime-reference graph, canonical Root and fact-subject encodings. P is
+    # the ORIGINAL complete parser law; no selected-implementation discount.
+    # Three independent primary/close/reader error banks remain simultaneous.
+    cap = _MIXED_PROOF_BYTES
+    units = _mixed_units(limits)
+    payloads = 3 * (5 * _parse_charge(cap) + 12 * cap)
+    # strict_json's owned visit cycle is cumulative; init's plain visitor is
+    # paid too. The genuine runtime binding starts only after the full census
+    # and its runtime helper-cycle quota have been reserved below.
+    cycles = _mixed_cycle_charge(units, 6, 1)
+    images = 6 * c.rw._compiled_image_charge(image)
+    frames = 6 * c.rw._compiled_frame_charge(tuple(row[0] for row in image[0]))
+    # The Source-owned hash stream can overlap old/new chunks in each error
+    # bank. Full Source files are streamed, never retained as payloads here.
+    streams = 3 * (2 * c.runtime._CHUNK + 4 * cap)
+    # Fixed Source field occurrences, separately billed even when several
+    # fields are in one object or borrow identical primitives. Complete parser
+    # graphs stay in P above; image trees use their own owning charge. The
+    # independently Root-qualified caller/ABI proof must establish this closed
+    # field/header projection for actual selected descendants, never infer it
+    # from a small object sample or Source code-slot count.
+    fields = sum(count for _role, count in _MIXED_CONTROL_FIELDS)
+    headers = (3 * fields * (units['dict'] + units['list'] + units['tuple']
+               + units['set'] + units['bytes'] + units['string']
+               + 16 * (units['pointer'] + units['integer'])))
+    paths = 3 * 13 * (4 * _PATH_CHARS * (units['string'] + units['pointer'])
+                      + units['dict'] + units['tuple'])
+    return payloads + cycles + images + frames + streams + headers + paths
+
+
+class _MixedMetadataOperation:
+    """One Root-bound PID/thread operation; no DATA graph/exception cache."""
+    __slots__ = ('_key', '_root', '_reference', '_runtime_raw', '_limits', '_phase',
+        '_pid', '_thread', '_start', '_boot', '_nonce', '_ordinal', '_raw', '_record',
+        '_selected', '_files', '_image', '_observer', '_handle', '_header_raw',
+        '_counts', '_plan', '_ticket', '_fixed', '_entry_kind', '_request_kind')
+
+    def __init__(self, key, root, runtime_reference, proof_reference, limits):
+        if _MONITORED_RESTART_SLOT is not None:
+            c._fail('mixed_implementation', 'old mixed/canonical cannot enter a monitored operation')
+        if key is not _MIXED_OWNER_KEY:
+            c._fail('mixed_implementation', 'owning operation factory required')
+        c.BoundaryStoreLimits.__post_init__(limits)
+        root = Path(root).absolute()
+        if str(root) != os.path.realpath(root) or len(str(root)) > _PATH_CHARS:
+            c._fail('mixed_implementation', 'canonical bounded actual store root')
+        _mixed_ref(proof_reference, 'Root implementation proof')
+        # This bounded setup reservation precedes the plain visitor, encoding
+        # and proof work; its computed image is not an authority or a cache.
+        _reservation(limits, 0, _mixed_pre_entry_charge(limits, _mixed_scope_image()), combined=True)
+        c._plain_metadata(runtime_reference, _MIXED_PROOF_BYTES, 'actual runtime reference')
+        self._key, self._root, self._limits = key, root, limits
+        self._reference = tuple(proof_reference[name] for name in ('path', 'size', 'sha256'))
+        self._runtime_raw = c.oi._json(runtime_reference)
+        self._pid, self._thread = os.getpid(), threading.get_ident()
+        self._start = Path(f'/proc/{self._pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+        self._boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        self._phase, self._handle, self._header_raw = 'new', None, None
+        self._nonce = self._ordinal = self._raw = self._record = None
+        self._selected = self._files = self._image = self._observer = None
+        self._counts, self._plan, self._ticket, self._fixed = {}, None, None, 0
+        self._entry_kind = self._request_kind = None
+
+    def __enter__(self):
+        if _MONITORED_RESTART_SLOT is not None:
+            c._fail('mixed_implementation', 'old mixed/canonical cannot enter a monitored operation')
+        global _MIXED_OPERATION_SLOT, _MIXED_OPERATION_ORDINAL
+        if self._phase != 'new' or _MIXED_OPERATION_SLOT is not None:
+            c._fail('mixed_implementation', 'one non-nested one-shot operation')
+        _mixed_process_check(self)
+        published = False
+        try:
+            initial_image = _mixed_scope_image()
+            _reservation(self._limits, 0,
+                _mixed_pre_entry_charge(self._limits, initial_image), combined=True)
+            reference = dict(zip(('path', 'size', 'sha256'), self._reference, strict=True))
+            raw = _mixed_read_ref(reference, 'Root implementation proof')
+            record = c.oi._strict_json(raw, c._JSON)
+            if type(record) is dict and record.get('schema') == _MIXED_V3_SCHEMA:
+                c._keys(record, _MIXED_V2_TOP_FIELDS, 'Root mixed metadata implementation v3')
+            elif type(record) is dict and record.get('schema') == _MIXED_V2_SCHEMA:
+                c._keys(record, _MIXED_V2_TOP_FIELDS, 'Root mixed metadata implementation v2')
+            else:
+                c._keys(record, ('schema', 'root', 'runtime_reference_sha256', 'source_identity',
+                    'environment_sha256', 'process', 'nonce', 'ordinal', 'implementation_files',
+                    'selected_ids', 'public_CPython_Source', 'linkage', 'Source_census',
+                    'units', 'observer'), 'Root mixed metadata implementation')
+            if (record['schema'] != 'masy.mixed_metadata_Root_implementation.v1'
+                    and record['schema'] != _MIXED_V2_SCHEMA
+                    and record['schema'] != _MIXED_V3_SCHEMA
+                    or record['root'] != str(self._root)
+                    or record['runtime_reference_sha256'] != c._sha(self._runtime_raw)):
+                c._fail('mixed_implementation', 'exact Root proof/runtime/store subject')
+            expected_process = {'pid': self._pid, 'thread': self._thread,
+                                'start': self._start, 'boot': self._boot,
+                                'executable': sys.executable, 'prefix': sys.prefix}
+            if record['process'] != expected_process:
+                c._fail('mixed_implementation', 'actual process birth/thread, not a caller flag')
+            if (type(record['nonce']) is not str or c._NONCE.fullmatch(record['nonce']) is None
+                    or type(record['ordinal']) is not int
+                    or not 1 <= record['ordinal'] < 1 << 64
+                    or record['ordinal'] != _MIXED_OPERATION_ORDINAL + 1):
+                c._fail('mixed_implementation', 'fresh one-shot Root operation nonce/ordinal')
+            # Proof/data is never synthesized here. The Root-qualified linkage
+            # witness must bind exact public Source, selected binaries/functions and
+            # complete constructor/caller census. Unavailable/unsupported refuses.
+            if c.oi._json(record) != raw:
+                c._fail('mixed_implementation', 'canonical immutable Root fact bytes')
+            _mixed_validate_linkage(record)
+            self._selected = _mixed_selected_record()
+            self._files = _mixed_implementation_files()
+            self._observer = _mixed_observer_record()
+            expected_source_hashes = (_MIXED_PUBLIC_CPYTHON[5][1], _MIXED_PUBLIC_CPYTHON[1][1],
+                _MIXED_PUBLIC_CPYTHON[2][1], _MIXED_PUBLIC_CPYTHON[4][1], _MIXED_PUBLIC_CPYTHON[3][1])
+            if tuple(row[2] for row in self._files[1:6]) != expected_source_hashes:
+                c._fail('mixed_implementation', 'actual Python JSON/copy Source differs from ownership basis')
+            if (record['selected_ids'] != [list(row) for row in self._selected]
+                    or record['implementation_files'] != [list(row) for row in self._files]
+                    or record['public_CPython_Source'] != [list(row) for row in _MIXED_PUBLIC_CPYTHON]
+                    or record['observer'] != [[None] * 4, [None] * 6, [0] * 6]):
+                c._fail('mixed_implementation', 'actual selected implementations/observers differ')
+            # Provisional fields are private to this unpublished owner. Any
+            # refusal below clears ALL of them; __exit__ is not relied upon.
+            self._nonce, self._ordinal = record['nonce'], record['ordinal']
+            self._raw, self._record = raw, record
+            self._image = _mixed_scope_image()
+            if record['schema'] == _MIXED_V3_SCHEMA:
+                self._counts['typed_image'] = _mixed_v3_admit(record, self._limits, self._image)
+            elif record['schema'] == _MIXED_V2_SCHEMA:
+                self._counts['typed_image'] = _mixed_v2_admit(record, self._limits, self._image)
+            if not c.rw._same_compiled_image(initial_image, self._image):
+                c._fail('mixed_implementation', 'entry Source image changed')
+            self._fixed = _mixed_operation_charge(self)
+            _reservation(self._limits, 0, self._fixed, combined=True)
+            # Count the first genuine binding in the SAME prepaid quota. No
+            # runtime guard or its parsers run before this full reservation.
+            self._counts['bindings'] = 1
+            reference_runtime = c.oi._strict_json(self._runtime_raw, c._JSON)
+            source, environment = c._runtime_binding(reference_runtime, self._limits)
+            if source != record['source_identity'] or environment != record['environment_sha256']:
+                c._fail('mixed_implementation', 'genuine runtime Source/environment binding required')
+            _mixed_process_check(self)
+            if (_MIXED_OPERATION_SLOT is not None
+                    or self._ordinal != _MIXED_OPERATION_ORDINAL + 1):
+                c._fail('mixed_implementation', 'entry ownership changed before publication')
+            if record['schema'] == _MIXED_V3_SCHEMA:
+                _mixed_v3_install(self)
+            self._phase = 'entered'
+            _MIXED_OPERATION_ORDINAL = self._ordinal
+            _MIXED_OPERATION_SLOT = self
+            published = True
+            return self
+        finally:
+            if not published:
+                _mixed_clear(self)
+
+    def __exit__(self, error_type, error, traceback):
+        global _MIXED_OPERATION_SLOT
+        try:
+            if self._counts is not None and self._counts.get('canonical_scope') is not None:
+                _mixed_v3_exit_check(self, error_type)
+            if (_MIXED_OPERATION_SLOT is not self or self._phase != 'entered') and error_type is None:
+                c._fail('mixed_implementation', 'same entered owner required for cleanup')
+            # An existing primary error propagates unchanged even if cleanup
+            # ownership is invalid; cleanup never replaces Native failure evidence.
+        finally:
+            if _MIXED_OPERATION_SLOT is self:
+                _MIXED_OPERATION_SLOT = None
+            _mixed_clear(self)
+        return False
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError('mixed metadata operation cannot escape/persist')
+
+
+def mixed_metadata_operation(*, root, runtime_reference, proof_reference, limits=c._DEFAULT):
+    """Explicit Root-controller lane; no evidence/default/fit/transport authority.
+
+    The reference must be independently issued/accepted by Root for THIS
+    process/source/selected implementation and operation. A matching profile
+    label or a self-authored boolean is not the ownership/ABI proof.
+    """
+    return _MixedMetadataOperation(_MIXED_OWNER_KEY, root, runtime_reference,
+                                   proof_reference, limits)
+
+# Source-discovered constructor counts, not AST-site-as-dynamic counts. A chain
+# budget is a checked operation quota; it is prepaid in full and the next chain
+# refuses BEFORE its row parser when exhausted. It never predicts Native success.
+_STATIC_CENSUS = (
+    ('chain_rows', _MAX_CHAIN), ('B_strict_parsers_per_row', 1),
+    ('control_strict_parsers_per_row', 2), ('active_strict_parsers_per_row_upper', 2),
+    ('active_plain_visitors_per_row_upper', 2), ('artifact_deepcopy_calls_per_row', 79),
+    ('artifact_private_memos_per_row', 3), ('artifact_copied_dicts_per_row', 9),
+    ('new_receipt_encoders_per_row', 2), ('receipt_byte_owners_per_row', 3),
+    ('current_receiver_families', 3), ('future_constructor_families', 6),
+    ('entry_proof_strict_parsers', 4), ('entry_runtime_reference_strict_parsers', 1),
+    ('prospective_Original_strict_parsers', 1), ('entry_runtime_plain_visitors', 1),
+    ('selected_identity_rows', 40), ('implementation_file_rows', 13),
+    ('Root_linked_evidence_files', 3), ('operation_owner_slots', 26),
+    ('static_plan_slots', 7), ('prefix_receipt_slice_refs_upper', 8),
+)
+
+_MIXED_CONTROL_FIELDS = (
+    ('four_reference_records', 4 * 3), ('top_Root_fact_fields', 15),
+    ('expected_process_fields', 6), ('selected_identity_fields', 40 * 4),
+    ('implementation_file_fields', 13 * 3), ('public_Source_fields', 6 * 2),
+    ('ordinary_observer_fields', 4 + 6 + 6), ('operation_owner_slots', 26),
+    ('header_units_fields', 11), ('three_limit_holders_fields_upper', 3 * 64),
+    ('counter_and_entry_state_fields', 8), ('private_writer_ticket_fields', 7),
+    ('static_plan_slots', 7),
+)
+
+
+def _mixed_cell_probe():
+    value = None
+    def probe():
+        return value
+    return probe
+
+
+def _mixed_units(limits):
+    probe = _mixed_cell_probe()
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    # Each captured limit occurrence gets the complete closed scalar holder,
+    # not merely a borrowed-pointer discount or a generic opaque fee.
+    originals = c.oi.OriginalPackLimits(max_cells=limits.image.max_cells,
+        max_classes=limits.image.max_classes, max_voxels=limits.image.max_voxels,
+        max_cohorts=limits.image.max_cohorts, max_events=limits.image.max_events)
+    holders = (c._JSON, limits.image, originals)
+    maximum = 0
+    for holder in holders:
+        fields = vars(holder)
+        if type(fields) is not dict or not 1 <= len(fields) <= 64:
+            c._fail('mixed_implementation', 'closed scalar-only limit holder')
+        charge = sys.getsizeof(holder) + sys.getsizeof(fields)
+        for name, value in fields.items():
+            if (type(name) is not str or len(name) > 128 or type(value) is not int
+                    or value < 0 or value.bit_length() > 64):
+                c._fail('mixed_implementation', 'unsupported captured limit owner')
+            charge += sys.getsizeof(name) + sys.getsizeof(value) + 2 * pointer
+        maximum = max(maximum, charge)
+    return {'pointer': pointer, 'dict': sys.getsizeof({}), 'list': sys.getsizeof([]),
+        'set': sys.getsizeof(set()), 'tuple': sys.getsizeof(()),
+        'bytes': sys.getsizeof(b''), 'string': sys.getsizeof(''),
+        'integer': sys.getsizeof((1 << 64) - 1), 'function': sys.getsizeof(probe),
+        'cell': sys.getsizeof(probe.__closure__[0]), 'limit_holder': maximum}
+
+
+def _mixed_validate_linkage(record):
+    """Shape/subject joins for a genuinely Root-issued proof, never its issuer.
+
+    Independent Source-to-binary/ABI/caller/observer qualification of this exact
+    record is a REQUIRED Root-controller precondition. A caller-created record
+    is outside the contract, even if its current hashes match. No boolean or
+    profile label supplied here certifies the unobserved relationship.
+    """
+    linkage = record['linkage']
+    c._keys(linkage, ('schema', 'subject_sha256', 'Source_binary_proof',
+        'ABI_and_observer_proof', 'caller_census_proof'), 'Root implementation linkage')
+    if linkage['schema'] != 'masy.Root.mixed_metadata_ownership_linkage.v1':
+        c._fail('mixed_implementation', 'genuine separately reviewed Root linkage required')
+    subject = {name: record[name] for name in record if name != 'linkage'}
+    subject_raw = c.oi._json(subject)
+    subject_digest = c._sha(subject_raw)
+    if linkage['subject_sha256'] != subject_digest:
+        c._fail('mixed_implementation', 'exact complete Root fact subject')
+    for name in ('Source_binary_proof', 'ABI_and_observer_proof', 'caller_census_proof'):
+        # Reference ownership is externally Root-authenticated, then immutable
+        # bytes/currentness are rechecked here; no accepted=True success flag.
+        raw = _mixed_read_ref(linkage[name], name)
+        evidence = c.oi._strict_json(raw, c._JSON)
+        c._keys(evidence, ('schema', 'subject_sha256', 'facts_sha256'), name)
+        if (evidence['schema'] != 'masy.Root.mixed_metadata_' + name + '.v1'
+                or evidence['subject_sha256'] != linkage['subject_sha256']
+                or evidence['facts_sha256'] != subject_digest):
+            c._fail('mixed_implementation', 'Root evidence must bind the exact fact domain')
+    census = record['Source_census']
+    c._keys(census, ('schema', 'fixed_rows', 'chain_call_quota',
+        'binding_check_quota', 'runtime_strict_calls_per_binding', 'runtime_plain_calls_per_binding'),
+        'complete Root-qualified constructor/caller census')
+    if (census['schema'] != 'masy.mixed_metadata_Source_census.v1'
+            or census['fixed_rows'] != [list(row) for row in _STATIC_CENSUS]):
+        c._fail('mixed_implementation', 'exact owning Source census required')
+    # These are explicit finite admission quotas, not evidence of required work
+    # or measured fit. A smaller caller quota never suppresses a validation:
+    # exhaustion refuses before the offending constructor/parser.
+    for name in ('chain_call_quota', 'binding_check_quota', 'runtime_strict_calls_per_binding',
+                 'runtime_plain_calls_per_binding'):
+        if type(census[name]) is not int or not 1 <= census[name] <= 1 << 20:
+            c._fail('mixed_implementation', 'positive Root-proved finite caller domain')
+
+
+def _mixed_cycle_charge(units, strict, plain):
+    p, integer = units['pointer'], units['integer']
+    strict_one = (units['function'] + units['tuple'] + 3 * p + 3 * units['cell']
+                  + units['limit_holder'] + 2 * integer + 4 * p)
+    plain_one = (units['function'] + units['tuple'] + 8 * p + 8 * units['cell']
+                 + units['set'] + 5 * integer + units['string'] + 4 * 4096 + 10 * p)
+    return strict * strict_one + plain * plain_one
+
+
+def _mixed_operation_charge(owner):
+    units = _mixed_units(owner._limits)
+    if owner._record['units'] != units:
+        c._fail('mixed_implementation', 'actual positive object/header ABI must match Root')
+    census = owner._record['Source_census']
+    rows = census['chain_call_quota'] * _MAX_CHAIN
+    # Every successful row's 3..5 strict/0..2 plain cycles is retained for the
+    # WHOLE operation, without collector or allocator-release credit.
+    cycles = _mixed_cycle_charge(units, 5 * rows, 2 * rows)
+    runtime_cycles = _mixed_cycle_charge(units,
+        census['binding_check_quota'] * census['runtime_strict_calls_per_binding'],
+        census['binding_check_quota'] * census['runtime_plain_calls_per_binding'])
+    bootstrap = _mixed_pre_entry_charge(owner._limits, owner._image)
+    header = (sys.getsizeof(owner) + len(owner.__slots__) * (units['pointer'] + units['integer'])
+              + 8 * (units['dict'] + units['list'] + units['tuple']))
+    if owner._record['schema'] == _MIXED_V3_SCHEMA:
+        return bootstrap + cycles + runtime_cycles + header + _mixed_v3_charge(owner)
+    if owner._record['schema'] == _MIXED_V2_SCHEMA:
+        return bootstrap + cycles + runtime_cycles + header + _mixed_v2_charge(owner)
+    return bootstrap + cycles + runtime_cycles + header
+
+
+def _mixed_entry(root, kind, *, request_kind=None):
+    owner = _MIXED_OPERATION_SLOT
+    if owner is None:
+        return None
+    if (type(owner) is not _MixedMetadataOperation or owner._key is not _MIXED_OWNER_KEY
+            or owner._phase != 'entered' or Path(root).absolute() != owner._root
+            or owner._entry_kind is not None
+            or (kind not in ('recover', 'operate', 'ack')
+                and not _mixed_v2_readonly_kind(owner, kind))):
+        c._fail('mixed_implementation', 'one genuine public operation in the owning context')
+    if kind == 'operate' and request_kind not in ('finish', 'checkpoint_water', 'checkpoint_wind'):
+        c._fail('mixed_implementation', 'typed original request before any forecast')
+    _mixed_process_check(owner)
+    owner._entry_kind, owner._request_kind = kind, request_kind
+    return owner
+
+
+def _mixed_context_check(root, header, limits, *, where):
+    owner = _MIXED_OPERATION_SLOT
+    if (type(owner) is not _MixedMetadataOperation or owner._key is not _MIXED_OWNER_KEY
+            or owner._phase != 'entered'
+            or (owner._entry_kind not in ('recover', 'operate', 'ack')
+                and not _mixed_v2_readonly_kind(owner, owner._entry_kind))
+            or owner._root != Path(root).absolute() or owner._limits is not limits):
+        c._fail('mixed_implementation', 'same unescaped operation PID/birth/thread/root')
+    _mixed_process_check(owner)
+    _header_fields(header, limits)
+    if (c.oi._json(owner._record) != owner._raw or owner._nonce != owner._record['nonce']
+            or owner._ordinal != owner._record['ordinal']
+            or owner._fixed != _mixed_operation_charge(owner)):
+        c._fail('mixed_implementation', 'unchanged Root facts/units/nonce/complete overhead')
+    if (not _combined(header) or c.oi._json(header['runtime_reference']) != owner._runtime_raw
+            or header['source_identity'] != owner._record['source_identity']
+            or header['environment_sha256'] != owner._record['environment_sha256']):
+        c._fail('mixed_implementation', 'same closed combined runtime/Source/environment')
+    if (not c.rw._same_compiled_image(owner._image, _mixed_scope_image())
+            or _mixed_selected_record() != owner._selected
+            or _mixed_implementation_files() != owner._files
+            or _mixed_observer_record() != owner._observer):
+        c._fail('mixed_implementation', 'Source/function/dispatch/compiled/observer currentness')
+    if owner._record['schema'] == _MIXED_V3_SCHEMA:
+        if not c.rw._same_compiled_image(owner._counts['typed_image'], _mixed_v3_external_image()):
+            c._fail('mixed_implementation', 'current v3 anchors/Source/provider/metadata image')
+        _mixed_v3_check_scope(owner)
+    if owner._record['schema'] == _MIXED_V2_SCHEMA:
+        if not c.rw._same_compiled_image(owner._counts['typed_image'], _mixed_v2_external_image()):
+            c._fail('mixed_implementation', 'current typed constructor/provider/observer image')
+    reference = dict(zip(('path', 'size', 'sha256'), owner._reference, strict=True))
+    if _mixed_read_ref(reference, 'Root implementation proof') != owner._raw:
+        c._fail('mixed_implementation', 'immutable Root evidence changed')
+    for name in ('Source_binary_proof', 'ABI_and_observer_proof', 'caller_census_proof'):
+        _mixed_read_ref(owner._record['linkage'][name], name)
+    # Full genuine C current runtime/environment guard remains at every actual
+    # reservation discount and before Native/private writer. The prepaid row
+    # serializers/ancestry calls also recheck files/functions/observer above.
+    if where in ('reservation', 'before_native', 'before_physical', 'writer'):
+        count = owner._counts.get('bindings', 0) + 1
+        if count > owner._record['Source_census']['binding_check_quota']:
+            c._fail('mixed_implementation', 'prepaid genuine binding-call quota before work')
+        owner._counts['bindings'] = count
+        source, environment = c._runtime_binding(header['runtime_reference'], limits)
+        if source != header['source_identity'] or environment != header['environment_sha256']:
+            c._fail('mixed_implementation', 'genuine current runtime binding changed')
+    if where == 'ancestry':
+        count = owner._counts.get('chains', 0) + 1
+        if count > owner._record['Source_census']['chain_call_quota']:
+            c._fail('mixed_implementation', 'prepaid chain-call quota before row parser')
+        owner._counts['chains'] = count
+    return owner
+
+
+def _mixed_projection_charge(owner, rows, raw):
+    units = owner._record['units']
+    p, integer = units['pointer'], units['integer']
+    # Four slots/key, three separately paid bytes payloads/headers, returned
+    # 3tuple, chain slot, seen/name entry and live child/parent refs. Head and
+    # generation DATA remain in their original I/control reservations.
+    row = (sys.getsizeof(object.__new__(_CompactChainRow)) + 4 * p
+        + 3 * (raw + units['bytes']) + units['tuple'] + 3 * p
+        + units['list'] + 2 * p + units['set'] + units['string']
+        + 4 * _PATH_CHARS + 8 * (p + integer))
+    return rows * row + units['list'] + units['set'] + 2 * rows * p
+
+
+def _mixed_serializer_charge(owner, raw):
+    units = owner._record['units']
+    return (4 * raw + 2 * units['string'] + 2 * units['bytes']
+            + units['list'] + 8 * units['pointer'])
+
+
+def _mixed_original_raw(handle, parser_extra):
+    reference = handle._header['originals']
+    relative = c.b._reference(reference, c.oi.SCHEMA)
+    path = handle._root / relative / 'manifest.json'
+    before = path.lstat()
+    if (not stat.S_ISREG(before.st_mode) or before.st_mode & 0o222
+            or not 1 <= before.st_size <= 4 << 20):
+        c._fail('mixed_implementation', 'actual bounded immutable Original metadata before parse')
+    # The full parser bank is admitted BEFORE read, unicode decode, full JSON,
+    # canonical seal copies or any prospective scalar extraction.
+    _reservation(handle._limits, handle._header['native_work_bytes'],
+        parser_extra + 3 * _parse_charge(before.st_size), combined=True)
+    raw = c._read(path, before.st_size, links=c._published_links(path.parent, path.name))
+    after = path.lstat()
+    if c.oi._stat_id(before) != c.oi._stat_id(after) or c._sha(raw) != reference['manifest_file_sha256']:
+        c._fail('mixed_implementation', 'Original metadata bytes/currentness changed')
+    return raw
+
+
+def _mixed_prospective(owner, handle, parser_extra):
+    head, head_raw = _head(handle)
+    if owner._ticket is not None and owner._ticket['parent_raw'] != head_raw:
+        c._fail('mixed_implementation', 'one unchanged selected parent during operation')
+    accepted = head['accepted_sequence']
+    future = min(len(handle._header['event_kinds']),
+                 accepted + (owner._entry_kind == 'operate'))
+    if owner._plan is None or owner._plan.accepted != future:
+        raw = _mixed_original_raw(handle, parser_extra)
+        plan = c.b._static_original_scalar_plan(raw, handle._header['originals'],
+            handle._header['source_identity'], handle._header['event_kinds'],
+            handle._limits.image, future)
+        owner._plan = plan  # immutable scalar-only result; raw/manifest never stored
+    if owner._ticket is None:
+        owner._ticket = {'parent_raw': head_raw, 'accepted': future,
+                         'image_path': None, 'writer_entered': False,
+                         'request_kind': owner._request_kind,
+                         'revision': None, 'attempt': None}
+    return head, owner._plan
+
+
+def _mixed_next_pause_sizes(future_peak, cold):
+    if type(future_peak) is not int or future_peak < 0 or type(cold) is not bool:
+        c._fail('mixed_implementation', 'typed original future-constructor bound')
+    coefficient = _parse_charge(1)
+    if future_peak % coefficient:
+        c._fail('mixed_implementation', 'exact original linear parser extent')
+    if cold and future_peak == 0:
+        c._fail('mixed_implementation', 'positive retained cold capsule extent required')
+    capsule = min(1 << 20, future_peak // coefficient) if cold else 1 << 20
+    # Newly current capsule AND the following constructor are distinct roles.
+    # Never clamp c+2933 to the 1MiB final wire cap: allocation may precede
+    # that old writer refusal. Preserve every old/orphan candidate maximum.
+    return (1 << 20, capsule,
+            max(future_peak, _parse_charge(capsule + _COMBINED_CAPSULE_GROWTH_BYTES)))
+
+
+def _mixed_account_charge(handle, old_existing, raw, generations, future_peak):
+    owner = _MIXED_OPERATION_SLOT
+    if type(owner) is not _MixedMetadataOperation or type(handle) is not c.DenseBoundaryStore:
+        c._fail('mixed_implementation', 'actual entered operation and genuine C handle required')
+    owner = _mixed_context_check(handle._root, handle._header, handle._limits,
+                                 where='reservation')
+    if owner._handle is None:
+        owner._handle = handle
+    elif owner._handle is not handle:
+        c._fail('mixed_implementation', 'same genuine C handle throughout one operation')
+    count = min(generations, _MAX_CHAIN)
+    full_old_B = count * _parse_charge(raw)
+    # All I/E/K/orphans stay exactly present. No new primitive replaces P.
+    base = old_existing - full_old_B
+    if base < 0:
+        c._fail('mixed_implementation', 'exact nonnegative old complete metadata partition')
+    current = (base + _parse_charge(raw) + _mixed_projection_charge(owner, count, raw)
+               + _mixed_serializer_charge(owner, raw))
+    fixed = owner._fixed
+    low = 3 * current + 6 * future_peak + fixed
+    head, plan = _mixed_prospective(owner, handle, low)
+    prospective = current
+    if owner._entry_kind == 'operate':
+        future_rows = min(count + 1, _MAX_CHAIN)
+        y = max(raw, plan.wire_upper)
+        # A Source-proved finish cannot return a published paused token. A
+        # checkpoint may genuinely finish early OR pause: pay BOTH alternatives
+        # by their maximum before transport, preserving all current holdings.
+        accepted = (base + _parse_charge(handle._limits.max_intent_bytes)
+            + _parse_charge(handle._limits.max_generation_bytes) + _parse_charge(y)
+            + _mixed_projection_charge(owner, future_rows, y)
+            + _mixed_serializer_charge(owner, y))
+        prospective = max(prospective, accepted)
+        if owner._ticket['request_kind'] != 'finish':
+            cold = _paused(head)
+            descriptor, new_capsule, next_peak = _mixed_next_pause_sizes(future_peak, cold)
+            # Descriptor generic1MiB remains an honest unsupported-profile
+            # boundary when a tighter Source-derived constructor law is absent.
+            # Never forecast from post-pause sizes or trim an actual Native plan.
+            paused = (base + _parse_charge(handle._limits.max_intent_bytes)
+                + _parse_charge(handle._limits.max_generation_bytes)
+                + _parse_charge(descriptor) + _parse_charge(new_capsule)
+                + _parse_charge(raw) + _mixed_projection_charge(owner, future_rows, raw)
+                + _mixed_serializer_charge(owner, raw))
+            prospective = max(prospective, paused)
+            future_peak = next_peak
+    # Fresh Root evidence/raw/current code/Source/observer fees, all cycles at
+    # the complete guarded quota, and independent runtime binding helper cycles.
+    answer = 3 * prospective + 6 * future_peak + fixed
+    # Keep explicit scalars only; never cache B, a traceback, artifact or owner.
+    owner._counts['image_raw_upper'] = max(owner._counts.get('image_raw_upper', 0), raw,
+                                         plan.wire_upper if owner._entry_kind == 'operate' else raw)
+    owner._counts['metadata_charge'] = max(owner._counts.get('metadata_charge', 0), answer)
+    return answer
+
+
+def _mixed_row_serializers_prepaid(root, header, limits, image):
+    owner = _mixed_context_check(root, header, limits, where='row_serializers')
+    c._keys(image, ('format', 'relative_path', 'manifest_file_sha256', 'manifest_sha256'),
+            'prepaid actual B image')
+    path = Path(root) / image['relative_path'] / 'manifest.json'
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= limits.image.max_metadata_bytes
+            or info.st_size > owner._counts.get('image_raw_upper', -1)):
+        c._fail('mixed_implementation', 'exact pre-reserved B raw size before new serializers')
+    if owner._counts.get('metadata_charge', 0) <= 0:
+        c._fail('mixed_implementation', 'complete current/future reservation must precede row')
+
+
+def _mixed_before_native(handle, request_intent):
+    if _MONITORED_RESTART_SLOT is not None:
+        owner = _monitored_check(handle._root, handle._limits, handle._header)
+        if not owner._seen or owner._kind != 'operate':
+            c._fail('monitored_restart', 'actual operating admission before Native/private writer')
+        inventory = _inventory(handle)
+        _monitored_reservation(handle, handle._header['native_work_bytes'],
+                              _metadata_stat_charge(handle, inventory))
+        return
+    if _MIXED_OPERATION_SLOT is None or not _combined(handle._header):
+        return
+    owner = _mixed_context_check(handle._root, handle._header, handle._limits,
+                                 where='before_native')
+    if owner._entry_kind != 'operate' or owner._ticket is None:
+        c._fail('mixed_implementation', 'actual operation forecast required before Native')
+    if (owner._record['schema'] == _MIXED_V3_SCHEMA
+            and handle._header['event_kinds'] != ['wind', 'rain', 'wind', 'rain']):
+        c._fail('mixed_implementation', 'canonical fixed four-event Original profile before Native')
+    if owner._ticket['request_kind'] != request_intent['kind']:
+        c._fail('mixed_implementation', 'same typed request outcome alternatives')
+    inventory = _inventory(handle)
+    if _mixed_v2_active() and inventory['temps']:
+        c._fail('mixed_implementation', 'v2 mutation refuses existing HEAD temporaries')
+    _reservation_for_handle(handle, handle._header['native_work_bytes'],
+                            _metadata_stat_charge(handle, inventory))
+
+
+def _mixed_before_physical(handle, runner):
+    if _MONITORED_RESTART_SLOT is not None:
+        owner = _monitored_check(handle._root, handle._limits, handle._header)
+        if not owner._seen or owner._kind != 'operate':
+            c._fail('monitored_restart', 'actual operating admission before Native/private writer')
+        inventory = _inventory(handle)
+        _monitored_reservation(handle, handle._header['native_work_bytes'],
+                              _metadata_stat_charge(handle, inventory))
+        return
+    if _MIXED_OPERATION_SLOT is None or not _combined(handle._header):
+        return
+    owner = _mixed_context_check(handle._root, handle._header, handle._limits,
+                                 where='before_physical')
+    if (owner._entry_kind != 'operate' or owner._plan is None
+            or type(runner) is not c.dr.DenseRunner
+            or runner._n_accepted != owner._plan.accepted or runner._next != owner._plan.accepted
+            or runner._limits.max_receipt_bytes != owner._plan.max_receipt_bytes):
+        c._fail('mixed_implementation', 'same actual accepted cursor/producer before Native SAVE')
+    inventory = _inventory(handle)
+    _reservation_for_handle(handle, handle._header['native_work_bytes'],
+                            _metadata_stat_charge(handle, inventory))
+
+
+def _mixed_writer_check(path, runner, root, originals, source, environment, limits,
+                        *, manifest=None, raw=None):
+    if (type(_MIXED_OPERATION_SLOT) is not _MixedMetadataOperation
+            or type(_MIXED_OPERATION_SLOT._handle) is not c.DenseBoundaryStore):
+        c._fail('mixed_implementation', 'actual attached operation before writer')
+    owner = _mixed_context_check(root, _MIXED_OPERATION_SLOT._handle._header,
+                                 _MIXED_OPERATION_SLOT._limits, where='writer')
+    handle = owner._handle
+    if (owner._entry_kind != 'operate' or owner._plan is None or owner._ticket is None
+            or limits is not handle._limits.image or originals != handle._header['originals']
+            or source != handle._header['source_identity'] or environment != handle._header['environment_sha256']):
+        c._fail('mixed_implementation', 'exact operation-bound private static writer ticket')
+    _mixed_before_physical(handle, runner)
+    if (owner._ticket['revision'] is None or owner._ticket['attempt'] is None):
+        c._fail('mixed_implementation', 'actual reserved C intent must precede private writer')
+    target = Path(path).absolute()
+    # A genuine existing C intent owns this one exclusive sibling B image.
+    expected = handle._root / 'generations' / ('g-' + str(owner._ticket['revision']).zfill(4)
+                                                + '-' + owner._ticket['attempt']) / 'image'
+    if target != expected:
+        c._fail('mixed_implementation', 'one exact reserved private image path')
+    previous = owner._ticket['image_path']
+    if previous is not None and previous != str(target):
+        c._fail('mixed_implementation', 'no writer ticket reuse on another image')
+    if manifest is not None:
+        if type(manifest) is not dict or manifest.get('schema') != c.b.SCHEMA:
+            c._fail('mixed_implementation', 'same closed static future constructor domain')
+        state, receipts, ledger = (manifest.get('state'), manifest.get('receipts'),
+                                   manifest.get('ledger'))
+        if type(state) is not dict or type(receipts) is not list or type(ledger) is not dict:
+            c._fail('mixed_implementation', 'same closed static future constructor domain')
+        entries = ledger.get('entries')
+        if (type(state.get('n_accepted')) is not int or type(state.get('next_index')) is not int
+                or state['n_accepted'] != owner._plan.accepted
+                or state['next_index'] != owner._plan.accepted
+                or len(receipts) != owner._plan.accepted
+                or type(entries) is not list or len(entries) != owner._plan.accepted
+                or any(type(entry) is not dict or entry.get('kind') != 'event' for entry in entries)):
+            c._fail('mixed_implementation', 'same closed static future constructor domain')
+    if raw is not None and (type(raw) is not bytes or len(raw) > owner._plan.wire_upper):
+        c._fail('mixed_implementation', 'actual writer exceeds its prepaid Source theorem')
+    # Only successfully validated writer facts become the owning ticket state.
+    owner._ticket['image_path'] = str(target)
+    owner._ticket['writer_entered'] = True
+
+
+def _mixed_assign_attempt(handle, directory, intent):
+    if _MIXED_OPERATION_SLOT is None or not _combined(handle._header):
+        return
+    owner = _mixed_context_check(handle._root, handle._header, handle._limits,
+                                 where='before_native')
+    if owner._ticket is None or owner._entry_kind != 'operate':
+        c._fail('mixed_implementation', 'reserved actual operation ticket required')
+    expected = f"g-{intent['revision']:04d}-{intent['attempt_id']}"
+    if directory != handle._root / 'generations' / expected:
+        c._fail('mixed_implementation', 'actual reserved C intent path required')
+    owner._ticket['revision'] = intent['revision']
+    owner._ticket['attempt'] = intent['attempt_id']
+
+
+# --- v2 typed/backing lane; ephemeral only, no persistent wire-format change ---
+_MIXED_V2_SCHEMA = 'masy.mixed_metadata_Root_implementation.v2'
+_MIXED_V2_TOP_FIELDS = ('schema', 'root', 'runtime_reference_sha256', 'source_identity',
+    'environment_sha256', 'process', 'nonce', 'ordinal', 'implementation_files',
+    'selected_ids', 'public_CPython_Source', 'linkage', 'Source_census', 'units',
+    'observer', 'typed_ownership')
+_MIXED_V2_DOMAIN = (['generations', 9], ['temps', 1], ['water', 4], ['revision', 8], ['rows', 9])
+_MIXED_V2_COEFFICIENTS = (('Gamma_NS', 7358), ('Gamma_Image', 1468), ('Gamma_Original', 7), ('Gamma_Heap', 12), ('Gamma_plain', 3774), ('Gamma_I', 265), ('Gamma_H', 2), ('Gamma_A', 3), ('Gamma_T', 29), ('Gamma_D', 146), ('Gamma_F', 192), ('Gamma_L', 2), ('Gamma_E', 9), ('Gamma_Observer', 1))
+_MIXED_V2_EXPRESSIONS = (('Gamma_NS', 'Fun_visit+Tuple_3+Cells_3+complete_three_field_namespace_holder+bounded_nodes_and_limit_scalars'), ('Gamma_Image', 'Fun_visit+Tuple_3+Cells_3+complete_BoundaryImageLimits_holder+bounded_nodes_and_limit_scalars'), ('Gamma_Original', 'Fun_visit+Tuple_3+Cells_3+complete_OriginalPackLimits_holder+bounded_nodes_and_limit_scalars'), ('Gamma_Heap', 'Fun_visit+Tuple_3+Cells_3+complete_fresh_ReferenceLimits_type_and_instance+bounded_nodes_and_limit_scalars'), ('Gamma_plain', 'Fun_visit+Tuple_8+Cells_8+Set_33+five_bounded_integer_owners+Text_4096+all_captured_scalar_reference_slots'), ('Gamma_I', 'Fun_role+Fun_walk+Tuple_5+Tuple_5+Cells_10+Set_9_names39+Set_1_names32+Set_4_names39+complete_captured_header+complete_captured_limits+bounded_count_used_scalars'), ('Gamma_H', 'Fun_count_states+Tuple_2+Cells_2+bounded_state_counter'), ('Gamma_A', 'Fun_array+Fun_replace+Tuple_2+Tuple_3+Cells_5+complete_Native_encoded_array_registry+complete_hash_cache+all_registry_Root_R_occurrences+complete_captured_native_namespace'), ('Gamma_T', 'Fun_mark+Fun_walk+Tuple_1+Tuple_11+Cells_12+four_counters+hash_owner+complete_schema_and_bounds_metadata+Set_33+Dict_1024_array_registry+Tuple_1024_return+all_registry_and_return_Root_R_occurrences'), ('Gamma_D', 'Fun_charge+Fun_text+Fun_visit+Tuple_4+Tuple_1+Tuple_7+Cells_12+complete_scalar_hash_module_control_owners'), ('Gamma_F', 'Fun_frame+Fun_visit+Tuple_1+Tuple_2+Cells_3+complete_hash_control_owner'), ('Gamma_L', 'Fun_decode+Tuple_9+Cells_9+complete_snapshot_and_terrain_anchor+complete_registry_used_names+complete_closed_archive_and_provider_residual+all_retained_Root_R_occurrences+bounded_decode_scalars'), ('Gamma_E', 'Fun_iterencode_list+Fun_iterencode_dict+Fun_iterencode+Fun_floatstr+Tuple_18+Tuple_21+Tuple_17+Cells_56+floatstr_defaults_Tuple_4+complete_markers_table_and_control_defaults+owned_indent_separator_text+all_captured_bound_default_owners'), ('Gamma_Observer', 'complete unchanged passive snapshot observer factory/template/array-copy/canonical/JSON/digest/returned-record/read/temporary/backing owners plus primary/close errors'), ('X_SchemaAdmission', 'complete v2 admission frame and all fixed 22 component-law records, 32 external owner rows, key/canonical/hash/control temporaries, two bounded3x8 cell and3x4 keyword-prepasses, missing/current Source refusals and ordinary errors'), ('X_ScalarPolynomial', 'complete polynomial/charge frames, 22 uint checks, 14 typed products, 8 independent X products, 22-term validation and key tuples, image/frame-charge traversals, current external-image constructors and bounded 128-bit scalar intermediates'), ('X_InsertCheck', 'complete active/owner/insert frames, genuine PID/thread/root/limits/key/phase checks, Path4096 owner, fixed role/domain tuple and prospective count/name/revision/refusal temporaries'), ('X_RowCheck', 'complete active/owner/row frames, genuine PID/thread/root/limits/key/phase checks, Path4096 owner, row integer and refusal temporaries'), ('X_EntryGate', 'complete prefix or readonly entry/owner frames including existing entry call, Path4096, header/head/read-only intent checks and all scalar/return/error reference slots'), ('X_OwnerRoster', 'complete new fixed schema/domain/22 expression/capacity/law/14-local/32-external/3-type image tables, owner counts entries and all owned names/code/default/global/provider/Source fields; no borrowed-pointer discount'), ('X_InventoryCapture', 'one additional role closure cell and tuple slot plus complete retained root Path and its bounded4096-character path/parts/metadata owners per inventory constructor, with no alias credit'), ('X_Error', 'complete independent new primary/reader-close/work-close exception and traceback/input graph families, including typed proof/source/image/owner descendants; no release or alias credit'))
+_MIXED_V2_EXTERNAL = (('masy.dense_original_inputs', '_strict_json'), ('masy.dense_original_inputs', '_json'), ('masy.dense_boundary_store', '_plain_metadata'), ('masy.dense_water_pause', '_runtime'), ('masy.dense_water_pause', '_bounds'), ('masy.dense_water_pause', '_scan'), ('masy.dense_active_checkpoint', '_native_projection'), ('masy.dense_active_checkpoint', '_header_admission'), ('masy.dense_checkpoint', '_budget'), ('maple.aeolian.scheduler.physical_checkpoint', '_fingerprint'), ('maple_syrup.checkpoint', 'load_checkpoint'), ('maple_syrup.checkpoint', '_terrain_anchor_admission'), ('json.encoder', '_make_iterencode'), ('json.encoder', 'JSONEncoder.iterencode'), ('copy', 'deepcopy'), ('copy', '_deepcopy_dict'), ('copy', '_deepcopy_list'), ('copy', '_deepcopy_tuple'), ('check_dense_active_process_store', 'selected'), ('check_dense_active_process_store', 'retained_child'), ('check_dense_active_process_store', 'accepted_snapshot'), ('check_dense_active_process_checkpoint', 'snapshot'), ('check_dense_water_pause', 'snapshot'), ('masy.dense_runner', '_canonical_input'), ('masy.dense_runner', '_canonical_json'), ('masy.dense_runner_checkpoint', '_cache_fingerprint'), ('masy.dense_runner_checkpoint', '_native_types'), ('masy.dense_runner', '_native'), ('masy.dense_runner', 'DenseRunner.report'), ('masy.dense_bed', 'DenseBed.identity_sha256'), ('masy.dense_bed', '_sha256'), ('maple_syrup.storm', 'initial_state'))
+_MIXED_V2_TYPES = (('masy.dense_original_inputs', 'OriginalPackLimits'), ('masy.dense_runner_checkpoint', 'BoundaryImageLimits'), ('maple_syrup.sediment_event', 'SedimentEventState'))
+_MIXED_V2_LOCAL_NAMES = ('_inventory_at', '_mixed_v2_active', '_mixed_v2_readonly_kind', '_mixed_v2_uint', '_mixed_v2_external_image', '_mixed_v2_owner_rows', '_mixed_v2_admit', '_mixed_v2_polynomial', '_mixed_v2_charge', '_mixed_v2_owner', '_mixed_v2_insert', '_mixed_v2_row_check', '_mixed_v2_prefix_charge', '_mixed_readonly_entry')
+_MIXED_V2_CENSUS_SHA256 = '66157ba2263974669b248d0df6b8e4535b11ce74e255025db8d43c42399805c8'
+
+
+def _mixed_v2_active():
+    if _mixed_v3_active():
+        return True
+    owner = _MIXED_OPERATION_SLOT
+    return (type(owner) is _MixedMetadataOperation and type(owner._record) is dict
+            and owner._record.get('schema') == _MIXED_V2_SCHEMA)
+
+
+def _mixed_v2_readonly_kind(owner, kind):
+    if type(owner._record) is dict and owner._record.get('schema') == _MIXED_V3_SCHEMA:
+        return type(kind) is str and kind in ('inspect_metadata', 'inspect_passive_snapshot')
+    return (type(owner._record) is dict and owner._record.get('schema') == _MIXED_V2_SCHEMA
+            and type(kind) is str and kind in ('inspect_metadata', 'inspect_passive_snapshot'))
+
+
+def _mixed_v2_uint(value):
+    if type(value) is not int or not 1 <= value or value.bit_length() > 64:
+        c._fail('mixed_implementation', 'positive plain-int complete typed ownership bound')
+    return value
+
+
+def _mixed_v2_external_image():
+    # Fixed exact loaded owners ONLY. Missing owners refuse; no import, provider
+    # probe, namespace traversal, function replacement or generated wrapper.
+    functions, modules = [], []
+    module = sys.modules[__name__]
+    for name in _MIXED_V2_LOCAL_NAMES:
+        value = globals().get(name)
+        image = c.rw._compiled_function_image(value)
+        if image is None:
+            c._fail('mixed_implementation', 'complete actual v2 local Source image')
+        functions.append(image)
+        modules.append(module)
+    for module_name, path in _MIXED_V2_EXTERNAL:
+        module = sys.modules.get(module_name)
+        if module is None:
+            c._fail('mixed_implementation', 'missing Root-qualified typed Source owner')
+        value = vars(module).get(path.split('.')[0])
+        for part in path.split('.')[1:]:
+            value = vars(value).get(part) if type(value) is type else None
+        image = c.rw._compiled_function_image(value)
+        if image is None:
+            c._fail('mixed_implementation', 'unsupported exact typed function/default/closure owner')
+        functions.append(image)
+        modules.append(module)
+    positions = []
+    for module_name, name in _MIXED_V2_TYPES:
+        module = sys.modules.get(module_name)
+        value = None if module is None else vars(module).get(name)
+        if type(value) is not type:
+            c._fail('mixed_implementation', 'missing exact loaded typed constructor class')
+        initializer = vars(value).get('__init__')
+        if type(initializer) is not c.rw.FunctionType:
+            c._fail('mixed_implementation', 'genuine generated Python constructor required')
+        closure, kw = initializer.__closure__, initializer.__kwdefaults__
+        if ((closure is not None and (type(closure) is not tuple or len(closure) > 8))
+                or (kw is not None and (type(kw) is not dict or len(kw) > 4))):
+            c._fail('mixed_implementation', 'bounded selected constructor controls')
+        positions.append(len(modules))
+        modules.extend((value, initializer, initializer.__code__, initializer.__defaults__, kw, closure))
+        if closure is not None:
+            for cell in closure:
+                try:
+                    contents = cell.cell_contents
+                except ValueError:
+                    c._fail('mixed_implementation', 'empty selected constructor cell')
+                modules.extend((cell, contents))
+        if kw is not None:
+            if any(type(key) is not str or len(key) > 128 for key in kw):
+                c._fail('mixed_implementation', 'bounded generated constructor keyword')
+            for key in sorted(kw):
+                modules.extend((key, kw[key]))
+    return (tuple(functions), tuple(modules),
+            (_MIXED_V2_EXTERNAL, _MIXED_V2_TYPES, _MIXED_V2_EXPRESSIONS,
+             tuple(positions), _MIXED_V2_LOCAL_NAMES, _MIXED_V2_DOMAIN,
+             _MIXED_V2_COEFFICIENTS, _MIXED_V2_CENSUS_SHA256,
+             _MIXED_V2_SCHEMA, _MIXED_V2_TOP_FIELDS))
+
+
+def _mixed_v2_owner_rows(image):
+    # Each occurrence has a real Source/compiled owner, hashed with the same
+    # existing finite stream bound. The genuine runtime guards remain separate.
+    rows = []
+    names = tuple((__name__, name) for name in _MIXED_V2_LOCAL_NAMES) + _MIXED_V2_EXTERNAL
+    for (module_name, path), function_image, module in zip(
+            names, image[0], image[1][:len(names)], strict=True):
+        source = vars(module).get('__file__')
+        if type(source) is not str:
+            c._fail('mixed_implementation', 'actual typed Source file owner required')
+        file_row = _mixed_file_record(source, 64 << 20)
+        rows.append([module_name, path, id(function_image[0]), id(function_image[1]), *file_row])
+    for index, (module_name, path) in enumerate(_MIXED_V2_TYPES):
+        offset = image[2][3][index]
+        cls, initializer, code = image[1][offset:offset + 3]
+        module = sys.modules.get(module_name)
+        source = None if module is None else vars(module).get('__file__')
+        if type(source) is not str:
+            c._fail('mixed_implementation', 'actual constructor Source file owner required')
+        file_row = _mixed_file_record(source, 64 << 20)
+        closure, kw = initializer.__closure__, initializer.__kwdefaults__
+        if ((closure is not None and (type(closure) is not tuple or len(closure) > 8))
+                or (kw is not None and (type(kw) is not dict or len(kw) > 4))):
+            c._fail('mixed_implementation', 'bounded current constructor controls')
+        cells = []
+        if closure is not None:
+            for cell in closure:
+                try:
+                    contents = cell.cell_contents
+                except ValueError:
+                    c._fail('mixed_implementation', 'empty current constructor cell')
+                cells.append([id(cell), id(contents)])
+        if kw is not None and any(type(key) is not str or len(key) > 128 for key in kw):
+            c._fail('mixed_implementation', 'bounded current constructor keyword')
+        rows.append([module_name, path, id(cls), id(initializer), id(code),
+            id(initializer.__defaults__), id(kw), id(closure),
+            cells,
+            [] if kw is None else [[key, id(kw[key])] for key in sorted(kw)], *file_row])
+    return rows
+
+
+def _mixed_v2_admit(record, limits, local_image):
+    # Original linkage already binds the complete canonical v2 subject. Shape,
+    # integers and matching hashes NEVER issue the selected ABI/root/caller facts.
+    typed = record['typed_ownership']
+    c._keys(typed, ('schema', 'Source_domain', 'Source_census_sha256',
+        'component_bounds', 'component_evidence'), 'complete typed ownership')
+    if (typed['schema'] != 'masy.mixed_metadata_typed_ownership.v2'
+            or typed['Source_domain'] != dict(_MIXED_V2_DOMAIN)
+            or typed['Source_census_sha256'] != _MIXED_V2_CENSUS_SHA256):
+        c._fail('mixed_implementation', 'exact v2 Source domain and complete census')
+    domain = typed['Source_domain']
+    c._keys(domain, tuple(name for name, _value in _MIXED_V2_DOMAIN), 'typed Source eligibility')
+    for name, value in _MIXED_V2_DOMAIN:
+        if type(domain[name]) is not int or domain[name] != value:
+            c._fail('mixed_implementation', 'plain-int fixed Source eligibility')
+    census = record['Source_census']
+    for name, value in (('chain_call_quota', 162), ('binding_check_quota', 111),
+                        ('runtime_strict_calls_per_binding', 35),
+                        ('runtime_plain_calls_per_binding', 8)):
+        if type(census[name]) is not int or census[name] != value:
+            c._fail('mixed_implementation', 'exact Source-owned v2 complete caller quotas')
+    names = tuple(name for name, _expression in _MIXED_V2_EXPRESSIONS)
+    c._keys(typed['component_bounds'], names, 'all typed and actual new-control bounds')
+    evidence = typed['component_evidence']
+    c._keys(evidence, ('schema', 'owners', 'laws'), 'typed component evidence')
+    if evidence['schema'] != 'masy.Root.mixed_metadata_component_evidence.v2':
+        c._fail('mixed_implementation', 'independently Root-issued component evidence')
+    c._keys(evidence['laws'], names, 'complete component producer laws')
+    for name, expression in _MIXED_V2_EXPRESSIONS:
+        _mixed_v2_uint(typed['component_bounds'][name])
+        law = evidence['laws'][name]
+        c._keys(law, ('expression_sha256', 'producer_law_sha256'), name)
+        if law['expression_sha256'] != c._sha(expression.encode('utf-8')):
+            c._fail('mixed_implementation', 'exact typed/backing/observer/new-code expression')
+        c._digest(law['producer_law_sha256'], 'Root-owned complete pretransport producer law')
+    # Prepay all new typed, backing, observer and setup owners BEFORE creating
+    # external images/hashing their Source rows. Root must independently have
+    # issued their complete ABI/producer/caller laws; shape is not issuance.
+    _reservation(limits, 0,
+        _mixed_pre_entry_charge(limits, local_image)
+        + _mixed_v2_polynomial(typed['component_bounds']), combined=True)
+    image = _mixed_v2_external_image()
+    if evidence['owners'] != _mixed_v2_owner_rows(image):
+        c._fail('mixed_implementation', 'exact current typed/observer function and Source owners')
+    return image
+
+
+def _mixed_v2_polynomial(bounds):
+    # Pure scalar arithmetic for Source-authenticated complete component facts.
+    # The 14 families are disjoint ADDITIONS; the old25-row bank is never spent.
+    c._keys(bounds, tuple(name for name, _expression in _MIXED_V2_EXPRESSIONS),
+            'complete typed polynomial')
+    for name, _expression in _MIXED_V2_EXPRESSIONS:
+        _mixed_v2_uint(bounds[name])
+    typed = sum(count * bounds[name] for name, count in _MIXED_V2_COEFFICIENTS)
+    extra = (3 * _parse_charge(_MIXED_PROOF_BYTES)
+        + bounds['X_SchemaAdmission'] + 1732 * bounds['X_ScalarPolynomial']
+        + 3975 * bounds['X_InsertCheck'] + 1620 * bounds['X_RowCheck']
+        + 2 * bounds['X_EntryGate'] + 265 * bounds['X_InventoryCapture']
+        + 3 * bounds['X_OwnerRoster']
+        + 3 * bounds['X_Error'])
+    return typed + extra
+
+
+def _mixed_v2_charge(owner):
+    # Complete actual new/current image and frame trees are additional, even
+    # though every old bootstrap/image/frame fee remains in the old bank.
+    image = owner._counts['typed_image']
+    images = 6 * (c.rw._compiled_image_charge(owner._image)
+                   + c.rw._compiled_image_charge(image))
+    functions = (tuple(row[0] for row in owner._image[0] + image[0])
+                 + tuple(image[1][offset + 1] for offset in image[2][3]))
+    frames = 6 * c.rw._compiled_frame_charge(functions)
+    return _mixed_v2_polynomial(owner._record['typed_ownership']['component_bounds']) + images + frames
+
+
+def _mixed_v2_owner(root, limits):
+    owner = _MIXED_OPERATION_SLOT
+    if (not _mixed_v2_active() or owner._key is not _MIXED_OWNER_KEY
+            or owner._phase != 'entered' or owner._root != Path(root).absolute()
+            or owner._limits is not limits or 'typed_image' not in owner._counts
+            or owner._entry_kind not in ('recover', 'operate', 'ack',
+                                        'inspect_metadata', 'inspect_passive_snapshot')
+            or os.getpid() != owner._pid or threading.get_ident() != owner._thread):
+        c._fail('mixed_implementation', 'same prepaid v2 owner/root/limits/PID/thread')
+    return owner
+
+
+def _mixed_v2_insert(root, limits, kind, values, name):
+    _mixed_v2_owner(root, limits)
+    if type(kind) is not str or type(values) is not set or type(name) is not str:
+        c._fail('mixed_implementation', 'exact inventory name/set before insertion')
+    if kind in ('generations', 'water'):
+        match = c._GEN.fullmatch(name)
+        if match is None or int(match[1]) > 8:
+            c._fail('mixed_implementation', 'v2 revision0..8 before name retention')
+        maximum = 9 if kind == 'generations' else 4
+    elif kind == 'temps':
+        if c._NONCE.fullmatch(name) is None:
+            c._fail('mixed_implementation', 'v2 exact HEAD nonce before retention')
+        maximum = 1
+    else:
+        c._fail('mixed_implementation', 'fixed v2 inventory role')
+    if len(values) + (name not in values) > maximum:
+        c._fail('mixed_implementation', 'v2 fresh9/1/4 domain before set insertion')
+
+
+def _mixed_v2_row_check(root, limits, rows):
+    _mixed_v2_owner(root, limits)
+    if type(rows) is not int or not 0 <= rows < 9:
+        c._fail('mixed_implementation', 'v2 nine rows before next compact row validator')
+
+
+def _mixed_v2_prefix_charge(root, limits):
+    # Caller invokes this AFTER original BoundaryStoreLimits.__post_init__ and
+    # before _open/header-None inventory. Equality alone is never ownership.
+    owner = _mixed_v2_owner(root, limits)
+    if owner._entry_kind != 'recover':
+        c._fail('mixed_implementation', 'validated identical-limits recovery prefix only')
+    return owner._fixed
+
+
+def _mixed_readonly_entry(handle, kind):
+    """Consume one v2 entry; original exact oracle executes while slot stays live.
+
+    No callback/operator/path/data is accepted. Independently Root-qualified
+    caller Source selects the unchanged metadata oracle or passive snapshot.
+    This helper supplies no actual LOAD result, snapshot or transport authority.
+    """
+    if (type(handle) is not c.DenseBoundaryStore or not _mixed_v2_active()
+            or type(kind) is not str or kind not in ('inspect_metadata', 'inspect_passive_snapshot')
+            or handle._entered is not False or handle._closed is not False
+            or handle._failed_owner is not None or type(handle._state) is not c._State
+            or handle._state.phase != 'idle' or not _combined(handle._header)):
+        c._fail('mixed_implementation', 'genuine idle v2 readonly handle/intent required')
+    _mixed_entry(handle._root, kind)
+    _mixed_v2_owner(handle._root, handle._limits)
+    # Includes complete original current+prospective reservations BEFORE query,
+    # plus current files, Source, runtime, environment, inventory and temporaries.
+    handle._stable()
+    if kind == 'inspect_passive_snapshot':
+        head, _raw = handle._head()
+        if (head['kind'] != 'event_accepted' or type(head['revision']) is not int
+                or head['revision'] != 8 or type(head['accepted_sequence']) is not int
+                or head['accepted_sequence'] != 4 or _paused(head)):
+            c._fail('mixed_implementation', 'final accepted R2F boundary before passive LOAD')
+    return None
+
+
+# Explicit versioned ownership boundary. No v1/v2 fact is reinterpreted.
+_MIXED_V3_SCHEMA = 'masy.mixed_metadata_Root_implementation.v3'
+_MIXED_V3_TYPED = 'masy.mixed_metadata_typed_ownership.v3'
+_MIXED_V3_EVIDENCE = 'masy.Root.mixed_metadata_component_evidence.v3'
+_MIXED_V3_BOUNDARY = 'masy.Root.mixed_implementation_boundary.v3'
+_MIXED_V3_ANCHOR_SOURCE = 'b4d5699abeddcb259b4ef74d763ee8240fb28cb4df131973e2a99f66f5a43271'
+_MIXED_V3_ANCHORS = (('numpy', '<module>', 'native_namespace'), ('maple.aeolian.cohorts.dispatch', 'mobile_state_is_genuinely_empty', 'native_namespace'), ('maple.aeolian.cohorts.dispatch', 'mobile_mass_by_class_kg', 'native_namespace'), ('maple.aeolian.scheduler.accounting', 'accounting_step_durations_s', 'native_namespace'), ('maple.aeolian.scheduler.block', 'reservoir_arithmetic_scale_kg', 'native_namespace'), ('maple.aeolian.scheduler.state', 'SchedulerPhysicsConfig', 'native_namespace'), ('maple.aeolian.scheduler.finalization', 'finalize_wind_event', 'native_namespace'), ('maple.aeolian.scheduler.finalization', 'WindEventFinalizationResult', 'native_namespace'), ('maple.aeolian.scheduler.record', '_EPS_S', 'native_namespace'), ('maple.core.parameters.wind_forcing', 'WindBlock', 'native_namespace'), ('maple.core.parameters.wind_forcing', 'resolve_wind_forcing_record', 'native_namespace'), ('maple.core.types.cohort', 'MobileCohortState', 'native_namespace'), ('maple.core.types.topographic_commit', 'committed_elevation_m', 'native_namespace'), ('maple.surface.voxels._numerics', 'summation_error_bound_kg', 'native_namespace'), ('maple_syrup.complete_event', 'CompletionPolicy', 'native_namespace'), ('maple_syrup.complete_event', 'DryHandoff', 'native_namespace'), ('maple_syrup.complete_event', 'EventProgress', 'native_namespace'), ('maple_syrup.complete_event', 'IncompleteEventError', 'native_namespace'), ('maple_syrup.rainfall', 'RainfallField', 'native_namespace'), ('maple_syrup.rainfall', 'RainfallProvenance', 'native_namespace'), ('maple_syrup.rainfall', 'RainfallSchedule', 'native_namespace'), ('maple_syrup.sediment_bed', 'BedContext', 'native_namespace'), ('maple_syrup.sediment_bed', 'BedState', 'native_namespace'), ('maple_syrup.sediment_bed', 'TerrainReference', 'native_namespace'), ('maple_syrup.sediment_bed', 'bed_inventory', 'native_namespace'), ('maple_syrup.sediment_bed', 'commit_bed', 'native_namespace'), ('maple_syrup.sediment_bed', 'routing_graph_from_elevation', 'native_namespace'), ('maple_syrup.sediment_event', 'SedimentEventControl', 'native_namespace'), ('maple_syrup.sediment_event', 'initial_event_state', 'native_namespace'), ('maple_syrup.sediment_event', 'sediment_hydrograph_columns', 'native_namespace'), ('maple_syrup.sediment_physics', 'physics_grid_from_graph', 'native_namespace'), ('maple_syrup.sediment_transport', 'transport_network', 'native_namespace'), ('maple_syrup.storm', 'HYDROGRAPH_COLUMNS', 'native_namespace'), ('maple_syrup.storm', 'initial_state', 'native_namespace'), ('maple_syrup.rainfall', 'RainfallProvenance', 'scanner_schema'), ('maple_syrup.rainfall', 'RainfallSchedule', 'scanner_schema'), ('maple_syrup.complete_event', 'CompletionPolicy', 'scanner_schema'), ('maple_syrup.complete_event', 'QuietProgress', 'scanner_schema'), ('maple_syrup.complete_event', 'EventProgress', 'scanner_schema'), ('maple_syrup.sediment_event', 'SedimentEventControl', 'scanner_schema'), ('maple_syrup.sediment_event', 'SedimentEventState', 'scanner_schema'), ('maple_syrup.sediment_event', 'SedimentEventResult', 'scanner_schema'), ('maple_syrup.storm', 'StormControl', 'scanner_schema'), ('maple_syrup.storm', 'StormState', 'scanner_schema'), ('maple_syrup.sediment_bed', 'BedState', 'scanner_schema'), ('maple_syrup.sediment_bed', 'TerrainReference', 'scanner_schema'), ('maple_syrup.routing', 'RoutingGraph', 'scanner_schema'), ('maple_syrup.sediment_transport', 'TransportNetwork', 'scanner_schema'), ('maple_syrup.sediment_physics', 'PhysicsGrid', 'scanner_schema'), ('maple.core.types.voxel', 'VoxelColumnState', 'scanner_schema'), ('maple.core.types.active_layer', 'ActiveLayerState', 'scanner_schema'), ('maple.core.types.sediment_availability', 'SedimentAvailabilityState', 'scanner_schema'), ('maple.core.types.sediment_ledger', 'SedimentLedgerState', 'scanner_schema'), ('maple.core.types.topographic_commit', 'CommittedTopographyState', 'scanner_schema'), ('maple.core.types.water', 'WaterState', 'scanner_schema'), ('maple_syrup.complete_event', 'CompletionPolicy', 'codec_registry'), ('maple_syrup.complete_event', 'DryHandoff', 'codec_registry'), ('maple_syrup.complete_event', 'EventProgress', 'codec_registry'), ('maple_syrup.complete_event', 'QuietProgress', 'codec_registry'), ('maple_syrup.sediment_event', 'SedimentEventControl', 'codec_registry'), ('maple_syrup.sediment_event', 'SedimentEventResult', 'codec_registry'), ('maple_syrup.storm', 'StormControl', 'codec_registry'), ('maple_syrup.storm', 'StormState', 'codec_registry'), ('maple_syrup.sediment_bed', 'TerrainReference', 'codec_registry'), ('maple.core.types.sediment_ledger', 'SedimentLedgerState', 'codec_registry'), ('maple.core.types.sediment_ledger', 'CompactSedimentLedgerState', 'codec_registry'), ('maple.core.types.topographic_commit', 'CommittedTopographyState', 'codec_registry'), ('maple.core.types.water', 'WaterState', 'codec_registry'), ('builtins', 'ValueError', 'encoder_controls'), ('builtins', 'dict', 'encoder_controls'), ('builtins', 'float', 'encoder_controls'), ('builtins', 'id', 'encoder_controls'), ('builtins', 'int', 'encoder_controls'), ('builtins', 'isinstance', 'encoder_controls'), ('builtins', 'list', 'encoder_controls'), ('builtins', 'str', 'encoder_controls'), ('builtins', 'tuple', 'encoder_controls'), ('builtins', 'int.__repr__', 'encoder_controls'), ('builtins', 'float.__repr__', 'encoder_controls'), ('json.encoder', 'JSONEncoder.default', 'encoder_controls'), ('json.encoder', 'encode_basestring_ascii', 'encoder_controls'))
+_MIXED_V3_EXPRESSIONS = (('Gamma_A', '2*Fn(a_native_projection,0,0)+Tu(2)+Tu(3)+5*h_cell+WetProjectionRegistry+ProjectionCache+NativeNamespace+WetBodyTemporary'), ('Gamma_D', '3*Fn(a_budget,2,2)+Tu(4)+Tu(1)+Tu(7)+12*h_cell+4*I(64)+2*h_bool+h_obj+VisitTemp(24,a_budget,4096)'), ('Gamma_E', '4*Fn(max_fixed_function_AST,4,4)+Tu(18)+Tu(21)+Tu(17)+56*h_cell+Tu(4)+Se(33)+33*I(64)+Di(33)+33*h_obj+Ob(10)+10*(U(128)+h_bool+h_none)+3*U(4096)+3*h_obj+VisitTemp(32,max_fixed_function_AST,4096)+2*h_float+h_bool+Ref(13)+3*33*h_generator'), ('Gamma_F', '2*Fn(a_fingerprint,0,0)+Tu(1)+Tu(2)+3*h_cell+h_hash+VisitTemp(32,a_fingerprint,4096)+B(8)+U(64)'), ('Gamma_H', 'Fn(a_header_admission,0,0)+Tu(2)+2*h_cell+I(64)+VisitTemp(32,a_header_admission,1024)'), ('Gamma_Heap', 'Fn(a_strict_json,0,0)+Tu(3)+3*h_cell+HeapHolder+I(64)+VisitTemp(24,a_strict_json,4096)'), ('Gamma_I', '2*Fn(a_inventory_at,0,0)+2*Tu(5)+10*h_cell+Se(9)+9*U(39)+Se(1)+U(32)+Se(4)+4*U(39)+CapturedHeader+Limits+2*I(64)+VisitTemp(4,a_inventory_at,path_chars)+Di(4096)+4096*(U(128)+Tu(10)+10*I(256))'), ('Gamma_Image', 'Fn(a_strict_json,0,0)+Tu(3)+3*h_cell+ImageHolder+I(64)+VisitTemp(24,a_strict_json,4096)'), ('Gamma_L', 'Fn(aload_checkpoint,0,0)+Tu(9)+9*h_cell+ReferenceNPZDecode+VisitTemp(32,aload_checkpoint,1024)+NativeControlTree'), ('Gamma_NS', 'Fn(a_strict_json,0,0)+Tu(3)+3*h_cell+NamespaceHolder+I(64)+VisitTemp(24,a_strict_json,4096)'), ('Gamma_Observer', 'ObserverBody'), ('Gamma_Original', 'Fn(a_strict_json,0,0)+Tu(3)+3*h_cell+OriginalHolder+I(64)+VisitTemp(24,a_strict_json,4096)'), ('Gamma_T', '2*Fn(a_scan,0,0)+Tu(1)+Tu(11)+12*h_cell+4*I(64)+h_hash+Schemas+Record(7,256,64)+Se(33)+33*I(64)+WetRegistry+Tu(scan_arrays)+scan_arrays*Ar(4,R_wet)+VisitTemp(32,a_scan,8192)+B(4*1024)+Li(256)+256*U(128)'), ('Gamma_plain', 'Fn(a_plain_metadata,0,0)+Tu(8)+8*h_cell+Se(33)+33*I(64)+5*I(64)+U(4096)+8*p+VisitTemp(24,a_plain_metadata,4096)'), ('X_EntryGate', 'Fr(a_mixed_v2_prefix_charge)+Fr(a_mixed_readonly_entry)+SmallOwnerCheck+Tu(2)+2*U(32)+Record(15,32768,256)+Limits+3*h_obj'), ('X_Error', 'h_exception+Tu(3)+U(path_chars)+13*h_traceback+NewFrameRoster+ErrorInputs+Li(49)+49*Tu(8)+GenericNPYHeaderError+CanonicalGuardError+CanonicalPrewriteHeader+CanonicalRosterCheck+canonical_prewrite_rows*CanonicalProducerRow+V3NewError'), ('X_InsertCheck', 'Fr(a_mixed_v2_insert)+SmallOwnerCheck+Tu(3)+3*U(16)+Ob(1)+U(39)+I(64)+3*I(64)+Se(9)'), ('X_InventoryCapture', 'h_cell+Tu(6)+Path(path_chars)'), ('X_OwnerRoster', 'OwnRosterTables'), ('X_RowCheck', 'Fr(a_mixed_v2_row_check)+SmallOwnerCheck+I(64)+U(128)'), ('X_ScalarPolynomial', 'Fr(a_mixed_v2_polynomial)+22*Fr(a_mixed_v2_uint)+Tu(22)+Se(22)+22*U(128)+14*I(128)+8*I(128)+24*I(128)+4*h_generator+4*h_iter+ImageConstructor+2*3*(8*(h_cell+h_obj)+4*(U(128)+h_obj))'), ('X_SchemaAdmission', 'Fr(a_mixed_v2_admit)+Record(16,proof_raw,4096)+Record(5,128,64)+Record(5,128,64)+Record(22,22*64,64)+Record(4,128,64)+22*Record(2,128,64)+OwnerRows+ImageConstructor+2*3*(8*(h_cell+h_obj)+4*(U(128)+h_obj))+49*Stream(source_stream_chunk)+UnitConstructor+3*h_iter+Li(22)+Tu(22)+Se(22)+22*(U(128)+I(64))+implementation_reserve_bytes+ParsedAnchorRows+Record(new_boundary_fields,6*128,64)+NPYProviderHeaderBank+CanonicalContextSetup+npy_guard_calls*CanonicalGuardCall+canonical_archive_checks*CanonicalRosterCheck+canonical_original_count_checks*CanonicalOriginalCountCheck+canonical_context_checks*CanonicalContextCheck+CanonicalPrewriteBank+CanonicalReferenceFunctionImage+V3NewCompleteSchema'))
+
+_MIXED_V3_CENSUS_SHA256 = 'e503cca27a53e8662f36f5d8c3caf76578c5b5f9b2698660ff5a48952ddcda41'
+
+
+def _mixed_v3_active():
+    owner = _MIXED_OPERATION_SLOT
+    return (type(owner) is _MixedMetadataOperation and type(owner._record) is dict
+            and owner._record.get('schema') == _MIXED_V3_SCHEMA)
+
+
+def _mixed_v3_native():
+    module = sys.modules.get('maple.aeolian.scheduler.physical_checkpoint')
+    active = sys.modules.get('masy.dense_active_checkpoint')
+    provider = sys.modules.get('numpy.lib._format_impl')
+    if (module is None or active is None or provider is None
+            or c.oi is not sys.modules.get('masy.dense_original_inputs')):
+        c._fail('mixed_implementation', 'declare actual canonical owners/provider before v3 admission')
+    return module, active, provider
+
+
+def _mixed_v3_anchor_rows():
+    # Exact finite named owners; never traverse a namespace/library graph or
+    # import/probe a missing provider. Every occurrence/reference stays positive.
+    rows, held = [], []
+    for module_name, symbol, group in _MIXED_V3_ANCHORS:
+        module = sys.modules.get(module_name)
+        if module is None:
+            c._fail('mixed_implementation', 'missing selected v3 implementation anchor')
+        value = module
+        if symbol != '<module>':
+            for part in symbol.split('.'):
+                if type(value) is type or value is module:
+                    value = vars(value).get(part)
+                else:
+                    c._fail('mixed_implementation', 'fixed class/module anchor path')
+        if value is None:
+            c._fail('mixed_implementation', 'missing fixed implementation endpoint')
+        if type(value) is c.rw.FunctionType:
+            code, namespace = id(value.__code__), id(value.__globals__)
+        else:
+            # Explicit Source endpoints are classes/modules/C operators or
+            # immutable Source constants; no arbitrary payload can use zero.
+            if (type(value) not in (type, type(sys), type(len), type(int.__repr__), float, tuple)
+                    or (type(value) in (float, tuple) and group != 'native_namespace')):
+                c._fail('mixed_implementation', 'unsupported exact anchor endpoint type')
+            code = namespace = 0
+        if type(value) is tuple:
+            # The only tuple endpoint is this exact immutable Source literal.
+            # Do not recurse through or exempt an arbitrary tuple/model graph.
+            if (module_name != 'maple_syrup.storm' or symbol != 'HYDROGRAPH_COLUMNS'
+                    or len(value) != len(_MIXED_V3_HYDROGRAPH_COLUMNS)
+                    or any(type(item) is not str for item in value)
+                    or value != _MIXED_V3_HYDROGRAPH_COLUMNS):
+                c._fail('mixed_implementation', 'exact primitive Source tuple anchor')
+        rows.append([module_name, symbol, id(value), id(type(value)), code, namespace])
+        held.extend((module, value))
+    return rows, tuple(held)
+
+
+def _mixed_v3_boundary(boundary):
+    c._keys(boundary, ('schema', 'anchor_roster_source_sha256', 'bindings',
+        'implementation_reserve_bytes', 'source_mode', 'metadata_model_ownership'), 'v3 boundary')
+    if (boundary['schema'] != _MIXED_V3_BOUNDARY
+            or boundary['anchor_roster_source_sha256'] != _MIXED_V3_ANCHOR_SOURCE
+            or boundary['source_mode'] != 'quiescent_owned_runtime'
+            or boundary['metadata_model_ownership'] != 'full_owned_occurrences'):
+        c._fail('mixed_implementation', 'explicit selected implementation/full model ownership boundary')
+    _mixed_v2_uint(boundary['implementation_reserve_bytes'])
+    rows = boundary['bindings']
+    if type(rows) is not list or len(rows) != 81:
+        c._fail('mixed_implementation', 'exact81 actual selected anchor occurrences')
+    for row, (module, symbol, _group) in zip(rows, _MIXED_V3_ANCHORS, strict=True):
+        if (type(row) is not list or len(row) != 6 or row[:2] != [module, symbol]
+                or any(type(x) is not int or not 0 <= x < 1 << 64 for x in row[2:])
+                or row[2] == 0 or row[3] == 0):
+            c._fail('mixed_implementation', 'closed exact anchor names/plain identities')
+
+
+def _mixed_v3_function_owners():
+    native, active, provider = _mixed_v3_native()
+    pairs = []
+    for name in _MIXED_V3_LOCAL_NAMES:
+        pairs.append((sys.modules[__name__], name, globals().get(name)))
+    for name in _MIXED_V3_NATIVE_NAMES:
+        pairs.append((native, name, vars(native).get(name)))
+    for name in ('_canonical_original_prewrite', '_canonical_original_manifest'):
+        pairs.append((c.oi, name, vars(c.oi).get(name)))
+    for name in ('_canonical_register_wet', '_canonical_write_layout'):
+        pairs.append((active, name, vars(active).get(name)))
+    for cls_name, names in _MIXED_V3_NATIVE_METHODS:
+        cls = vars(native).get(cls_name)
+        if type(cls) is not type:
+            c._fail('mixed_implementation', 'actual canonical scope/sink type')
+        for name in names:
+            pairs.append((native, cls_name + '.' + name, vars(cls).get(name)))
+    # Actual serializers/provider formatter methods are anchors with their full
+    # current code/default/globals image; their bodies still execute once.
+    snapshot = sys.modules.get('maple.io.outputs.snapshot')
+    for module, names in ((provider, ('_write_array_header', 'header_data_from_array_1_0')),
+                          (snapshot, ('save_state_snapshot', 'load_state_snapshot'))):
+        if module is None:
+            c._fail('mixed_implementation', 'missing actual declared canonical producer')
+        for name in names:
+            pairs.append((module, name, vars(module).get(name)))
+    checkpoint = sys.modules.get('maple_syrup.checkpoint')
+    if checkpoint is None:
+        c._fail('mixed_implementation', 'declare actual genuine P1 metadata validator')
+    for name in ('_child_layout', '_child_uint', '_write_limits'):
+        pairs.append((checkpoint, name, vars(checkpoint).get(name)))
+    return pairs
+
+
+def _mixed_v3_external_image():
+    legacy = _mixed_v2_external_image()
+    images, operators = list(legacy[0]), list(legacy[1])
+    for module, name, value in _mixed_v3_function_owners():
+        image = c.rw._compiled_function_image(value)
+        if image is None:
+            c._fail('mixed_implementation', 'complete current v3 function/default/closure Source image')
+        images.append(image)
+        operators.extend((module, value))
+    anchors, held = _mixed_v3_anchor_rows()
+    operators.extend(held)
+    native, active, provider = _mixed_v3_native()
+    operators.extend((native, active, provider, native._CanonicalMetadataScope,
+                      native._CanonicalHeaderSink, native._CANONICAL_SCOPE_KEY))
+    return (tuple(images), tuple(operators), (legacy[2], _MIXED_V3_ANCHORS,
+        tuple(tuple(row) for row in anchors), _MIXED_V3_EXPRESSIONS,
+        _MIXED_V3_CENSUS_SHA256, _MIXED_V3_SCHEMA, _MIXED_V3_TYPED,
+        _MIXED_V3_EVIDENCE, _MIXED_V3_BOUNDARY, native._CANONICAL_ARCHIVE_ROWS,
+        _MIXED_V3_LOCAL_NAMES, _MIXED_V3_NATIVE_NAMES, _MIXED_V3_NATIVE_METHODS,
+        _MIXED_V3_HYDROGRAPH_COLUMNS))
+
+
+def _mixed_v3_owner_rows():
+    rows = _mixed_v2_owner_rows(_mixed_v2_external_image())
+    for module, name, value in _mixed_v3_function_owners():
+        image = c.rw._compiled_function_image(value)
+        source = vars(module).get('__file__')
+        if image is None or type(source) is not str:
+            c._fail('mixed_implementation', 'actual finite v3 Source/compiled owner')
+        rows.append([vars(module)['__name__'], name, id(value), id(value.__code__),
+                     *_mixed_file_record(source, 64 << 20)])
+    return rows
+
+
+def _mixed_v3_admit(record, limits, local_image):
+    typed = record['typed_ownership']
+    c._keys(typed, ('schema', 'Source_domain', 'Source_census_sha256',
+        'component_bounds', 'component_evidence'), 'complete v3 typed ownership')
+    if (typed['schema'] != _MIXED_V3_TYPED or typed['Source_domain'] != dict(_MIXED_V2_DOMAIN)
+            or typed['Source_census_sha256'] != _MIXED_V3_CENSUS_SHA256):
+        c._fail('mixed_implementation', 'exact v3 Source domain/census')
+    domain = typed['Source_domain']
+    c._keys(domain, tuple(name for name, _value in _MIXED_V2_DOMAIN), 'v3 fixed domain')
+    for name, value in _MIXED_V2_DOMAIN:
+        if type(domain[name]) is not int or domain[name] != value:
+            c._fail('mixed_implementation', 'plain fixed v3 caller domain')
+    for name, value in (('chain_call_quota', 162), ('binding_check_quota', 111),
+                        ('runtime_strict_calls_per_binding', 35), ('runtime_plain_calls_per_binding', 8)):
+        if type(record['Source_census'][name]) is not int or record['Source_census'][name] != value:
+            c._fail('mixed_implementation', 'unchanged complete Source caller quotas')
+    names = tuple(name for name, expression in _MIXED_V3_EXPRESSIONS)
+    bounds = typed['component_bounds']
+    c._keys(bounds, names, 'all22 independently issued v3 component bounds')
+    evidence = typed['component_evidence']
+    c._keys(evidence, ('schema', 'owners', 'laws', 'implementation_boundary'), 'v3 evidence')
+    if evidence['schema'] != _MIXED_V3_EVIDENCE:
+        c._fail('mixed_implementation', 'new v3 evidence required, never v2 relabelling')
+    _mixed_v3_boundary(evidence['implementation_boundary'])
+    c._keys(evidence['laws'], names, 'all22 exact v3 producer laws')
+    for name, expression in _MIXED_V3_EXPRESSIONS:
+        _mixed_v2_uint(bounds[name])
+        law = evidence['laws'][name]
+        c._keys(law, ('expression_sha256', 'producer_law_sha256'), name)
+        if law['expression_sha256'] != c._sha(expression.encode('utf-8')):
+            c._fail('mixed_implementation', 'exact full v3 ownership expression')
+        c._digest(law['producer_law_sha256'], 'genuine Root pretransport producer/ABI law')
+    if bounds['X_SchemaAdmission'] < evidence['implementation_boundary']['implementation_reserve_bytes']:
+        c._fail('mixed_implementation', 'positive implementation reserve inside original6GiB admission')
+    # Reserve ALL new models/control/provider/parser/Unicode/error owners before
+    # generating/hash-reading their actual images. Shape/ids are not issuance.
+    _reservation(limits, 0, _mixed_pre_entry_charge(limits, local_image)
+                 + _mixed_v3_polynomial(bounds), combined=True)
+    image = _mixed_v3_external_image()
+    if (evidence['owners'] != _mixed_v3_owner_rows()
+            or evidence['implementation_boundary']['bindings'] != [list(row) for row in image[2][2]]):
+        c._fail('mixed_implementation', 'actual current v3 owners/implementation anchors differ')
+    return image
+
+
+def _mixed_v3_polynomial(bounds):
+    c._keys(bounds, tuple(name for name, expression in _MIXED_V3_EXPRESSIONS), 'complete v3 polynomial')
+    for name, expression in _MIXED_V3_EXPRESSIONS:
+        _mixed_v2_uint(bounds[name])
+    typed = sum(count * bounds[name] for name, count in _MIXED_V2_COEFFICIENTS)
+    extra = (3 * _parse_charge(_MIXED_PROOF_BYTES) + bounds['X_SchemaAdmission']
+        + 1732 * bounds['X_ScalarPolynomial'] + 3975 * bounds['X_InsertCheck']
+        + 1620 * bounds['X_RowCheck'] + 2 * bounds['X_EntryGate']
+        + 265 * bounds['X_InventoryCapture'] + 3 * bounds['X_OwnerRoster']
+        + 3 * bounds['X_Error'])
+    return typed + extra
+
+
+def _mixed_v3_charge(owner):
+    image = owner._counts['typed_image']
+    functions = tuple(row[0] for row in owner._image[0] + image[0])
+    functions += tuple(image[1][offset + 1] for offset in image[2][0][3])
+    # All old image/frame banks remain; every new image/header/owned allocation
+    # is additional, with complete model backings per occurrence in Root laws.
+    return (_mixed_v3_polynomial(owner._record['typed_ownership']['component_bounds'])
+        + 6 * (c.rw._compiled_image_charge(owner._image) + c.rw._compiled_image_charge(image))
+        + 6 * c.rw._compiled_frame_charge(functions))
+
+
+def _mixed_v3_install(owner):
+    native, active, provider = _mixed_v3_native()
+    scope = native._canonical_new_scope(owner, c.oi, active)
+    owner._counts['canonical_scope'] = scope
+    # No fallible operation follows a partial publication except ordinary exact
+    # dictionary assignments; the caller's finally still clears every slot.
+    vars(native)['_CANONICAL_METADATA_SCOPE'] = scope
+    vars(c.oi)['_CANONICAL_METADATA_SCOPE'] = scope
+    vars(active)['_CANONICAL_METADATA_SCOPE'] = scope
+
+
+def _mixed_v3_check_scope(owner):
+    scope = owner._counts.get('canonical_scope')
+    native, active, provider = _mixed_v3_native()
+    if type(scope) is not native._CanonicalMetadataScope:
+        c._fail('mixed_implementation', 'actual current v3 metadata scope')
+    scope.check()
+
+
+def _mixed_v3_exit_check(owner, error_type):
+    # Existing primary Native/cancellation failure keeps precedence. Cleanup is
+    # primitive exact-slot clearing, never a validator or failed transport retry.
+    if error_type is None:
+        _mixed_v3_check_scope(owner)
+
+
+def _mixed_v3_clear_slot(module, scope):
+    namespace = vars(module)
+    if namespace.get('_CANONICAL_METADATA_SCOPE') is scope:
+        namespace['_CANONICAL_METADATA_SCOPE'] = None
+        return True
+    return False
+
+
+def _mixed_v3_drop(owner):
+    scope = owner._counts.get('canonical_scope')
+    if scope is None:
+        return
+    native, original, active = scope._native, scope._oi, scope._active
+    foreign = False
+    try:
+        foreign = not _mixed_v3_clear_slot(native, scope) or foreign
+    finally:
+        try:
+            foreign = not _mixed_v3_clear_slot(original, scope) or foreign
+        finally:
+            try:
+                foreign = not _mixed_v3_clear_slot(active, scope) or foreign
+            finally:
+                try:
+                    scope.close()
+                finally:
+                    owner._counts.pop('canonical_scope', None)
+    if foreign:
+        c._fail('mixed_implementation', 'canonical cleanup preserves a foreign mirror slot')
+
+
+    # All changing Native current+next roots/producer metadata still require
+    # their genuine independently issued component producer laws. This scalar
+    # eligibility is not an invented predictor of future model values or fit.
+
+
+_MIXED_V3_LOCAL_NAMES = ('_mixed_v3_active', '_mixed_v3_native', '_mixed_v3_anchor_rows', '_mixed_v3_boundary', '_mixed_v3_function_owners', '_mixed_v3_external_image', '_mixed_v3_owner_rows', '_mixed_v3_admit', '_mixed_v3_polynomial', '_mixed_v3_charge', '_mixed_v3_install', '_mixed_v3_check_scope', '_mixed_v3_exit_check', '_mixed_v3_clear_slot', '_mixed_v3_drop')
+_MIXED_V3_NATIVE_NAMES = ('_canonical_metadata', '_canonical_peek', '_canonical_member_roster', '_canonical_writer_member', '_canonical_new_scope', '_canonical_register_physical', '_canonical_prewrite_physical')
+_MIXED_V3_NATIVE_METHODS = (('_CanonicalHeaderSink', ('__init__', 'write')), ('_CanonicalMetadataScope', ('__init__', 'check', 'take', 'register', 'audit', 'read_prefix', 'original', 'prewrite', 'close', '__reduce_ex__')))
+
+_MIXED_V3_HYDROGRAPH_COLUMNS = ('t_s', 'cumulative_rain_m3', 'cumulative_intake_m3', 'cumulative_saturation_return_m3', 'cumulative_drainage_m3', 'cumulative_export_m3', 'surface_storage_m3', 'soil_storage_m3', 'outlet_discharge_m3_s', 'max_depth_m', 'max_velocity_m_s', 'accepted_steps', 'rejected_attempts', 'min_accepted_dt_s', 'max_routing_cell_balance_residual_m', 'max_constitutive_residual_m')
+
+
+# Explicit LIMITED monitored-functional restart lane. Every old admission above
+# remains its own complete Source reservation; this lane makes no heap theorem.
+_MONITORED_RESTART_SLOT = None
+_MONITORED_RESTART_PROGRESS = None
+_MONITORED_RESTART_POISONED = object()
+_MONITORED_RESTART_KEY = object()
+_MONITORED_RESULT_KEY = object()
+_MONITORED_RESTART_SCHEMA = 'masy.monitored_functional_CPU_restart_worker.v1'
+_MONITORED_RESTART_PROFILE = 'monitored_functional_dense_CPU_combined_restart_v1'
+_MONITORED_RETAINED_SOURCE_ENVELOPE = 33323811
+_MONITORED_KINDS = ('recover', 'operate', 'ack', 'inspect_metadata', 'inspect_passive_snapshot', 'close')
+_MONITORED_UNKNOWN_BANKS = ('retained_parsed_generation_image_export_graphs',
+    'three_current_receivers', 'six_prospective_receivers',
+    'heap_interpretation_of_2933B_capsule_growth')
+
+
+class _MonitoredRestartReservation:
+    """Non-mapping partial Source bank; deliberately has no memory_bytes alias."""
+    __slots__ = ('known_positive_base_bytes', 'logical_limit_bytes', 'disk_bytes', 'entries',
+        'native_event_work_bytes', 'max_original_decodes', 'max_native_loads',
+        'max_saved_source_graph_builds', 'wind_codec_increment_bytes',
+        'codec_metadata_parse_bytes', 'known_control_metadata_bytes',
+        'legacy_metadata_expression_bytes', 'applied_process_limits')
+
+    def __init__(self, key, values):
+        if key is not _MONITORED_RESULT_KEY or type(values) is not tuple or len(values) != len(self.__slots__):
+            c._fail('monitored_restart', 'only the owning typed reservation constructor')
+        if (any(type(value) is not int or not 0 <= value < 1 << 128 for value in values[:-1])
+                or type(values[-1]) is not tuple or len(values[-1]) != 5
+                or any(type(row) is not tuple or len(row) != 3 or type(row[0]) is not str
+                       or any(type(value) is not int for value in row[1:]) for row in values[-1])):
+            c._fail('monitored_restart', 'plain scalar fields and immutable applied-limit tuples')
+        for name, value in zip(self.__slots__, values, strict=True):
+            object.__setattr__(self, name, value)
+
+    def __setattr__(self, name, value):
+        raise TypeError('immutable monitored partial reservation')
+
+    def __delattr__(self, name):
+        raise TypeError('immutable monitored partial reservation')
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError('use the explicit limited report, never a legacy reservation')
+
+    def as_record(self):
+        return {'schema': 'masy.monitored_functional_CPU_restart_reservation.v1',
+            'profile': _MONITORED_RESTART_PROFILE,
+            **{name: getattr(self, name) for name in self.__slots__},
+            'complete_generic_allocator_upper_bytes': None,
+            'unavailable_generic_banks': {name: None for name in _MONITORED_UNKNOWN_BANKS},
+            'capsule_growth_wire_bytes': _COMBINED_CAPSULE_GROWTH_BYTES,
+            'scope': 'known positive Source bank and actual process controls; no complete heap/ABI/fit assertion'}
+
+
+def _monitored_schedule(role):
+    """Exact owning Source call order, not an issuer-selected operation list."""
+    pauses=('W1P','R1P','W2P','R2P')
+    operations=('W1P','W1F','R1P','R1F','W2P','W2F','R2P','R2F')
+    start=[('recover','recovery'),('inspect_metadata','recovered-boundary')]
+    end=[('close','close')]
+    retained=lambda n:[('inspect_metadata','retained-'+r)for r in pauses[:n]]
+    if role in pauses:
+        n=pauses.index(role)
+        return start+retained(n)+[('inspect_metadata','accepted-before'),('operate','pause'),
+            ('inspect_metadata','selected-pause'),('inspect_metadata','retained-new-pause')]+retained(n+1)+[
+            ('inspect_metadata','head-after-pause'),('inspect_metadata','accepted-after')]+end
+    if role in ('W1F','R1F','W2F','R2F'):
+        n=('W1F','R1F','W2F','R2F').index(role)+1
+        return start+retained(n)+[('operate','finish'),('inspect_metadata','selected-finish')]+retained(n)+[
+            ('inspect_metadata','head-after-finish')]+end
+    if role=='C':return start+[('inspect_passive_snapshot','complete-passive-snapshot')]+retained(4)+[
+        ('inspect_metadata','final-head')]+end
+    if role=='D':return start+[('inspect_metadata','D-start-head')]+[
+        pair for r in operations for pair in (('ack','D-ack-'+r),('operate','D-duplicate-'+r),
+            ('ack','D-conflict-'+r))]+retained(4)+[('inspect_metadata','D-end-head')]+end
+    c._fail('monitored_restart', 'no monitored scope for baseline/genesis/unknown role')
+
+
+def _monitored_process():
+    pid, thread = os.getpid(), threading.get_ident()
+    if type(pid) is not int or not 0 < pid < 1 << 63 or type(thread) is not int or not 0 < thread < 1 << 64:
+        c._fail('monitored_restart', 'bounded actual PID and Python operation thread')
+    with open(f'/proc/{pid}/stat', 'r', encoding='ascii') as stream:
+        raw = stream.read(4097)
+    with open('/proc/sys/kernel/random/boot_id', 'r', encoding='ascii') as stream:
+        boot = stream.read(65).strip()
+    if len(raw) > 4096 or len(boot) != 36:
+        c._fail('monitored_restart', 'bounded actual process birth records')
+    start = raw.rsplit(')', 1)[1].split()[19]
+    if not start.isascii() or not start.isdecimal() or len(start) > 20:
+        c._fail('monitored_restart', 'actual decimal process start identity')
+    return {'pid': pid, 'thread': thread, 'start': start, 'boot': boot,
+            'executable': sys.executable, 'prefix': sys.prefix}
+
+
+def _monitored_applied_limits():
+    import resource
+    names = (('AS', resource.RLIMIT_AS), ('CPU', resource.RLIMIT_CPU),
+             ('FSIZE', resource.RLIMIT_FSIZE), ('NOFILE', resource.RLIMIT_NOFILE),
+             ('CORE', resource.RLIMIT_CORE))
+    observed = tuple((name, *resource.getrlimit(kind)) for name, kind in names)
+    expected = (('AS', 8 << 30, 8 << 30), ('CPU', 120, 135),
+                ('FSIZE', 8 << 20, 8 << 20), ('NOFILE', 1024, 1024), ('CORE', 0, 0))
+    if observed != expected or any(type(x) is not int for row in observed for x in row[1:]):
+        c._fail('monitored_restart', 'actual original applied AS/CPU/file/FD/core limits required')
+    return observed
+
+
+def _monitored_no_other_owner():
+    if _MIXED_OPERATION_SLOT is not None:
+        c._fail('monitored_restart', 'old mixed and monitored owners cannot coexist')
+    native, active, _provider = _mixed_v3_native()
+    if any(vars(module).get('_CANONICAL_METADATA_SCOPE') is not None for module in (native, c.oi, active)):
+        c._fail('monitored_restart', 'all three canonical mirrors must remain absent')
+
+
+def _monitored_selected_record():
+    import resource
+    from types import BuiltinFunctionType
+    if type(resource.getrlimit) is not BuiltinFunctionType or resource.getrlimit.__module__ != 'resource':
+        c._fail('monitored_restart', 'genuine selected applied-limit primitive')
+    functions = (resource.getrlimit, os.getpid, threading.get_ident, open, Path.open, Path.lstat)
+    return _mixed_selected_record() + tuple((id(value), id(getattr(value, '__code__', None)),
+        getattr(value, '__module__', ''), getattr(value, '__qualname__', '')) for value in functions)
+
+
+def _monitored_implementation_files():
+    import resource
+    return _mixed_implementation_files() + tuple(_mixed_file_record(module.__file__, 64 << 20)
+        for module in (resource, c.runtime))
+
+
+def _monitored_image(storage128=False):
+    from masy import dense_wind_pause as wind, dense_water_pause as water, dense_active_wind_checkpoint as codec
+    functions = (_monitored_process, _monitored_applied_limits, _monitored_no_other_owner,
+        _monitored_selected_record, _monitored_implementation_files, _monitored_schedule, _monitored_subject,
+        _monitored_clear, _monitored_set_progress, wind._runtime,
+        wind._reviewed_source_pair, wind._reviewed_current_source_pair,
+        water._runtime, codec._admit,
+        _monitored_image, _monitored_control_charge, _monitored_known_bank,
+        _monitored_forecast, _monitored_per_role_outcomes, _monitored_per_role_plan,
+        _monitored_per_role_forecast, _monitored_per_role_control_charge, _monitored_check, _monitored_entry,
+        _monitored_reservation, _monitored_runtime_cache_charge, _monitored_wind_codec, _monitored_record,
+        monitored_restart_operation, monitored_restart_readonly_entry, _monitored_runtime_matches,
+        _MonitoredRestartReservation.__init__, _MonitoredRestartReservation.__setattr__,
+        _MonitoredRestartReservation.__delattr__, _MonitoredRestartReservation.__reduce_ex__,
+        _MonitoredRestartReservation.as_record, _MonitoredRestartOperation.__init__,
+        _MonitoredRestartOperation.__enter__, _MonitoredRestartOperation.__exit__,
+        _MonitoredRestartOperation.__reduce_ex__, _mixed_scope_image,
+        _reservation_for_handle, _admit, _create_active_store, report,
+        _header_fields, _combined, _declare_for, _mixed_v3_native, _mixed_observer_record,
+        _reserve_attempt, _seal_generation, _parent_light, c._abandon_active_issued)
+    if storage128:
+        functions += (_monitored_storage128_header_charge, _monitored_storage128_headers,
+            _monitored_storage128_control_charge, _monitored_storage128_forecast)
+    images = tuple(c.rw._compiled_function_image(function) for function in functions)
+    if any(image is None for image in images):
+        c._fail('monitored_restart', 'unsupported exact Source/function/default/closure image')
+    legacy = _mixed_scope_image()
+    return (legacy[0] + images, legacy[1] + (c, c.rw, _MONITORED_RESTART_KEY, _MONITORED_RESULT_KEY, _MONITORED_RESTART_POISONED),
+        (legacy[2], _MONITORED_RESTART_SCHEMA, _MONITORED_RESTART_PROFILE, _MONITORED_KINDS,
+         _MONITORED_UNKNOWN_BANKS, _COMBINED_CAPSULE_GROWTH_BYTES, _MONITORED_RETAINED_SOURCE_ENVELOPE,
+         _MONITORED_PER_ROLE_PROFILE, _MONITORED_PER_ROLE_SCHEMA, _MONITORED_PER_ROLE_WIRE,
+         _MONITORED_PER_ROLE_PLAN, _MONITORED_PER_ROLE_COUNTS, _MONITORED_PER_ROLE_STAGES,
+         _MONITORED_PER_ROLE_RESOURCES,
+         wind._NATIVE_TABLE, wind._SYRUP_TABLE,
+         wind._REVIEWED_NATIVE_TABLE_726, wind._REVIEWED_SYRUP_TABLE_726,
+         wind._REVIEWED_CURRENT_NATIVE_TABLE_937, wind._REVIEWED_CURRENT_SYRUP_TABLE_937,
+         water._NATIVE_CENSUS_MAPLE, water._NATIVE_CENSUS_SYRUP,
+         *(((_MONITORED_STORAGE128_PROFILE, _MONITORED_STORAGE128_SCHEMA, _MONITORED_STORAGE128_WIRE,
+           _MONITORED_STORAGE128_LIMITS, _MONITORED_STORAGE128_COPY_BYTES, _MONITORED_STORAGE128_ERROR_BYTES,
+           _MONITORED_STORAGE128_STATIC, _MONITORED_STORAGE128_COPIES, _MONITORED_STORAGE128_OUTPUTS,
+           _MONITORED_STORAGE128_HEADERS),) if storage128 else ())))
+
+
+def _monitored_control_charge(owner, image):
+    # Positive known Source/control/parser/image/frame owners, never a complete
+    # allocator bank and never sampled RSS/free-heap credit.
+    functions = tuple(row[0] for row in image[0])
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    scalar = sys.getsizeof((1 << 128) - 1)
+    # One active context plus prior/current result holders, both progress tuples,
+    # reference/subject/limits/selection keyword roles and ordinary error records.
+    holders = (sys.getsizeof(object.__new__(_MonitoredRestartOperation))
+        + 2 * sys.getsizeof(object.__new__(_MonitoredRestartReservation))
+        + (len(_MonitoredRestartOperation.__slots__) + 2 * len(_MonitoredRestartReservation.__slots__)) * (pointer + scalar)
+        + 2 * (sys.getsizeof((None,) * 3) + sys.getsizeof((None,) * 2) + sys.getsizeof((None,) * 7))
+        + 4 * sys.getsizeof(dict.fromkeys(('path', 'size', 'sha256', 'ordinal', 'nonce', 'kind', 'purpose')))
+        + sum(pointer + scalar for _name in ('process_pid', 'process_thread', 'row_ordinal',
+            'progress_ordinal', 'ref_size', 'source_file_size', 'root_device', 'root_inode',
+            'root_mode', 'read_size', 'read_count', 'forecast_case', 'forecast_file',
+            'forecast_control', 'forecast_records', 'forecast_files'))
+        + sum(sys.getsizeof('') + 4 * _PATH_CHARS for _role in
+              ('root_spelling', 'reference_spelling', 'runtime_spelling', 'error_spelling')))
+    return (2 * _parse_charge(_MIXED_PROOF_BYTES)
+            + 2 * _parse_charge(len(owner._runtime_raw)) + holders
+            + 2 * c.rw._compiled_image_charge(image)
+            + c.rw._compiled_frame_charge(functions)
+            + (_monitored_per_role_control_charge()
+               if owner._record.get('profile') in (_MONITORED_PER_ROLE_PROFILE, _MONITORED_STORAGE128_PROFILE) else 0)
+            + (_monitored_storage128_control_charge(owner._selected, owner._files)
+               if owner._record.get('profile') == _MONITORED_STORAGE128_PROFILE else 0))
+
+
+def _monitored_known_bank(limits, work_bytes, wind_bytes, metadata_bytes, control_bytes):
+    original = c._reservation(limits, work_bytes)
+    for value in (wind_bytes, metadata_bytes, control_bytes):
+        c._integer(value, 1 << 128, 'known monitored Source term')
+    codec = 2 * _parse_charge(metadata_bytes)
+    known = (original['memory_bytes'] + 2 * work_bytes + _context_charge(limits)
+             + _parse_charge(limits.image.max_metadata_bytes) + (2 << 20)
+             + wind_bytes + codec + control_bytes)
+    if known > limits.max_memory_bytes:
+        c._fail('memory_cap', 'unchanged known positive C+twoW+context+futureB+codec+control Source bank')
+    return original, known, codec
+
+
+# Fixed Source-owned role/encoding plan for a separately issued limited lane.
+_MONITORED_PER_ROLE_PROFILE = 'monitored_functional_dense_CPU_combined_restart_per_role_v1'
+_MONITORED_PER_ROLE_SCHEMA = 'masy.monitored_functional_CPU_restart_worker.per_role.v1'
+_MONITORED_PER_ROLE_WIRE = 'masy.Root.monitored_restart_per_role_wire_forecast.v1'
+_MONITORED_PER_ROLE_PLAN = 'masy.monitored_restart_per_role_plan.v1'
+_MONITORED_PER_ROLE_COUNTS = (('W1P', 10), ('W1F', 8), ('R1P', 12), ('R1F', 10),
+    ('W2P', 14), ('W2F', 12), ('R2P', 16), ('R2F', 14), ('C', 9), ('D', 33))
+_MONITORED_PER_ROLE_STAGES = ('B', 'G') + tuple(role for role, _count in _MONITORED_PER_ROLE_COUNTS)
+_MONITORED_PER_ROLE_RESOURCES = ('worker_fact_upper_bytes', 'outcome_upper_bytes', 'linkage_upper_bytes',
+    'input_copy_upper_bytes', 'error_partial_upper_bytes', 'stage_control_upper_bytes',
+    'original_manifest_upper_bytes', 'current_stage_upper_bytes', 'forecast_upper_bytes',
+    'index_upper_bytes', 'source_upper_bytes', 'constructor_frame_upper_bytes',
+    'error_graph_upper_bytes', 'original_positive_request_upper_bytes', 'file_occurrences_upper',
+    'parse_coefficient', 'linkage_files_upper', 'input_copy_files_upper', 'error_partial_files_upper',
+    'stage_control_files_upper', 'largest_new_file_upper_bytes', 'original_file_occurrences_upper')
+
+
+def _monitored_per_role_outcomes(role):
+    # Encoding arithmetic only: fixed32-hex width, never an actual nonce/fact.
+    schedule = _monitored_schedule(role)
+    result = [None] * len(schedule)
+    for ordinal, (kind, purpose) in enumerate(schedule, 1):
+        conflict = role == 'D' and kind == 'ack' and purpose.startswith('D-conflict-')
+        result[ordinal - 1] = len(c.oi._json({'ordinal': ordinal, 'nonce': '0' * 32,
+            'status': 'expected_request_conflict' if conflict else 'returned'}))
+    return tuple(result)
+
+
+def _monitored_per_role_plan(record):
+    c._keys(record, ('schema', 'roles', 'current_stages', 'reservation_embeddings'), 'closed per-role Source plan')
+    if record['schema'] != _MONITORED_PER_ROLE_PLAN:
+        c._fail('monitored_restart', 'distinct Source per-role plan schema')
+    roles = tuple(role for role, _count in _MONITORED_PER_ROLE_COUNTS)
+    c._keys(record['roles'], roles, 'all ten Source roles, never a caller roster')
+    c._keys(record['current_stages'], _MONITORED_PER_ROLE_STAGES, 'all twelve current-stage bounds')
+    c._keys(record['reservation_embeddings'], _MONITORED_PER_ROLE_STAGES, 'all twelve retained reservation embeddings')
+    sums = [0, 0, 0]
+    maxima = [0, 0, 0]
+    homes = {}
+    outcome_sum = operations = outcome_max = 0
+    for role, count in _MONITORED_PER_ROLE_COUNTS:
+        row = record['roles'][role]
+        c._keys(row, ('fact', 'index', 'wire'), 'full fact/index/wire role row')
+        for number, (name, maximum) in enumerate((('fact', 128 << 10), ('index', 64 << 10), ('wire', 128 << 10))):
+            c._integer(row[name], maximum, 'plain positive per-role ' + name)
+            if row[name] == 0:
+                c._fail('monitored_restart', 'missing positive role width')
+            sums[number] += row[name]
+            maxima[number] = max(maxima[number], row[name])
+        outcomes = _monitored_per_role_outcomes(role)
+        if len(outcomes) != count:
+            c._fail('monitored_restart', 'unchanged Source operation cadence')
+        outcome_sum += sum(outcomes)
+        outcome_max = max(outcome_max, max(outcomes))
+        operations += count
+        homes[role] = row['fact'] + row['wire'] + sum(outcomes)
+    for name in ('current_stages', 'reservation_embeddings'):
+        for value in record[name].values():
+            c._integer(value, (32 << 20) if name == 'current_stages' else (32 << 10), name)
+            if value == 0:
+                c._fail('monitored_restart', 'positive complete current-stage/embedding bound')
+    if maxima[2] > _MIXED_PROOF_BYTES or _MIXED_PROOF_BYTES != 128 << 10:
+        c._fail('monitored_restart', 'actual raw/encoder proof cap matches charged Source bank')
+    if operations != 138 or outcome_sum != 10673:
+        c._fail('monitored_restart', 'exact independent Source outcome encoding/cadence')
+    return {'fact_sum': sums[0], 'index_sum': sums[1], 'wire_sum': sums[2],
+        'fact_max': maxima[0], 'index_max': maxima[1], 'wire_max': maxima[2],
+        'stage_max': max(record['current_stages'].values()),
+        'other_stage_sum': sum(record['reservation_embeddings'].values()),
+        'outcome_sum': outcome_sum, 'outcome_max': outcome_max, 'homes': homes}
+
+
+def _monitored_per_role_forecast(record, owner, forecast_raw):
+    c._keys(record, ('schema', 'profile', 'root', 'root_identity', 'store_file_sha256',
+        'runtime_reference_sha256', 'role', 'context_count', 'case_stage_upper_bytes',
+        'largest_file_upper_bytes', 'retained_union_upper_bytes', 'new_control_upper_bytes',
+        'new_control_files_upper', 'new_record_upper_bytes', 'worker_fact_count',
+        'operation_outcome_upper_bytes', 'linkage_upper_bytes', 'input_copy_upper_bytes',
+        'error_partial_upper_bytes', 'stage_control_upper_bytes', 'original_manifest_upper_bytes',
+        'current_stage_upper_bytes', 'per_role_plan', 'resources'), 'closed per-role Native wire')
+    if (record['schema'] != _MONITORED_PER_ROLE_WIRE or record['profile'] != _MONITORED_PER_ROLE_PROFILE
+            or owner._record.get('schema') != _MONITORED_PER_ROLE_SCHEMA
+            or owner._record.get('profile') != _MONITORED_PER_ROLE_PROFILE
+            or type(owner._record['role']) is not str
+            or owner._record['role'] not in tuple(role for role, _count in _MONITORED_PER_ROLE_COUNTS)
+            or record['root'] != str(owner._root) or record['role'] != owner._record['role']
+            or record['root_identity'] != owner._record['root_identity']
+            or record['store_file_sha256'] != owner._record['store_file_sha256']
+            or record['runtime_reference_sha256'] != c._sha(owner._runtime_raw)
+            or record['context_count'] != 138 or record['worker_fact_count'] != 10):
+        c._fail('monitored_restart', 'same independently authenticated per-role owner/subject')
+    totals = _monitored_per_role_plan(record['per_role_plan'])
+    r = record['resources']
+    c._keys(r, _MONITORED_PER_ROLE_RESOURCES, 'all original positive known resource fields')
+    counts = ('file_occurrences_upper', 'linkage_files_upper', 'input_copy_files_upper',
+        'error_partial_files_upper', 'stage_control_files_upper', 'original_file_occurrences_upper')
+    for name, value in r.items():
+        c._integer(value, 4096 if name in counts else 6 << 30, name)
+        if value == 0:
+            c._fail('monitored_restart', 'all existing known positive owners remain')
+    if (r['worker_fact_upper_bytes'] != totals['fact_max'] or r['index_upper_bytes'] != totals['index_max']
+            or r['forecast_upper_bytes'] != totals['wire_max'] or r['outcome_upper_bytes'] != totals['outcome_max']
+            or r['current_stage_upper_bytes'] != totals['stage_max']
+            or r['stage_control_upper_bytes'] != totals['index_sum'] + totals['wire_sum'] + totals['other_stage_sum']
+            or r['file_occurrences_upper'] + r['original_file_occurrences_upper'] > 4096
+            or r['stage_control_files_upper'] < 20 or r['linkage_files_upper'] < 5
+            or r['file_occurrences_upper'] < 10 + 138 + r['stage_control_files_upper']
+                + r['linkage_files_upper'] + r['input_copy_files_upper'] + r['error_partial_files_upper'] + 1
+            or r['largest_new_file_upper_bytes'] > 8 << 20
+            or r['largest_new_file_upper_bytes'] < max(totals['fact_max'], totals['index_max'], totals['wire_max'], totals['outcome_max'])
+            or r['original_manifest_upper_bytes'] > 8 << 20):
+        c._fail('monitored_restart', 'all per-role sums/maxima/file/copy/error/current-stage owners')
+    aliases = (('new_record_upper_bytes', 'worker_fact_upper_bytes'),
+        ('operation_outcome_upper_bytes', 'outcome_upper_bytes'), ('new_control_files_upper', 'file_occurrences_upper'),
+        ('largest_file_upper_bytes', 'largest_new_file_upper_bytes'),
+        *tuple((name, name) for name in ('linkage_upper_bytes', 'input_copy_upper_bytes', 'error_partial_upper_bytes',
+            'stage_control_upper_bytes', 'original_manifest_upper_bytes', 'current_stage_upper_bytes')))
+    if any(type(record[name]) is not int or record[name] != r[key] for name, key in aliases):
+        c._fail('monitored_restart', 'exact full wire/resource projection')
+    role = owner._record['role']
+    row = record['per_role_plan']['roles'][role]
+    encoded = c.oi._json(record)
+    if type(forecast_raw) is not bytes or forecast_raw != encoded:
+        c._fail('monitored_restart', 'genuine canonical raw wire required; no re-encoding size credit')
+    wire_bytes = len(forecast_raw)
+    new_control = (totals['fact_sum'] + totals['outcome_sum'] + r['linkage_upper_bytes']
+        + r['input_copy_upper_bytes'] + r['error_partial_upper_bytes'] + r['stage_control_upper_bytes']
+        + totals['wire_max'])
+    retained = (_MONITORED_RETAINED_SOURCE_ENVELOPE + r['original_manifest_upper_bytes'] + totals['stage_max'])
+    for name in ('new_control_upper_bytes', 'retained_union_upper_bytes', 'case_stage_upper_bytes'):
+        c._integer(record[name], 32 << 20, name)
+    if (len(owner._raw) > row['fact'] or wire_bytes > row['wire']
+            or record['new_control_upper_bytes'] != new_control
+            or record['retained_union_upper_bytes'] != retained
+            or record['case_stage_upper_bytes'] != retained + new_control):
+        c._fail('monitored_restart', 'own-role raw fact/wire and independent complete retained/new sum')
+    sizes = (totals['fact_max'], totals['outcome_max'], totals['wire_max'],
+        r['linkage_upper_bytes'], totals['index_max'])
+    charges = tuple(_parse_charge(n) for n in sizes)
+    if any(value != 2 * n * r['parse_coefficient'] + 6 * n
+           for n, value in zip(sizes, charges, strict=True)):
+        c._fail('monitored_restart', 'actual genuine parse charge at every used size, not one-point inference')
+    logical = (2 * charges[0] + 2 * charges[1] + 2 * charges[2] + 4 * charges[3] + 2 * charges[4]
+        + r['source_upper_bytes'] + r['constructor_frame_upper_bytes'] + r['error_graph_upper_bytes']
+        + r['input_copy_upper_bytes'])
+    if logical + r['original_positive_request_upper_bytes'] > owner._limits.max_memory_bytes:
+        c._fail('memory_cap', 'genuine parse unit and all positive old/new known banks; no heap theorem')
+    return record
+
+
+def _monitored_per_role_control_charge():
+    # Known Source metadata units; complete generic allocator banks remainNone.
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    scalar = sys.getsizeof((1 << 128) - 1)
+    roles = len(_MONITORED_PER_ROLE_COUNTS)
+    maximum = max(count for _role, count in _MONITORED_PER_ROLE_COUNTS)
+    stages = len(_MONITORED_PER_ROLE_STAGES)
+    operations = sum(count for _role, count in _MONITORED_PER_ROLE_COUNTS)
+    widths = (24, 22, 4, roles, stages, stages) + (3,) * roles + (11, roles, 10, 3)
+    dictionaries = sum(max(sys.getsizeof(dict.fromkeys(range(n))),
+        sys.getsizeof(dict.fromkeys(str(i) for i in range(n)))) for n in widths)
+    lists = 2 * sys.getsizeof([None] * 3) + 2 * sys.getsizeof([None] * maximum)
+    # Current/prior result/schedule/roles/alias tuples; all bounded loop-produced
+    # enumerate/zip pairs charged cumulatively, with no disposal/alias credit.
+    tuples = (2 * sys.getsizeof((None,) * maximum)
+        + maximum * sys.getsizeof((None,) * 2)
+        + 2 * sys.getsizeof((None,) * roles) + sys.getsizeof((None,) * 10)
+        + 6 * sys.getsizeof((None,) * 2) + 4 * sys.getsizeof((None,) * 5)
+        + (operations + 3 * roles + 2 * stages + 5) * sys.getsizeof((None,) * 2)
+        + sys.getsizeof((None,) * len(widths)))
+    fields = sum(widths) + operations
+    string = sys.getsizeof('\U0010ffff' * _PATH_CHARS)
+    holders = 2 * (dictionaries + lists + tuples + fields * (pointer + scalar + string))
+    # One per-ordinal encoder source dict/status/nonce/bytes overlaps its result
+    # and schedule; retain a positive full maximum rather than infer free memory.
+    outcome = (max(sys.getsizeof(dict.fromkeys(range(3))),
+        sys.getsizeof(dict.fromkeys(('ordinal', 'nonce', 'status'))))
+        + 3 * (pointer + scalar) + sys.getsizeof('expected_request_conflict')
+        + sys.getsizeof('0' * 32) + sys.getsizeof(b'') + _MIXED_PROOF_BYTES)
+    raw_and_encoded = 2 * (sys.getsizeof(b'') + _MIXED_PROOF_BYTES)
+    return (2 * _parse_charge(_MIXED_PROOF_BYTES) + holders + outcome + raw_and_encoded
+        + c.rw._compiled_frame_charge((_monitored_per_role_outcomes, _monitored_per_role_plan,
+            _monitored_per_role_forecast, _monitored_per_role_control_charge)))
+
+
+def _monitored_forecast(record, owner, *, forecast_raw=None):
+    if (owner._record.get('profile') == _MONITORED_STORAGE128_PROFILE
+            or (type(record) is dict and record.get('schema') == _MONITORED_STORAGE128_WIRE)):
+        return _monitored_storage128_forecast(record, owner, forecast_raw)
+    if (owner._record.get('profile') == _MONITORED_PER_ROLE_PROFILE
+            or (type(record) is dict and record.get('schema') == _MONITORED_PER_ROLE_WIRE)):
+        return _monitored_per_role_forecast(record, owner, forecast_raw)
+    c._keys(record, ('schema', 'profile', 'root', 'root_identity', 'store_file_sha256',
+        'runtime_reference_sha256', 'role', 'context_count',
+        'case_stage_upper_bytes', 'largest_file_upper_bytes',
+        'retained_union_upper_bytes', 'new_control_upper_bytes',
+        'new_control_files_upper', 'new_record_upper_bytes', 'worker_fact_count',
+        'operation_outcome_upper_bytes', 'linkage_upper_bytes', 'input_copy_upper_bytes',
+        'error_partial_upper_bytes', 'stage_control_upper_bytes',
+        'original_manifest_upper_bytes', 'current_stage_upper_bytes'), 'Root retained-union wire forecast')
+    if (record['schema'] != 'masy.Root.monitored_restart_wire_forecast.v1'
+            or record['profile'] != _MONITORED_RESTART_PROFILE
+            or record['root'] != str(owner._root)
+            or record['store_file_sha256'] != owner._record['store_file_sha256']
+            or record['runtime_reference_sha256'] != c._sha(owner._runtime_raw)
+            or record['role'] != owner._record['role']
+            or record['root_identity'] != owner._record['root_identity']
+            or record['context_count'] != 138 or record['worker_fact_count'] != 10):
+        c._fail('monitored_restart', 'same fixed twelve-role retained-union Source subject')
+    for name in ('case_stage_upper_bytes', 'retained_union_upper_bytes', 'new_control_upper_bytes'):
+        c._integer(record[name], 32 << 20, name)
+        if record[name] == 0:
+            c._fail('monitored_restart', 'positive complete retained/wire forecast required')
+    c._integer(record['largest_file_upper_bytes'], 8 << 20, 'unchanged per-file forecast')
+    c._integer(record['new_record_upper_bytes'], _MIXED_PROOF_BYTES, 'new operational evidence wire')
+    c._integer(record['new_control_files_upper'], 4096, 'new retained control occurrences')
+    for name in ('operation_outcome_upper_bytes', 'linkage_upper_bytes', 'input_copy_upper_bytes',
+                 'error_partial_upper_bytes', 'stage_control_upper_bytes',
+                 'original_manifest_upper_bytes', 'current_stage_upper_bytes'):
+        c._integer(record[name], 32 << 20, name)
+        if record[name] == 0:
+            c._fail('monitored_restart', 'positive Source-bound control/copy/error extents required')
+    # One immutable full fact per genuine worker; all distinct operation records,
+    # linked inputs, copies, current/partial failures and stage controls remain.
+    forecast_wire_bytes = len(c.oi._json(record))
+    new_control = (record['worker_fact_count'] * record['new_record_upper_bytes']
+        + record['context_count'] * record['operation_outcome_upper_bytes']
+        + record['linkage_upper_bytes'] + record['input_copy_upper_bytes']
+        + record['error_partial_upper_bytes'] + record['stage_control_upper_bytes']
+        + forecast_wire_bytes)
+    if (record['largest_file_upper_bytes'] == 0
+            or record['largest_file_upper_bytes'] < record['new_record_upper_bytes']
+            or record['largest_file_upper_bytes'] < len(c.oi._json(record))
+            or record['largest_file_upper_bytes'] < record['operation_outcome_upper_bytes']
+            or record['new_record_upper_bytes'] < len(owner._raw)
+            or record['new_control_files_upper'] < record['worker_fact_count'] + record['context_count'] + 5
+            or record['retained_union_upper_bytes'] < (_MONITORED_RETAINED_SOURCE_ENVELOPE
+                + record['original_manifest_upper_bytes'] + record['current_stage_upper_bytes'])
+            or record['new_control_upper_bytes'] < new_control
+            or record['case_stage_upper_bytes'] < record['retained_union_upper_bytes'] + record['new_control_upper_bytes']):
+        c._fail('monitored_restart', 'positive current/future context wire and whole retained union')
+    return record
+
+
+def _monitored_subject(reference):
+    path = Path(reference['path'])
+    return (tuple(reference[name] for name in ('path', 'size', 'sha256')),
+            tuple(c.oi._stat_id(path.lstat())))
+
+
+def _monitored_check(root, limits, header=None):
+    owner = _MONITORED_RESTART_SLOT
+    if (type(owner) is not _MonitoredRestartOperation or owner._key is not _MONITORED_RESTART_KEY
+            or owner._phase != 'entered' or owner._limits is not limits
+            or owner._root != Path(root).absolute()):
+        c._fail('monitored_restart', 'same live exact operational owner/root/limits')
+    _monitored_no_other_owner()
+    if (type(owner._entry_row) is not tuple or len(owner._entry_row) != 4
+            or owner._entry_row[2:] != (owner._kind, owner._purpose)):
+        c._fail('monitored_restart', 'same exact ordinal/nonce/kind/purpose row')
+    ordinal = owner._entry_row[0]
+    if (type(ordinal) is not int or not 1 <= ordinal <= len(owner._record['operations'])
+            or tuple(owner._record['operations'][ordinal - 1][name]
+                     for name in ('ordinal', 'nonce', 'kind', 'purpose')) != owner._entry_row):
+        c._fail('monitored_restart', 'bounded plain ordinal before indexed operation lookup')
+    progress = _MONITORED_RESTART_PROGRESS
+    if (type(progress) is not tuple or len(progress) != 3
+            or progress[0] != owner._subject or progress[1] != owner._entry_row[0]
+            or progress[2] not in ('entering', 'active')
+            or _monitored_subject(owner._reference) != owner._subject):
+        c._fail('monitored_restart', 'same immutable worker fact subject and consumed one-shot row')
+    c.BoundaryStoreLimits.__post_init__(limits)
+    root_stat = owner._root.lstat()
+    if (not stat.S_ISDIR(root_stat.st_mode)
+            or [root_stat.st_dev, root_stat.st_ino, root_stat.st_mode] != owner._record['root_identity']
+            or str(owner._root) != os.path.realpath(owner._root)
+            or c._limits_record(limits) != owner._record['limits']):
+        c._fail('monitored_restart', 'same actual root inode/type and unchanged limit owner')
+    store_raw = c._read(owner._root / 'STORE.json', 128 << 10,
+                        links=c._published_links(owner._root, 'STORE.json'))
+    if c._sha(store_raw) != owner._record['store_file_sha256']:
+        c._fail('monitored_restart', 'unchanged genuine selected STORE at each entry/admission')
+    if _monitored_process() != owner._process or _monitored_applied_limits() != owner._applied:
+        c._fail('monitored_restart', 'actual PID/birth/thread/applied controls changed')
+    if (_mixed_read_ref(owner._reference, 'Root operational admission') != owner._raw
+            or c.oi._json(owner._record) != owner._raw
+            or _monitored_selected_record() != owner._selected
+            or _monitored_implementation_files() != owner._files
+            or _mixed_observer_record() != owner._observer
+            or not c.rw._same_compiled_image(owner._image, _monitored_image(owner._record.get('profile') == _MONITORED_STORAGE128_PROFILE))):
+        c._fail('monitored_restart', 'immutable Source/compiled/functions/dispatch/observer admission')
+    for ref in owner._record['linkage'].values():
+        _mixed_read_ref(ref, 'independent operational linkage')
+    prototype = c.oi._strict_json(owner._runtime_raw, c._JSON)
+    source, environment = c._runtime_binding(prototype, limits)
+    committed_source, committed_environment = c._runtime_binding(owner._record['committed_runtime_reference'], limits)
+    if (source != committed_source or environment != committed_environment
+            or source != owner._record['source_identity'] or environment != owner._record['environment_sha256']):
+        c._fail('monitored_restart', 'genuine unchanged committed/prototype runtime equality')
+    forecast_raw = _mixed_read_ref(owner._record['linkage']['wire_forecast'], 'Root retained-union forecast')
+    _monitored_forecast(c.oi._strict_json(forecast_raw, c._JSON), owner, forecast_raw=forecast_raw)
+    if header is not None:
+        _header_fields(header, limits)
+        if (not _combined(header) or c.oi._json(header['runtime_reference']) != owner._runtime_raw
+                or header['source_identity'] != source or header['environment_sha256'] != environment
+                or header['event_kinds'] != ['wind', 'rain', 'wind', 'rain']):
+            c._fail('monitored_restart', 'same original combined wind/rain fixture/runtime')
+    return owner
+
+
+def _monitored_entry(root, limits, kind, header=None):
+    owner = _monitored_check(root, limits, header)
+    if owner._seen or kind != owner._kind:
+        c._fail('monitored_restart', 'one exact fixed public operation per admission')
+    owner._seen = True
+    return owner
+
+
+def _monitored_runtime_cache_charge(handle):
+    reuse = c._checked_runtime_validation(handle)
+    if reuse is None:
+        return None, 0
+    charge = c._runtime_validation_charge()
+    if charge is None:
+        c._fail('monitored_restart', 'unknown current runtime-reuse control charge')
+    extra = (charge['bytes'] + 2 * _parse_charge(c._RUNTIME_REUSE_REFERENCE_BYTES)
+             + c.rw._compiled_frame_charge((
+                 _reservation_for_handle, _reservation, _stable, _admit,
+                 _load, _prepare_anchor, _operate, _recover_active_store,
+                 recover_active_water_boundary_store, _load_selected, _load_selected_water, _combined,
+                 _schema, _profile_name, _kinds, _store_fields,
+                 _generation_fields_list, _water_fields, _ref_key, _managed_key,
+                 _progress_key, _sibling_prefix, _paused, _same_format,
+                 _pause_fields_for, _intent_for, _check_intent_for, _active_reference,
+                 _generation_chain, _generation_fields, _head, _head_fields,
+                 _head_record, _header_fields, _idle_state, _intent_fields,
+                 _inventory_at, _managed_at, _metadata_stat_charge, _parent_light,
+                 _paused_state, _request_id, _reserve_attempt, _seal_generation,
+                 _temporary_heads, _water_reference, _borrow_parent, _ack_fields,
+                 _acknowledgement, report, acknowledge,
+             )))
+    return reuse, extra
+
+
+def _monitored_reservation(handle, work_bytes, legacy_metadata_expression, *, metadata_bytes=0):
+    owner = _monitored_check(handle._root, handle._limits, handle._header)
+    if not owner._seen:
+        c._fail('monitored_restart', 'real owning API entry before reservation')
+    c._integer(legacy_metadata_expression, 1 << 128, 'retained original metadata expression, not paid/free heap')
+    from masy import dense_active_wind_checkpoint as wind
+    increment = wind.reservation_increment()['required_bytes']
+    reuse, cache_charge = _monitored_runtime_cache_charge(handle)
+    control = _monitored_control_charge(owner, owner._image) + cache_charge
+    original, known, codec = _monitored_known_bank(handle._limits, work_bytes, increment, metadata_bytes, control)
+    values = (known, handle._limits.max_memory_bytes, original['disk_bytes'] + _ACTIVE_RAW_BYTES,
+        original['entries'] + _ACTIVE_ENTRIES, original['native_event_work_bytes'],
+        original['max_original_decodes'], original['max_native_loads'],
+        original['max_saved_source_graph_builds'], increment, codec, control,
+        legacy_metadata_expression, owner._applied)
+    result = _MonitoredRestartReservation(_MONITORED_RESULT_KEY, values)
+    if reuse is not None:
+        if c._checked_runtime_validation(handle) is not reuse:
+            c._fail('monitored_restart', 'same actual reuse owner after successful known-bank admission')
+        reuse._charge = cache_charge
+    return result
+
+
+def _monitored_wind_codec(handle, runner, metadata_bytes):
+    if _MONITORED_RESTART_SLOT is None:
+        return None
+    # Noncombined C/AW base + ONE actual wind increment + the extra TWO P(M).
+    if runner._limits.max_work_bytes != handle._header['native_work_bytes']:
+        c._fail('active_memory', 'same genuine original Native work limit required')
+    chain = _metadata_stat_charge(handle, _inventory(handle))
+    return _monitored_reservation(handle, runner._limits.max_work_bytes, chain, metadata_bytes=metadata_bytes)
+
+
+def _monitored_record(value):
+    if type(value) is _MonitoredRestartReservation:
+        return value.as_record()
+    return copy.deepcopy(value)
+
+
+def _monitored_clear(owner):
+    global _MONITORED_RESTART_SLOT
+    if _MONITORED_RESTART_SLOT is owner:
+        _MONITORED_RESTART_SLOT = None
+    owner._phase = 'closed'
+    owner._raw = owner._record = owner._image = owner._files = owner._selected = owner._observer = None
+    owner._reference = owner._runtime_raw = owner._root = owner._limits = None
+    owner._process = owner._applied = owner._entry_row = owner._subject = None
+
+
+def _monitored_set_progress(owner, state, primary):
+    global _MONITORED_RESTART_PROGRESS
+    try:
+        if owner._entry_row is None:
+            _MONITORED_RESTART_PROGRESS = _MONITORED_RESTART_POISONED
+        else:
+            _MONITORED_RESTART_PROGRESS = (owner._subject, owner._entry_row[0], state)
+    except BaseException:
+        _MONITORED_RESTART_PROGRESS = _MONITORED_RESTART_POISONED
+        if primary is None:
+            raise
+
+
+class _MonitoredRestartOperation:
+    __slots__ = ('_key', '_root', '_reference', '_runtime_raw', '_limits', '_phase',
+        '_process', '_applied', '_raw', '_record', '_selected', '_files', '_observer', '_image', '_seen',
+        '_kind', '_purpose', '_entry_row', '_subject')
+
+    def __init__(self, key, root, runtime_reference, admission_reference, limits, entry_kind, purpose):
+        if key is not _MONITORED_RESTART_KEY:
+            c._fail('monitored_restart', 'explicit owning factory only')
+        c.BoundaryStoreLimits.__post_init__(limits)
+        _mixed_ref(admission_reference, 'Root operational admission')
+        root = Path(root).absolute()
+        if str(root) != os.path.realpath(root) or len(str(root)) > _PATH_CHARS or limits.max_memory_bytes != 6 << 30:
+            c._fail('monitored_restart', 'canonical bounded root and unchanged6GiB known-bank limit')
+        c._plain_metadata(runtime_reference, 32 << 10, 'actual monitored prototype reference')
+        if type(entry_kind) is not str or entry_kind not in _MONITORED_KINDS or type(purpose) is not str or len(purpose) > 64:
+            c._fail('monitored_restart', 'fixed Source entry kind and purpose, never a callback')
+        self._kind, self._purpose, self._entry_row, self._subject = entry_kind, purpose, None, None
+        self._key, self._root, self._reference, self._limits = key, root, dict(admission_reference), limits
+        self._runtime_raw = c.oi._json(runtime_reference)
+        self._phase, self._seen = 'new', False
+        self._process = self._applied = self._raw = self._record = None
+        self._selected = self._files = self._observer = self._image = None
+
+    def __enter__(self):
+        global _MONITORED_RESTART_SLOT, _MONITORED_RESTART_PROGRESS
+        published = False
+        try:
+            if self._phase != 'new' or _MONITORED_RESTART_SLOT is not None or _MIXED_OPERATION_SLOT is not None:
+                c._fail('monitored_restart', 'one nonnested one-shot monitored operation')
+            self._process, self._applied = _monitored_process(), _monitored_applied_limits()
+            raw = _mixed_read_ref(self._reference, 'Root operational admission')
+            self._subject = _monitored_subject(self._reference)
+            progress = _MONITORED_RESTART_PROGRESS
+            if progress is not None and (type(progress) is not tuple or len(progress) != 3
+                    or progress[0] != self._subject or progress[2] != 'finished'):
+                c._fail('monitored_restart', 'same immutable worker facts; failed/active rows cannot retry')
+            cursor = 0 if progress is None else progress[1]
+            record = c.oi._strict_json(raw, c._JSON)
+            c._keys(record, ('schema', 'profile', 'root', 'root_identity', 'store_file_sha256', 'runtime_reference_sha256',
+                'committed_runtime_reference', 'source_identity', 'environment_sha256', 'process', 'limits',
+                'applied_limits', 'role', 'operations', 'implementation_files', 'selected_ids',
+                'observer', 'linkage', 'complete_generic_allocator_upper_bytes'), 'Root operational admission')
+            if (((record['schema'] != _MONITORED_RESTART_SCHEMA or record['profile'] != _MONITORED_RESTART_PROFILE)
+                    and (record['schema'] != _MONITORED_PER_ROLE_SCHEMA or record['profile'] != _MONITORED_PER_ROLE_PROFILE)
+                    and (record['schema'] != _MONITORED_STORAGE128_SCHEMA or record['profile'] != _MONITORED_STORAGE128_PROFILE))
+                    or record['root'] != str(self._root) or record['runtime_reference_sha256'] != c._sha(self._runtime_raw)
+                    or record['process'] != self._process or record['applied_limits'] != [list(row) for row in self._applied]
+                    or record['limits'] != c._limits_record(self._limits) or type(record['role']) is not str
+                    or record['complete_generic_allocator_upper_bytes'] is not None
+                    or c.oi._json(record) != raw):
+                c._fail('monitored_restart', 'exact independent Root operation/process/limits subject')
+            expected = _monitored_schedule(record['role'])
+            operations = record['operations']
+            if type(operations) is not list or len(operations) != len(expected):
+                c._fail('monitored_restart', 'entire fixed Source operation roster, not a supplied schedule')
+            nonces = set()
+            for number, (row, (kind, purpose)) in enumerate(zip(operations, expected, strict=True), 1):
+                c._keys(row, ('ordinal', 'nonce', 'kind', 'purpose'), 'closed genuine operation row')
+                if (type(row['ordinal']) is not int or row['ordinal'] != number
+                        or row['kind'] != kind or row['purpose'] != purpose
+                        or type(row['nonce']) is not str or c._NONCE.fullmatch(row['nonce']) is None
+                        or row['nonce'] in nonces):
+                    c._fail('monitored_restart', 'exact Source order and distinct Root operation nonces')
+                nonces.add(row['nonce'])
+            if cursor >= len(operations):
+                c._fail('monitored_restart', 'one-shot worker operation roster exhausted')
+            row = operations[cursor]
+            if row['kind'] != self._kind or row['purpose'] != self._purpose:
+                c._fail('monitored_restart', 'next Source kind/purpose, not another row or retry')
+            self._entry_row = tuple(row[name] for name in ('ordinal', 'nonce', 'kind', 'purpose'))
+            _MONITORED_RESTART_PROGRESS = (self._subject, self._entry_row[0], 'entering')
+            c._digest(record['store_file_sha256'], 'actual selected immutable STORE')
+            c._keys(record['linkage'], ('Source_controls', 'Source_compatibility', 'prototype_bridge', 'wire_forecast'), 'independent Root linkage')
+            for ref in record['linkage'].values():
+                _mixed_read_ref(ref, 'independent operational linkage')
+            prototype = c.oi._strict_json(self._runtime_raw, c._JSON)
+            committed = record['committed_runtime_reference']
+            if type(prototype) is not dict or type(committed) is not dict:
+                c._fail('monitored_restart', 'closed ordinary actual runtime references')
+            c._keys(prototype, c._RUNTIME, 'actual prototype reference')
+            c._keys(committed, c._RUNTIME, 'actual committed reference')
+            if prototype.get('kind') != 'source_manifest_prototype' or committed.get('kind') != c._CL_KIND:
+                c._fail('monitored_restart', 'genuine committed CPU reference and explicit prototype bridge')
+            if (prototype['module_roots'] != committed['module_roots']
+                    or prototype['native_bundle_manifest_file_sha256'] != committed['native_bundle_manifest_file_sha256']):
+                c._fail('monitored_restart', 'same actual locked module roots/Native bundle')
+            _declare_for({'schema': SCHEMA_PROCESS})
+            _monitored_no_other_owner()
+            self._selected, self._files, self._observer = _monitored_selected_record(), _monitored_implementation_files(), _mixed_observer_record()
+            if (record['selected_ids'] != [list(row) for row in self._selected]
+                    or record['implementation_files'] != [list(row) for row in self._files]
+                    or record['observer'] != [[None] * 4, [None] * 6, [0] * 6]):
+                c._fail('monitored_restart', 'actual Source/interpreter/compiled/dispatch/observer identities')
+            from masy import dense_wind_pause as wind_pause
+            checked_raw, checked_source, checked_environment = wind_pause._runtime(wind_pause._declare(), prototype)
+            if (checked_raw != self._runtime_raw or checked_source != record['source_identity']
+                    or (checked_source['syrup'] != wind_pause._REVIEWED_SYRUP_TABLE_726
+                        and checked_source['syrup'] != wind_pause._REVIEWED_CURRENT_SYRUP_TABLE_937)
+                    or checked_environment != record['environment_sha256']):
+                c._fail('monitored_restart', 'exact current pause Source census and genuine prototype binding')
+            storage128 = record['profile'] == _MONITORED_STORAGE128_PROFILE
+            if storage128:
+                _monitored_storage128_headers(self._selected, self._files,
+                    tuple(row[0] for row in record['implementation_files']))
+            self._raw, self._record, self._image = raw, record, _monitored_image(storage128)
+            from masy import dense_active_wind_checkpoint as wind
+            increment = wind.reservation_increment()["required_bytes"]
+            _monitored_known_bank(self._limits, 0, increment, 0, _monitored_control_charge(self, self._image))
+            self._phase, _MONITORED_RESTART_SLOT = 'entered', self
+            _monitored_check(self._root, self._limits)
+            store_raw = c._read(self._root / 'STORE.json', 128 << 10,
+                                links=c._published_links(self._root, 'STORE.json'))
+            if c._sha(store_raw) != record['store_file_sha256']:
+                c._fail('monitored_restart', 'exact externally selected retained STORE')
+            _MONITORED_RESTART_PROGRESS = (self._subject, self._entry_row[0], 'active')
+            published = True
+            return self
+        finally:
+            if not published:
+                primary = sys.exc_info()[1]
+                try:
+                    _monitored_set_progress(self, 'failed', primary)
+                finally:
+                    try:
+                        _monitored_clear(self)
+                    except BaseException:
+                        _MONITORED_RESTART_PROGRESS = _MONITORED_RESTART_POISONED
+                        if primary is None:
+                            raise
+
+    def __exit__(self, error_type, error, traceback):
+        global _MONITORED_RESTART_SLOT, _MONITORED_RESTART_PROGRESS
+        clean = False
+        try:
+            if error_type is None:
+                _monitored_check(self._root, self._limits)
+                if self._seen is not True:
+                    c._fail('monitored_restart', 'actual fixed entry must be consumed')
+                clean = True
+        finally:
+            primary = error if error_type is not None else sys.exc_info()[1]
+            try:
+                _monitored_set_progress(self, 'finished' if clean else 'failed', primary)
+            finally:
+                try:
+                    _monitored_clear(self)
+                except BaseException:
+                    _MONITORED_RESTART_PROGRESS = _MONITORED_RESTART_POISONED
+                    if primary is None:
+                        raise
+        return False
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError('operational owner cannot persist/escape')
+
+
+def monitored_restart_operation(*, root, runtime_reference, admission_reference, entry_kind, purpose, limits=c._DEFAULT):
+    """Explicit limited Root lane; absent actual bindings refuse, no fallback."""
+    return _MonitoredRestartOperation(_MONITORED_RESTART_KEY, root, runtime_reference, admission_reference, limits, entry_kind, purpose)
+
+
+def monitored_restart_readonly_entry(handle, kind):
+    if (type(handle) is not c.DenseBoundaryStore or kind not in ('inspect_metadata', 'inspect_passive_snapshot', 'close')
+            or handle._entered or handle._closed or not _combined(handle._header)):
+        c._fail('monitored_restart', 'same genuine idle readonly/close handle')
+    _monitored_entry(handle._root, handle._limits, kind, handle._header)
+    if kind != 'close':
+        handle._stable()
+    if kind == 'inspect_passive_snapshot':
+        head, _raw = handle._head()
+        if head['kind'] != 'event_accepted' or head['revision'] != 8 or head['accepted_sequence'] != 4:
+            c._fail('monitored_restart', 'actual final8/4 accepted boundary before passive snapshot')
+
+
+
+def _monitored_runtime_matches(reference, source, environment):
+    if _MONITORED_RESTART_SLOT is None:
+        return False
+    owner = _MONITORED_RESTART_SLOT
+    _monitored_check(owner._root, owner._limits)
+    # Entry ran genuine wind._runtime's full old-or-reviewed table census.
+    # Every call above rechecks the complete sealed prototype and committed
+    # runtime; a changed reference/table/Source environment cannot reuse it.
+    return (c.oi._json(reference) == owner._runtime_raw
+            and source == owner._record['source_identity']
+            and environment == owner._record['environment_sha256'])
+
+
+# Explicit opt-in storage domain; old uniform/per-role32 profiles are untouched.
+_MONITORED_STORAGE128_PROFILE = 'monitored_functional_dense_CPU_combined_restart_storage128_v1'
+_MONITORED_STORAGE128_SCHEMA = 'masy.monitored_functional_CPU_restart_worker.storage128.v1'
+_MONITORED_STORAGE128_WIRE = 'masy.Root.monitored_restart_storage128_wire_forecast.v1'
+_MONITORED_STORAGE128_LIMITS = (128 << 20, 32 << 20, 64 << 20)
+_MONITORED_STORAGE128_COPY_BYTES = (2 << 20) + 2 * (8 << 20) + 3 * (128 << 10)
+_MONITORED_STORAGE128_ERROR_BYTES = 4 * (8 << 20)
+_MONITORED_STORAGE128_STATIC = ('qualification.py', 'run_checks.py', 'check_worker.py', 'freeze_expected.py', 'source_audit.py', 'pytest.ini', 'baseline_01.json', 'selected_groups.json', 'staged_mixed.py', 'fixed_forecast.py', 'component_rosters_01.json', 'metadata_width_witnesses_01.json', 'forecast_laws_01.json', 'mixed_contexts.py', 'monitored_context_contract.json', 'ROOT_verify_stage_01.py')
+_MONITORED_STORAGE128_COPIES = (('qualification.py', 8388608), ('run_checks.py', 8388608), ('check_worker.py', 8388608), ('freeze_expected.py', 8388608), ('source_audit.py', 8388608), ('pytest.ini', 8388608), ('baseline_01.json', 8388608), ('selected_groups.json', 8388608), ('staged_mixed.py', 8388608), ('fixed_forecast.py', 8388608), ('component_rosters_01.json', 8388608), ('metadata_width_witnesses_01.json', 8388608), ('forecast_laws_01.json', 8388608), ('mixed_contexts.py', 8388608), ('monitored_context_contract.json', 8388608), ('ROOT_verify_stage_01.py', 8388608), ('runtime_binding.json', 8388608), ('component_binding.json', 8388608), ('prerequisite_refs.json', 131072), ('monitored_context_binding.json', 131072), ('control_manifest.json', 131072))
+_MONITORED_STORAGE128_OUTPUTS = (('stdout.log', 8 << 20), ('stderr.log', 8 << 20), ('mode_receipt', 8 << 20), ('exit.json', 8 << 20))
+_MONITORED_STORAGE128_HEADERS = (('json', 'loads'), ('json', 'dumps'), ('json.decoder', 'JSONDecoder'), ('json.decoder', 'JSONDecoder.__init__'), ('json.decoder', 'JSONDecoder.decode'), ('json.decoder', 'JSONDecoder.raw_decode'), ('json.encoder', 'JSONEncoder'), ('json.encoder', 'JSONEncoder.__init__'), ('json.encoder', 'JSONEncoder.encode'), ('json.encoder', 'JSONEncoder.iterencode'), ('_json', 'Scanner'), ('_json', 'Scanner'), ('_json', 'Encoder'), ('_json', 'scanstring'), ('copy', 'deepcopy'), ('copy', '_deepcopy_dict'), ('copy', '_deepcopy_list'), ('copy', '_deepcopy_tuple'), ('copy', '_deepcopy_atomic'), ('copy', '_deepcopy_atomic'), ('copy', '_deepcopy_atomic'), ('copy', '_deepcopy_atomic'), ('copy', '_deepcopy_atomic'), ('masy.dense_original_inputs', '_strict_json'), ('masy.dense_original_inputs', '_json'), ('masy.dense_runner_checkpoint', '_canonical_json'), ('masy.dense_boundary_store', '_plain_metadata'), ('builtins', 'int'), ('builtins', 'float'), ('builtins', 'str'), ('builtins', 'bytes'), ('builtins', 'dict'), ('builtins', 'list'), ('builtins', 'tuple'), ('builtins', 'set'), ('sys', 'getsizeof'), ('sys', 'gettrace'), ('sys', 'getprofile'), ('threading', 'gettrace'), ('threading', 'getprofile'), ('resource', 'getrlimit'), ('posix', 'getpid'), ('_thread', 'get_ident'), ('io', 'open'), ('pathlib', 'Path.open'), ('pathlib', 'Path.lstat'))
+
+
+def _monitored_storage128_header_charge(selected, files):
+    # Genuine getter output already exists; charge every retained occurrence
+    # before the new fact is constructed. No alias or disposal credit.
+    if type(selected) is not tuple or len(selected) != 46 or type(files) is not tuple or len(files) != 15:
+        c._fail('monitored_restart', 'closed genuine header/implementation extents')
+    total = sys.getsizeof(selected) + sys.getsizeof(files)
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    for rows, width in ((selected, 4), (files, 3)):
+        for row in rows:
+            if type(row) is not tuple or len(row) != width:
+                c._fail('monitored_restart', 'plain bounded genuine header rows')
+            total += sys.getsizeof(row) + width * pointer
+            for value in row:
+                if type(value) not in (str, int):
+                    c._fail('monitored_restart', 'primitive genuine header fields')
+                total += sys.getsizeof(value)
+    return 2 * total
+
+
+def _monitored_storage128_headers(selected, files, paths=None):
+    charge = _monitored_storage128_header_charge(selected, files)
+    for row, names in zip(selected, _MONITORED_STORAGE128_HEADERS, strict=True):
+        for identity in row[:2]:
+            c._integer(identity, (1 << 64) - 1, 'genuine bounded selected ID')
+        if type(row[2]) is not str or type(row[3]) is not str or row[2:] != names:
+            c._fail('monitored_restart', 'exact Source-owned selected header names')
+    if paths is not None and (type(paths) is not tuple or len(paths) != 15):
+        c._fail('monitored_restart', 'fifteen pre-existing exact implementation paths')
+    for number, row in enumerate(files):
+        path, size, digest = row
+        if type(path) is not str or not 0 < len(path) <= _PATH_CHARS or not Path(path).is_absolute():
+            c._fail('monitored_restart', 'bounded absolute implementation spelling')
+        c._integer(size, 64 << 20, 'genuine implementation file size')
+        c._digest(digest, 'genuine implementation file digest')
+        if paths is not None and (type(paths[number]) is not str or path != paths[number]):
+            c._fail('monitored_restart', 'same independently Source-bound implementation path')
+    return charge
+
+
+def _monitored_storage128_control_charge(selected, files):
+    # This supplements, and never substitutes for, the complete old per-role
+    # charge and actual image/frame charge. All ABI primitives are genuine.
+    pointer = sys.getsizeof((None,)) - sys.getsizeof(())
+    scalar = sys.getsizeof((1 << 128) - 1)
+    rosters = (_MONITORED_STORAGE128_COPIES, _MONITORED_STORAGE128_OUTPUTS,
+               _MONITORED_STORAGE128_HEADERS)
+    owned = sys.getsizeof(_MONITORED_STORAGE128_LIMITS)
+    slots = 3
+    for rows in rosters:
+        owned += sys.getsizeof(rows)
+        for row in rows:
+            owned += sys.getsizeof(row)
+            slots += len(row)
+            for value in row:
+                owned += sys.getsizeof(value)
+    # Current/possible-next binding/resources, loop pairs, path/row holders and
+    # error objects are retained cumulatively; no free-last-use assumption.
+    owned += sum(max(sys.getsizeof(dict.fromkeys(range(n))),
+                     sys.getsizeof(dict.fromkeys(str(i) for i in range(n))))
+                 for n in (10, 22, 21, 4))
+    owned += (21 + 4 + 46 + 15) * sys.getsizeof((None, None))
+    owned += slots * (pointer + scalar)
+    return (2 * owned + _monitored_storage128_header_charge(selected, files)
+        + 2 * _parse_charge(_MIXED_PROOF_BYTES)
+        + 2 * (sys.getsizeof(b'') + _MIXED_PROOF_BYTES)
+        + c.rw._compiled_frame_charge((_monitored_storage128_header_charge,
+            _monitored_storage128_headers, _monitored_storage128_control_charge,
+            _monitored_storage128_forecast)))
+
+
+def _monitored_storage128_forecast(record, owner, forecast_raw):
+    c._keys(record, ('schema', 'profile', 'root', 'root_identity', 'store_file_sha256',
+        'runtime_reference_sha256', 'role', 'context_count', 'case_stage_upper_bytes',
+        'largest_file_upper_bytes', 'retained_union_upper_bytes', 'new_control_upper_bytes',
+        'new_control_files_upper', 'new_record_upper_bytes', 'worker_fact_count',
+        'operation_outcome_upper_bytes', 'linkage_upper_bytes', 'input_copy_upper_bytes',
+        'error_partial_upper_bytes', 'stage_control_upper_bytes', 'original_manifest_upper_bytes',
+        'current_stage_upper_bytes', 'per_role_plan', 'resources'), 'closed per-role Native wire')
+    if (record['schema'] != _MONITORED_STORAGE128_WIRE or record['profile'] != _MONITORED_STORAGE128_PROFILE
+            or owner._record.get('schema') != _MONITORED_STORAGE128_SCHEMA
+            or owner._record.get('profile') != _MONITORED_STORAGE128_PROFILE
+            or type(owner._record['role']) is not str
+            or owner._record['role'] not in tuple(role for role, _count in _MONITORED_PER_ROLE_COUNTS)
+            or record['root'] != str(owner._root) or record['role'] != owner._record['role']
+            or record['root_identity'] != owner._record['root_identity']
+            or record['store_file_sha256'] != owner._record['store_file_sha256']
+            or record['runtime_reference_sha256'] != c._sha(owner._runtime_raw)
+            or type(record['context_count']) is not int or record['context_count'] != 138
+            or type(record['worker_fact_count']) is not int or record['worker_fact_count'] != 10):
+        c._fail('monitored_restart', 'same independently authenticated per-role owner/subject')
+    totals = _monitored_per_role_plan(record['per_role_plan'])
+    r = record['resources']
+    c._keys(r, _MONITORED_PER_ROLE_RESOURCES, 'all original positive known resource fields')
+    counts = ('file_occurrences_upper', 'linkage_files_upper', 'input_copy_files_upper',
+        'error_partial_files_upper', 'stage_control_files_upper', 'original_file_occurrences_upper')
+    for name, value in r.items():
+        c._integer(value, 4096 if name in counts else 6 << 30, name)
+        if value == 0:
+            c._fail('monitored_restart', 'all existing known positive owners remain')
+    if (r['worker_fact_upper_bytes'] != totals['fact_max'] or r['index_upper_bytes'] != totals['index_max']
+            or r['forecast_upper_bytes'] != totals['wire_max'] or r['outcome_upper_bytes'] != totals['outcome_max']
+            or r['current_stage_upper_bytes'] != totals['stage_max']
+            or r['stage_control_upper_bytes'] != totals['index_sum'] + totals['wire_sum'] + totals['other_stage_sum']
+            or r['file_occurrences_upper'] + r['original_file_occurrences_upper'] > 4096
+            or r['stage_control_files_upper'] < 20 or r['linkage_files_upper'] < 5
+            or r['file_occurrences_upper'] < 10 + 138 + r['stage_control_files_upper']
+                + r['linkage_files_upper'] + r['input_copy_files_upper'] + r['error_partial_files_upper'] + 1
+            or r['largest_new_file_upper_bytes'] > 8 << 20
+            or r['largest_new_file_upper_bytes'] < max(totals['fact_max'], totals['index_max'], totals['wire_max'], totals['outcome_max'])
+            or r['original_manifest_upper_bytes'] > 8 << 20):
+        c._fail('monitored_restart', 'all per-role sums/maxima/file/copy/error/current-stage owners')
+    if (r['input_copy_upper_bytes'] != _MONITORED_STORAGE128_COPY_BYTES
+            or r['error_partial_upper_bytes'] != _MONITORED_STORAGE128_ERROR_BYTES
+            or r['input_copy_files_upper'] != 21 or r['error_partial_files_upper'] != 4):
+        c._fail('monitored_restart', 'complete exact storage128 copy/error roster')
+    aliases = (('new_record_upper_bytes', 'worker_fact_upper_bytes'),
+        ('operation_outcome_upper_bytes', 'outcome_upper_bytes'), ('new_control_files_upper', 'file_occurrences_upper'),
+        ('largest_file_upper_bytes', 'largest_new_file_upper_bytes'),
+        *tuple((name, name) for name in ('linkage_upper_bytes', 'input_copy_upper_bytes', 'error_partial_upper_bytes',
+            'stage_control_upper_bytes', 'original_manifest_upper_bytes', 'current_stage_upper_bytes')))
+    if any(type(record[name]) is not int or record[name] != r[key] for name, key in aliases):
+        c._fail('monitored_restart', 'exact full wire/resource projection')
+    role = owner._record['role']
+    row = record['per_role_plan']['roles'][role]
+    encoded = c.oi._json(record)
+    if type(forecast_raw) is not bytes or forecast_raw != encoded:
+        c._fail('monitored_restart', 'genuine canonical raw wire required; no re-encoding size credit')
+    wire_bytes = len(forecast_raw)
+    new_control = (totals['fact_sum'] + totals['outcome_sum'] + r['linkage_upper_bytes']
+        + r['input_copy_upper_bytes'] + r['error_partial_upper_bytes'] + r['stage_control_upper_bytes']
+        + totals['wire_max'])
+    retained = (_MONITORED_RETAINED_SOURCE_ENVELOPE + r['original_manifest_upper_bytes'] + totals['stage_max'])
+    for name in ('new_control_upper_bytes', 'retained_union_upper_bytes', 'case_stage_upper_bytes'):
+        c._integer(record[name], _MONITORED_STORAGE128_LIMITS[0], name)
+    if (len(owner._raw) > row['fact'] or wire_bytes > row['wire']
+            or record['new_control_upper_bytes'] != new_control
+            or record['retained_union_upper_bytes'] != retained
+            or record['case_stage_upper_bytes'] != retained + new_control):
+        c._fail('monitored_restart', 'own-role raw fact/wire and independent complete retained/new sum')
+    sizes = (totals['fact_max'], totals['outcome_max'], totals['wire_max'],
+        r['linkage_upper_bytes'], totals['index_max'])
+    charges = tuple(_parse_charge(n) for n in sizes)
+    if any(value != 2 * n * r['parse_coefficient'] + 6 * n
+           for n, value in zip(sizes, charges, strict=True)):
+        c._fail('monitored_restart', 'actual genuine parse charge at every used size, not one-point inference')
+    logical = (2 * charges[0] + 2 * charges[1] + 2 * charges[2] + 4 * charges[3] + 2 * charges[4]
+        + r['source_upper_bytes'] + r['constructor_frame_upper_bytes'] + r['error_graph_upper_bytes']
+        + r['input_copy_upper_bytes'])
+    if logical + r['original_positive_request_upper_bytes'] > owner._limits.max_memory_bytes:
+        c._fail('memory_cap', 'genuine parse unit and all positive old/new known banks; no heap theorem')
+    return record

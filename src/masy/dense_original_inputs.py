@@ -263,6 +263,10 @@ def _strict_json(data, limits):
             _fail("metadata_nonfinite", "overflowed/nonfinite JSON number")
 
     visit(value, 0)
+    if (_CANONICAL_METADATA_SCOPE is not None and type(value) is dict
+            and type(value.get('schema')) is str and value['schema'] == SCHEMA):
+        _CANONICAL_METADATA_SCOPE.check()
+        _canonical_original_manifest(value)
     return value
 
 
@@ -1929,6 +1933,8 @@ def _read_npy_header(stream, limits):
         raise OriginalInputsError("array_layout", "invalid NPY magic") from exc
     if version not in ((1, 0), (2, 0)):
         _fail("array_layout", "NPY version")
+    if _CANONICAL_METADATA_SCOPE is not None:
+        _CANONICAL_METADATA_SCOPE.read_prefix(stream, version)
     width = 2 if version == (1, 0) else 4
     start = stream.tell()
     prefix = stream.read(width)
@@ -2010,6 +2016,8 @@ def save_original_inputs(path, pack, *, limits=_DEFAULT_LIMITS):
     OriginalPackLimits.__post_init__(limits)
     digest = validate_original_inputs(pack, limits=limits)
     encoded, arrays = _encoded(pack, limits, hashed=True)
+    if _CANONICAL_METADATA_SCOPE is not None:
+        _canonical_original_prewrite(arrays)
     target = Path(path)
     if target.name in ("", ".", ".."):
         _fail("path_refused", "new pack name required")
@@ -2283,6 +2291,8 @@ def load_original_inputs(
     opened = []
     try:
         names = _names(directory, limits)
+        if _CANONICAL_METADATA_SCOPE is not None:
+            _CANONICAL_METADATA_SCOPE.original(sum(name not in ("manifest.json", "manifest.tmp") for name in names))
         if len(names) > limits.max_files + 2 or "manifest.json" not in names:
             _fail("file_cap", "artifact entry count/unsealed pack")
         # Bound ALL raw file sizes/count/aggregate BEFORE hashing or NPY parsing.
@@ -3622,3 +3632,36 @@ def load_original_inputs_v2(
         for fd in opened:
             os.close(fd)
         os.close(directory)
+
+
+# Exact mirror of the Native v3 metadata scope. No ordinary/default factory.
+_CANONICAL_METADATA_SCOPE = None
+
+
+def _canonical_original_prewrite(arrays):
+    scope = _CANONICAL_METADATA_SCOPE
+    scope.original(len(arrays))
+    scope.prewrite()
+    native = scope._native
+    if type(arrays) is not list or len(arrays) > 55:
+        _fail('mixed_implementation', 'canonical actual Original array roster')
+    for index, value in enumerate(arrays):
+        native._canonical_writer_member('a' + str(index), value)
+
+
+def _canonical_original_manifest(manifest):
+    # Metadata from the existing bounded genuine decoder, never a new parse or
+    # an array/content observation. The original schema/value validators follow.
+    files = manifest.get('files') if type(manifest) is dict else None
+    if type(files) is not list or not 0 <= len(files) <= 55:
+        _fail('mixed_implementation', 'fixed prospective Original<=55 array entries')
+    for row in files:
+        if type(row) is not dict:
+            _fail('mixed_implementation', 'actual Original serialized array metadata')
+        dtype, shape = row.get('dtype'), row.get('shape')
+        if (type(dtype) is not str or dtype not in ('|b1','|i1','|u1','<i2','<u2','<i4','<u4',
+                '<i8','<u8','<f2','<f4','<f8') or type(shape) is not list or len(shape) > 4):
+            _fail('mixed_implementation', 'canonical prospective Original dtype/rank')
+        for axis in shape:
+            if type(axis) is not int or not 0 <= axis <= 16000:
+                _fail('mixed_implementation', 'canonical prospective Original dimension')

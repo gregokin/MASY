@@ -164,7 +164,10 @@ def _runtime(store: Any, reference: Any, lease: _WaterLease | None = None):
     copied = oi._strict_json(raw, view)
     source, environment = store._runtime_binding(copied, store.BoundaryStoreLimits())
     if source["maple"] != _NATIVE_CENSUS_MAPLE or source["syrup"] != _NATIVE_CENSUS_SYRUP:
-        _fail("water_resource_source", "native bodies lack this explicit resource/continuation census")
+        # Never import an active owner on an ordinary mismatch/refusal path.
+        active = sys.modules.get("masy.dense_active_water_store")
+        if active is None or not active._monitored_runtime_matches(copied, source, environment):
+            _fail("water_resource_source", "native bodies lack this explicit resource/continuation census")
     if lease is not None and (source != lease.source or environment != lease.environment):
         _fail("water_runtime_changed", "original source/environment changed while wet")
     return raw, source, environment

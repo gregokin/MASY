@@ -66,6 +66,7 @@ class _WindLease:
     entry_metadata_sha256: str = ""
     entry_ids: tuple = ()
     reservation: Any = None
+    cold_binding: Any = None
 
 
 def _fail(code: str, detail: str) -> None:
@@ -177,7 +178,9 @@ def _runtime(api: Any, reference: Any, lease: _WindLease | None = None):
     if (manifest["source_identity"] != source
             or hashlib.sha256(oi._json(manifest["files"]["maple"])).hexdigest() != _NATIVE_TABLE
             or hashlib.sha256(oi._json(manifest["files"]["maple_syrup"])).hexdigest() != _SYRUP_TABLE):
-        _fail("wind_resource_source", "complete owning source lacks this explicit native continuation/callee census")
+        if not (_reviewed_source_pair(manifest, source)
+                or _reviewed_current_source_pair(manifest, source)):
+            _fail("wind_resource_source", "complete owning source lacks this explicit native continuation/callee census")
     if lease is not None and (source != lease.source or environment != lease.environment):
         _fail("wind_runtime_changed", "original actual source/environment changed while active")
     return raw, source, environment
@@ -359,6 +362,7 @@ def _halt(runner: Any, lease: _WindLease, stop: Any, api: Any):
         return runner._stop(lease.index, "wind", lease.origin, closed)
     finally:
         lease.prepared = lease.native_token = None
+        lease.cold_binding = None
 
 
 def _outcome(runner: Any, lease: _WindLease, item: Any, ordinal: int | None, api: Any):
@@ -375,9 +379,13 @@ def _outcome(runner: Any, lease: _WindLease, item: Any, ordinal: int | None, api
             actual = (item.advanced_start_time_s, item.advanced_duration_s, item.advanced_end_time_s)
             if tuple(lease.prepared.ops.scalar(v).hex() for v in actual) != tuple(lease.progress['advanced_hex']):
                 _fail("wind_progress_changed", "native original advanced anchors changed")
+        if lease.cold_binding is not None:
+            from masy import dense_active_wind_checkpoint as checkpoint
+            item = checkpoint.bind_completed_result(runner, lease, item)
         lease.phase = "finishing"
         result = dr._wind_accept(runner, lease.index, lease.event, lease.resolved, lease.prepared, item)
         lease.phase, lease.prepared, lease.native_token, lease.token = "closed", None, None, None
+        lease.cold_binding = None
         return result
     if type(item) is not api.continuation.WindContinuationToken or ordinal is None:
         _fail("wind_pause_result", "only genuine native completion or requested paused token is accepted")
@@ -529,3 +537,37 @@ def abandon_wind(runner: Any, token: Any):
     lease = _lease(runner, token)
     api = _declare()
     return _halt(runner, lease, dr._Stop("incomplete", "wind_pause_abandoned", "private wind attempt abandoned"), api)
+
+
+# Independently reviewed726 ordinary Git Source census, not a Native bundle ID,
+# runtime/ABI certificate or acceptance of uninspected future pairs.
+_REVIEWED_NATIVE_TABLE_726 = "269f305d56732e00e5d8e24078382dc5606ff740fe37d995bb08a67a94556f3e"
+_REVIEWED_SYRUP_TABLE_726 = "bb75bec0f79c8718179c3fcf4a3c4dea65166ade5fe455012c8cdddf8b013e31"
+
+
+def _reviewed_source_pair(manifest, source):
+    from masy import dense_original_inputs as oi
+    return (manifest["source_identity"] == source
+            and hashlib.sha256(oi._json(manifest["files"]["maple"])).hexdigest() == _REVIEWED_NATIVE_TABLE_726
+            and hashlib.sha256(oi._json(manifest["files"]["maple_syrup"])).hexdigest() == _REVIEWED_SYRUP_TABLE_726)
+
+
+# Explicit complete current upstream Source tables, authenticated from Root's
+# Source-only 937 producer. Source eligibility is not runtime/ABI/physical/fit
+# authority. The actual execution/constructor/resource prerequisites still refuse
+# until Root independently issues them.
+_REVIEWED_CURRENT_NATIVE_TABLE_937 = "ae7a5ee454ca63d365190e78fbd3349c8c5f5ce14b970ae2d2ffcd976a82a706"
+_REVIEWED_CURRENT_SYRUP_TABLE_937 = "c87b75a81bfec10274163f7348dcd812305986c29c024f5cdfd89c0a2daab098"
+
+
+def _reviewed_current_source_pair(manifest, source):
+    from masy import dense_original_inputs as oi
+    native = _REVIEWED_CURRENT_NATIVE_TABLE_937
+    syrup = _REVIEWED_CURRENT_SYRUP_TABLE_937
+    if (type(native) is not str or type(syrup) is not str
+            or len(native) != 64 or len(syrup) != 64
+            or any(ch not in "0123456789abcdef" for ch in native + syrup)):
+        return False
+    return (manifest["source_identity"] == source
+            and hashlib.sha256(oi._json(manifest["files"]["maple"])).hexdigest() == native
+            and hashlib.sha256(oi._json(manifest["files"]["maple_syrup"])).hexdigest() == syrup)
