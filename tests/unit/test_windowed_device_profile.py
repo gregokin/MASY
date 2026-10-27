@@ -92,4 +92,3 @@ def test_nonwindowed_owner_is_refused_before_any_native_receiver():
             profile=None, record_limits=None, runner_limits=None, resource_limits=None, qualification_budget=None)
     with pytest.raises(TypeError, match="subclasses"):
         type("ForeignWindowedOwner", (DeviceWindowedBedOwner,), {})
-
