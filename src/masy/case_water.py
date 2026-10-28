@@ -221,13 +221,8 @@ class PreparedCaseWater:
         return self
 
 
-def prepare_case_water(bed: DenseBed, spec: CaseWaterSpec, control: DenseRunnerControl,
-                       *, limits: CaseWaterCopyLimits) -> PreparedCaseWater:
-    """Prepare real Native CPU inputs; never reload, reset or transport a bed."""
-    if type(bed) is not DenseBed or type(spec) is not CaseWaterSpec or type(limits) is not CaseWaterCopyLimits:
-        raise CaseWaterError("invalid_input_type", "requires actual DenseBed, CaseWaterSpec and CaseWaterCopyLimits")
-    if type(control) is not DenseRunnerControl:
-        raise CaseWaterError("invalid_control", "requires existing DenseRunnerControl")
+def _prepare_water_inputs(state, context, native_vegetation, case_sha256, spec, control, limits):
+    """Shared Native parameter construction; no bed wrapper or transport ownership."""
     import numpy as np
     from maple_syrup.complete_event import CompletionPolicy
     from maple_syrup.infiltration import column_parameters, initial_soil_water_m
@@ -238,9 +233,6 @@ def prepare_case_water(bed: DenseBed, spec: CaseWaterSpec, control: DenseRunnerC
     from maple_syrup.sediment_physics import sediment_physics_parameters
     from maple_syrup.storm import StormControl, StormError
 
-    _verify_case(bed)
-    state, context, native_vegetation, clock = bed.state, bed.context, bed.vegetation, bed.time_s
-    case_sha256 = bed.case_sha256
     g = context.geometry
     ny, nx = g.ny, g.nx
     classes = context.grain_classes.classes
@@ -368,6 +360,28 @@ def prepare_case_water(bed: DenseBed, spec: CaseWaterSpec, control: DenseRunnerC
             "backend":"numpy", "scientific_default_fallback":False,
             "transport_or_completion_executed":False, "whole_process_fit_claim":False}
         record_bytes = _json_bytes(record, limits.max_metadata_bytes)
+        return water, spec_bytes, water_bytes, control_bytes, record_bytes
+    except CaseWaterError:
+        raise
+    except Exception as exc:
+        raise CaseWaterError("native_input_refused", f"{type(exc).__name__}: {exc}") from exc
+
+
+def prepare_case_water(bed: DenseBed, spec: CaseWaterSpec, control: DenseRunnerControl,
+                       *, limits: CaseWaterCopyLimits) -> PreparedCaseWater:
+    """Prepare real Native CPU inputs; never reload, reset or transport a bed."""
+    if type(bed) is not DenseBed or type(spec) is not CaseWaterSpec or type(limits) is not CaseWaterCopyLimits:
+        raise CaseWaterError("invalid_input_type", "requires actual DenseBed, CaseWaterSpec and CaseWaterCopyLimits")
+    if type(control) is not DenseRunnerControl:
+        raise CaseWaterError("invalid_control", "requires existing DenseRunnerControl")
+    import numpy as np
+
+    _verify_case(bed)
+    state, context, native_vegetation, clock = bed.state, bed.context, bed.vegetation, bed.time_s
+    case_sha256 = bed.case_sha256
+    water, spec_bytes, water_bytes, control_bytes, record_bytes = _prepare_water_inputs(
+        state, context, native_vegetation, case_sha256, spec, control, limits)
+    try:
         _verify_case(bed)
         if (bed.state is not state or bed.context is not context or bed.vegetation is not native_vegetation
                 or bed.time_s != clock or bed.case_sha256 != case_sha256):
