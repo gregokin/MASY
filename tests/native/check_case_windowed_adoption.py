@@ -101,7 +101,7 @@ def _inputs(root, **choices):
 
 def _adopt(inputs, store, **changes):
     options = dict(store_dir=store, datum_offset_m=0.0, window_voxels=3,
-                   chunk_columns=16, rows_per_band=2, with_prefix_packets=True, limits=LIMITS)
+                   chunk_columns=64, rows_per_band=2, with_prefix_packets=True, limits=LIMITS)
     options.update(changes)
     return adopt_windowed_case(inputs, **options)
 
@@ -143,14 +143,16 @@ def test_imported_stratified_case_is_lossless_compact_and_prepares_native_water(
     assert type(adopted.state) is BedState and type(adopted.context) is BedContext
     assert adopted.config.geometry is adopted.context.geometry
     assert adopted.state.voxel_column.logical_shape == (NY, NX, NV, K)
-    assert len(adopted.state.voxel_column.deep_store.chunks) > 1
+    assert adopted.state.voxel_column.deep_store.header.chunk_columns == 64
+    assert tuple((ref.cell_start, ref.n_cells) for ref in
+                 adopted.state.voxel_column.deep_store.chunks) == ((0, 64), (64, 8))
     assert adopted.initial_mobile_state is None and adopted.ledger_reconciliation_baseline is None
     flat = original.compiled.voxel_column.mass_kg.reshape(NY * NX, NV, K)
     cursor = 0
     for ref in adopted.state.voxel_column.deep_store.chunks:
-        assert ref.cell_start == cursor and 0 < ref.n_cells <= 16
+        assert ref.cell_start == cursor and 0 < ref.n_cells <= 64
         ids = np.arange(ref.cell_start, ref.cell_start + ref.n_cells, dtype=np.int64)
-        actual = gather_full_columns(adopted.state.voxel_column, ids, max_columns=16)
+        actual = gather_full_columns(adopted.state.voxel_column, ids, max_columns=64)
         assert actual.tobytes() == flat[ref.cell_start:ref.cell_start + ref.n_cells].tobytes()
         cursor += ref.n_cells
     assert cursor == NY * NX

@@ -34,13 +34,19 @@ limits = CaseWindowedLimits(
 inputs = resolve_case_inputs(Path("/run/owned-case"), mode="compile", input_limits=io)
 windowed = adopt_windowed_case(
     inputs, store_dir=Path("/run/deep-store"),
-    datum_offset_m=0.0, window_voxels=3, chunk_columns=16,
+    datum_offset_m=0.0, window_voxels=3, chunk_columns=64,
     rows_per_band=2, with_prefix_packets=True, limits=limits,
 )
 windowed.verify()
 ```
 
-All storage choices are explicit. Datum `+0.0` is MAPLE's existing dense
+All storage choices are explicit. Native `DeepStoreHeader` requires
+`64 <= chunk_columns <= 1024`; an unsupported positive value raises Native
+`ValueError` before the store builder creates artifacts. The example's
+72 cells form two chunks of 64 and 8 columns. The two-row streaming band is
+independent of the chunk width; it does not require a separate chunk per band.
+
+Datum `+0.0` is MAPLE's existing dense
 physical frame; the adapter does not shift elevations. Native committed
 regrouping runs with `require_exact_height=True, trusted_packet=False`,
 records its genuine receipt and rejects incompatible packet heights. The
