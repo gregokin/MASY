@@ -430,7 +430,7 @@ def _precopy_process(plan, placement_limits, expected=None):
 
 
 def _plan(windowed, prepared, pool, budget, metadata_size, metadata_limit):
-    from maple.core.backend import array_leaf_inventory
+    from maple.core.backend.arrays import array_leaf_inventory
     col = windowed.state.voxel_column
     physical = (windowed.state, windowed.vegetation, windowed.threshold_modifiers)
     host = array_leaf_inventory((physical, windowed.context, windowed.config, windowed.static_inputs,
@@ -647,7 +647,7 @@ def prepare_device_c64_case(windowed, prepared_host_water, *, schedule_input, cu
     wind_config = build_dense_production_wind_config(
         DenseProductionWindProfile(windowed.config, calibration, label), wind_envelope_record=original,
         initial_available_fraction=windowed.context.initial_available_fraction)
-    from maple.core.backend import array_leaf_inventory
+    from maple.core.backend.arrays import array_leaf_inventory
     if 3 * array_leaf_inventory(wind_config)["transfer_bytes"] > prefix["terms"]["prospective_wind_config_current_next_error_bytes"]:
         raise CaseDeviceC64Error("wind_config_layout", "Native mapper exceeded prospective array occurrence envelope")
     _precopy_process(prefix, placement_limits, identity)
