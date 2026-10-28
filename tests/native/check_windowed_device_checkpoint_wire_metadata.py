@@ -432,3 +432,113 @@ def test_genuine_budget_already_json_rosters_keep_names_none_order_and_input():
         assert all(type(row) is list and row[1] is None for row in projected[name])
     assert projected["opaque_constructor_accounting"] is None
     assert json_record == before
+
+
+def _genuine_native_small_snapshot(tmp_path):
+    """Native snapshot fixture values, in the closed 4x4/K1/V6/W3 shape.
+
+    Root supplies the actual Native tests/shared_storage Source path for
+    test_deep_store, exactly as Native's own snapshot tests do. No transport,
+    fake holder or provider is used; all partition/storage work is Native.
+    """
+    from test_deep_store import MRES, packed_columns
+
+    from maple.core.boundaries import AxisBoundary, BoundaryKind
+    from maple.core.parameters.geometry import GeometrySpec
+    from maple.core.parameters.grain_classes import GrainClass, GrainClassSet
+    from maple.core.types.sediment_availability import SedimentAvailabilityState
+    from maple.core.types.voxel import VoxelColumnState
+    from maple.core.types.water import WaterState
+    from maple.surface.active_layer.initialization import initialize_active_layer_from_voxels
+    from maple.surface.voxels import windowed_snapshot as native
+    from maple.surface.voxels.diagnostics import check_voxel_column_state
+    from maple.surface.voxels.windowed_inventory import windowed_column_from_dense
+
+    geometry = GeometrySpec(
+        nx=4, ny=4, dx_m=1.0, dy_m=1.0,
+        boundary_x=AxisBoundary(kind=BoundaryKind.PERIODIC),
+        boundary_y=AxisBoundary(kind=BoundaryKind.PERIODIC),
+        voxel_dz_m=0.1, bulk_density_kg_m3=1250.0, active_layer_thickness_m=0.05)
+    classes = GrainClassSet(classes=(GrainClass(
+        class_id="c0", diameter_m=1.0e-4, particle_density_kg_m3=2650.0,
+        is_aggregate=False),))
+    column = VoxelColumnState(mass_kg=packed_columns("random", 4, 4, 6, 1, seed=3))
+    check_voxel_column_state(column, geometry, MRES)
+    column, active, _ = initialize_active_layer_from_voxels(column, geometry, MRES)
+    state = windowed_column_from_dense(
+        column, geometry, MRES, store_dir=tmp_path / "native-deep",
+        class_ids=tuple(grain.class_id for grain in classes.classes),
+        max_store_bytes=LIMITS.native_max_bytes, window_voxels=3,
+        chunk_columns=64, with_prefix_packets=True)
+    availability = SedimentAvailabilityState(
+        available_mass_kg=active.mass_kg.copy(), bound_mass_kg=np.zeros_like(active.mass_kg))
+    water = WaterState(depth_m=np.zeros((4, 4), dtype=np.float64),
+                       mobile_mass_by_cell_class_kg=np.zeros((4, 4, 1), dtype=np.float64))
+    path = tmp_path / "native_state.npz"
+    provenance = {"test_scope": "genuine Native CPU snapshot format; no events"}
+    native.save_windowed_state_snapshot(
+        state, active, 12.5, path, step=3, geometry=geometry,
+        mass_resolution_kg=MRES, sediment_availability=availability,
+        water=water, provenance=provenance)
+    return native, geometry, classes, MRES, state, path, provenance
+
+
+def test_genuine_native_int32_snapshot_matches_checkpoint_preflight(tmp_path):
+    import json
+    import zipfile
+
+    native, geometry, classes, mres, state, path, provenance = _genuine_native_small_snapshot(tmp_path)
+    before = path.read_bytes()
+    assert state.base.dtype == np.dtype(np.int32)
+    with np.load(path, allow_pickle=False) as archive:
+        assert set(archive.files) == {"metadata", *native.COLUMN_ARRAYS, *native.OTHER_ARRAYS}
+        actual_metadata = json.loads(str(archive["metadata"].item()))
+        actual_numeric = sum(archive[name].nbytes for name in (*native.COLUMN_ARRAYS, *native.OTHER_ARRAYS))
+        assert archive["base"].dtype.str == "<i4"
+    with zipfile.ZipFile(path) as archive:
+        assert len(archive.infolist()) == 12
+        assert all(info.compress_type == zipfile.ZIP_STORED for info in archive.infolist())
+    metadata, numeric = c._snapshot_preflight(path, LIMITS)
+    assert metadata == actual_metadata
+    assert numeric == actual_numeric
+    assert metadata["provenance"] == provenance
+    assert (metadata["n_voxels"], metadata["time_s"], metadata["step"]) == (6, 12.5, 3)
+    restored = native.load_windowed_state_snapshot(
+        path, geometry=geometry, grain_classes=classes,
+        mass_resolution_kg=mres, max_bytes=LIMITS.native_max_bytes)
+    assert restored["validated"] and restored["restartable"] and not restored["is_diagnostic"]
+    assert restored["voxel_column"].base.dtype == np.dtype(np.int32)
+    for name in native.COLUMN_ARRAYS:
+        assert getattr(restored["voxel_column"], name).tobytes() == getattr(state, name).tobytes(), name
+    assert restored["voxel_column"].height_packet.packet.tobytes() == state.height_packet.packet.tobytes()
+    assert restored["provenance"] == provenance
+    assert path.read_bytes() == before
+
+
+def test_genuine_native_snapshot_with_int64_base_remains_refused(tmp_path):
+    native, geometry, classes, mres, state, path, _ = _genuine_native_small_snapshot(tmp_path)
+    before = path.read_bytes()
+    base_before = state.base.tobytes()
+    with np.load(path, allow_pickle=False) as archive:
+        arrays = {name: np.array(archive[name], copy=True, order="C") for name in archive.files}
+    assert arrays["base"].dtype == np.dtype(np.int32)
+    original_members = {name: (value.dtype.str, value.shape, value.tobytes())
+                        for name, value in arrays.items()}
+    arrays["base"] = arrays["base"].astype(np.int64)
+    bad = tmp_path / "int64_base.npz"
+    np.savez(bad, **arrays)
+    with np.load(bad, allow_pickle=False) as archive:
+        for name, original in original_members.items():
+            if name != "base":
+                assert (archive[name].dtype.str, archive[name].shape, archive[name].tobytes()) == original
+        assert archive["base"].dtype == np.dtype(np.int64)
+        assert np.array_equal(archive["base"], state.base)
+    with pytest.raises(c.WindowedDeviceCheckpointError) as refusal:
+        c._snapshot_preflight(bad, LIMITS)
+    assert (refusal.value.code, refusal.value.detail) == ("native_header", "base")
+    with pytest.raises(ValueError, match="base must be int32"):
+        native.load_windowed_state_snapshot(
+            bad, geometry=geometry, grain_classes=classes,
+            mass_resolution_kg=mres, max_bytes=LIMITS.native_max_bytes)
+    assert path.read_bytes() == before
+    assert state.base.dtype == np.dtype(np.int32) and state.base.tobytes() == base_before

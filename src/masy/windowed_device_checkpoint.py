@@ -648,7 +648,7 @@ def _snapshot_preflight(path, limits):
     import numpy as np
     from maple.surface.voxels.windowed_prefix import packet_terms_for
     expected = {
-        "window_kg": ((4, 4, 3, 1), "<f8"), "base": ((4, 4), "<i8"),
+        "window_kg": ((4, 4, 3, 1), "<f8"), "base": ((4, 4), "<i4"),
         "deep_by_class_kg": ((4, 4, 1), "<f8"), "deep_total_kg": ((4, 4), "<f8"),
         "deep_room_kg": ((4, 4), "<f8"),
         "prefix_packet": ((4, 4, packet_terms_for(6, 1)), "<f8"),

@@ -246,3 +246,18 @@ canonical bytes and identity hashes remain exact. Strict metadata validation
 still rejects tuples elsewhere. The focused metadata checks use the genuine
 owning descriptor/record API with explicitly synthetic, unread references;
 they issue no execution authority or physical checkpoint acceptance.
+
+The Small Native snapshot preflight expects the owning Native `base` array
+as signed int32 (`<i4` on the selected runtime). The Native writer preserves
+that dtype; its column validator and device validator both require int32.
+The former int64 header expectation rejected a genuine saved snapshot before
+the first wind event. This correction changes only that expected dtype.
+The twelve-member roster, shapes, all other dtypes, exact payload lengths,
+uncompressed format, metadata checks and original byte/resource caps remain.
+
+Two focused checks use the actual Native CPU snapshot writer and reader in
+the closed 4x4/K1/V6/W3 shape, with the existing Native packed-column fixture.
+They check exact Native header/preflight agreement and refusal of an int64
+replacement of only `base`. They execute no wind or water event and establish
+no GPU save/recovery acceptance. Root owns their execution and the separate
+physical restart qualification on freshly bound Sources and runtime.
