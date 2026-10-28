@@ -209,3 +209,32 @@ decode identity, the exact old omission, malformed/unknown-class refusals and
 the unchanged Native constructor bound. It performs no transport or GPU work.
 The author has not executed it. Actual fresh-write and recovery roles still
 require independent review, a coherent runtime and Root qualification.
+
+## Typed values and their JSON representation
+
+The companion retains its original logical limits: at most100000 typed
+occurrences and typed depth24. A typed dictionary field is encoded as a JSON
+pair list containing a name and another typed node. These representation
+wrappers are not additional admitted scientific values. Private closed-wire
+checks therefore use derived JSON bounds16N+1 nodes/max(3D+2,4) depth; an
+original or current record with one direct wire member uses17N nodes/
+max(3D+3,5) depth. At the existing limits these are1600001/74 and1700000/75.
+
+Every record's nonwire validation skeleton, with its one wire member replaced
+by None in a temporary shallow copy, still passes the original N/D admission.
+The complete wire and record still pass the original conservative aggregate
+4MiB metadata bound. Exact serialized4MiB and all numeric, header, file,
+storage and memory bounds remain unchanged. The writer admits the final
+record including its seal; the reader applies the private structural view
+before the unchanged typed, class, reference, array and owning record checks.
+No global JSON parser or other snapshot/physical metadata domain is widened.
+
+The focused metadata module is
+`tests/native/check_windowed_device_checkpoint_wire_metadata.py`. It covers
+the original typed node/depth boundaries, additional JSON wrappers, both
+original/current envelopes, capped nonwire metadata, sealed canonical bytes,
+real local empty NPY files, and closed refusals. Its illustrative metadata
+does not stand for a Native holder or successful physical restore. The real
+Native class regression above stays unchanged. Root owns actual execution,
+independent Source review, current runtime/source evidence and the separate
+fresh write/recovery qualification; this correction alone issues none.

@@ -96,6 +96,38 @@ def _plain(value, limits):
     return value
 
 
+def _wire_json_limits(limits):
+    """Representation bounds only; typed node/depth allowances stay unchanged.
+
+    Each typed occurrence owns <=14 JSON values including a rank<=4 array
+    descriptor; named edges add <=2(N-1), and the wire shell adds3. Named
+    edges add at most3 JSON levels. Keys are not nodes in either JSON walker.
+    """
+    return SimpleNamespace(max_metadata_bytes=limits.max_metadata_bytes,
+                           max_nodes=16 * limits.max_nodes + 1,
+                           max_depth=max(3 * limits.max_depth + 2, 4))
+
+
+def _record_json_limits(limits):
+    # The original-capped skeleton contains one direct wire=None placeholder.
+    # Substitute one admitted wire: N+(16N+1)-1 nodes, depth <=1+wire depth.
+    return SimpleNamespace(max_metadata_bytes=limits.max_metadata_bytes,
+                           max_nodes=17 * limits.max_nodes,
+                           max_depth=max(3 * limits.max_depth + 3, 5))
+
+
+def _plain_wire(wire, limits):
+    return _plain(wire, _wire_json_limits(limits))
+
+
+def _plain_record(record, limits):
+    """Keep nonwire N/D and the complete record's original byte cap."""
+    if type(record) is not dict or "wire" not in record:
+        _fail("closed_record", "wire record")
+    _plain(dict(record, wire=None), limits)
+    return _plain(record, _record_json_limits(limits))
+
+
 def _path(value):
     text = str(value)
     if (not 1 <= len(text) <= 4096 or "\0" in text or not Path(text).is_absolute()
@@ -221,7 +253,7 @@ class _Encoder:
 def _wire_preflight(wire, limits):
     """Pure closed data validation, before class construction or expansion."""
     _keys(wire, ("root", "arrays", "numeric_bytes"), "wire")
-    _plain(wire, limits)
+    _plain_wire(wire, limits)
     total = _integer(wire["numeric_bytes"], limits.max_numeric_bytes, "numeric bytes")
     rows = wire["arrays"]
     if type(rows) is not list or len(rows) > limits.max_nodes:
@@ -326,6 +358,7 @@ def _wire_root(wire, names, where):
 def _original_preflight(record, source, environment, limits):
     _keys(record, ("schema", "wire", "payload", "profile", "source_identity",
                   "environment_sha256", "manifest_sha256"), "original capsule")
+    _plain_record(record, limits)
     if (record["schema"] != ORIGINAL_SCHEMA or record["profile"] != PROFILE
             or _json(record["source_identity"]) != _json(source)
             or record["environment_sha256"] != environment):
@@ -528,8 +561,9 @@ def _write_wire(directory, material, *, schema, limits, authority, extra):
     if schema == ORIGINAL_SCHEMA:
         _original_preflight(dict(record, manifest_sha256="0" * 64),
                             record["source_identity"], record["environment_sha256"], limits)
-    _plain(record, limits)
+    _plain_record(dict(record, manifest_sha256="0" * 64), limits)
     record["manifest_sha256"] = _sha(record)
+    _plain_record(record, limits)
     store._sealed_write(directory, "manifest.json", record, limits.max_metadata_bytes)
     return record
 
@@ -540,12 +574,13 @@ def _read_wire(directory, *, expected_file_sha=None, expected_seal=None, schema,
     raw = _read_file(directory / "manifest.json", limits.max_metadata_bytes)
     if expected_file_sha is not None and hashlib.sha256(raw).hexdigest() != expected_file_sha:
         _fail("manifest_hash", "raw manifest hash")
-    record = oi._strict_json(raw, limits)
+    record = oi._strict_json(raw, _record_json_limits(limits))
     if type(record) is not dict or record.get("schema") != schema:
         _fail("schema", "exact companion/original schema")
     body = dict(record); seal = body.pop("manifest_sha256", None)
     if _sha(body) != seal or expected_seal is not None and seal != expected_seal:
         _fail("manifest_hash", "manifest seal")
+    _plain_record(record, limits)
     total = _wire_preflight(record["wire"], limits)
     _keys(record["payload"], ("size", "sha256"), "raw payload")
     row = dict(path=str(directory / "a_0000.npy"), **record["payload"])
@@ -886,7 +921,7 @@ def _summary(manifest):
 def _preflight(manifest, source, environment, limits):
     _keys(manifest, ("schema", "profile", "wire", "payload", "source_identity", "environment_sha256",
         "originals", "genesis", "physical", "case_sha256", "schedule_sha256", "state", "routing", "receipts", "ledger", "water_counters", "manifest_sha256"), "GPU image")
-    _plain(manifest, limits)
+    _plain_record(manifest, limits)
     if (manifest["schema"] != SCHEMA or manifest["profile"] != PROFILE
             or _json(manifest["source_identity"]) != _json(source)
             or manifest["environment_sha256"] != environment):
