@@ -155,3 +155,33 @@ no-reset identity, shared cover, retained soil, masks, class/density and
 conversion refusals, mutation detection and finite-budget refusals. The
 fixture supplies its own south export ring and wet coefficients. Those
 values are interface fixtures and must not become user-case defaults.
+
+## Explicit interim ponded-water policy (October 28, 2026)
+
+The case workflow continues to require authored routing flags and a supplied
+control; preparing inputs does not select a new default. For the user-approved
+interim choice, explicitly select Native pit storage and the existing control
+flags `terminal_storage_water=True` and `deposit_mobile_at_flow_end=True`. The
+C64 qualification keeps flat storage off. During water events pits retain
+water. Only depth and surface-volume completion criteria exclude recognized
+terminal cells; rain-off, discharge, hold, finite/nonnegative checks, final
+Native sediment settlement and conservation must still pass.
+
+SYRUP Native finalization removes and accounts for remaining ponded surface
+water and performs the existing soil reset before returning an accepted dry
+handoff. MASY forwards the returned bed and records Native accounting without
+applying either reset again.
+The terminal share is included in total surface removal; the existing soil
+reset has a separate removal total. Surface, soil and mobile
+state must be dry before wind. This is external interevent removal, not ET.
+Future ET-capable or retained-soil-water behavior needs an explicitly qualified
+profile and does not automatically enable uptake or growth.
+
+SYRUP `919c82c` and MASY `5cab827` are Source-accepted and pushed on
+qualification branches. At this qualification stage, the C64 water event with positive ponded-water
+removal matched its independent Dense GPU oracle, the direct Native entry
+comparison passed, and the full C64 four-event GPU wind/water sequence matched direct Native
+calls in 406.51 seconds under the original limits. This changes no ordinary
+case defaults and grants no general arbitrary-landscape GPU/windowed support
+or production calibration. The separate failure-guard check also passed;
+persisted restart is not covered by this C64 result.

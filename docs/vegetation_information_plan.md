@@ -392,3 +392,33 @@ exchange until the exchange is specified scientifically.
 retained-soil policy. Dynamic-vegetation persisted restart, GPU and windowed
 runs are refused. The [boundary store](dense_boundary_store.md) persists only
 the static profile.
+
+## Interim ponded-water accounting (October 28, 2026)
+
+The user's interim choice is to remove and account for remaining ponded water
+before wind, pending a future ET-capable model. Water events retain Native
+pit ponding. The explicitly selected profile uses existing
+`terminal_storage_water=True` and `deposit_mobile_at_flow_end=True`: depth and
+surface-volume completion checks apply to moving cells, excluding recognized
+terminal cells. Rain-off, discharge, hold, finite/nonnegative validation, real
+Native final sediment settlement and conservation still apply.
+
+Native finalization externally removes remaining surface water, including its
+terminal-storage share, and performs the existing soil reset before returning
+an accepted `DryHandoff`. MASY forwards the returned bed and records Native
+accounting without reapplying either reset. Surface and soil removal are separate
+accounted totals; dry surface,
+soil and mobile state remain zero before wind. This is not ET, plant uptake or
+water retained for vegetation. An ET-capable or retained-soil-water profile
+needs explicit scientific specification and qualification; no automatic ET
+route or growth response is added to the vegetation plan.
+
+SYRUP `919c82c` and MASY `5cab827` are Source-accepted and pushed on
+qualification branches. At this qualification stage, the C64 water event with positive ponded-water
+removal matched its independent Dense GPU oracle, the direct Native entry
+comparison passed, and the full C64 four-event GPU wind/water sequence matched direct Native
+calls in 406.51 seconds under the original limits. This changes no ordinary
+case defaults and grants no general arbitrary-landscape GPU/windowed support
+or production calibration. The separate failure-guard check also passed;
+persisted restart is not covered by this C64 result.
+Earlier dated status above remains historical.
