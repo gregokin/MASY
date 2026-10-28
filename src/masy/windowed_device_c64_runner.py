@@ -166,7 +166,8 @@ def _process_check(context, identity=None, *, upcoming_wrapper_bytes=0, checkpoi
         code = "native_scale_image" if exc.code == "native_scale_image" else "native_scale_source"
         raise DenseRunnerError(code, exc.detail) from exc
     if (type(context) is not w.shared.WindowedDeviceWaterC64Context
-            or type(context.runtime_bounds) is not w.shared.DeviceWaterC64QualificationBudget):
+            or (type(context.runtime_bounds) is not w.shared.DeviceWaterC64QualificationBudget
+                and type(context.runtime_bounds) is not w.shared.DeviceWaterC64CaseBudget)):
         raise DenseRunnerError("qualification_context", "distinct genuine qualification context required")
     w.shared._c64_qualification_runtime(context, verify_files=True)
     if type(upcoming_wrapper_bytes) is not int or not 0 <= upcoming_wrapper_bytes <= 5 << 30:
@@ -386,7 +387,8 @@ class _WaterLane:
     def _profile(self, state, context):
         if (type(state) is not self.w.shared.WindowedSharedBedState
                 or context is not self.runner._bed.context
-                or type(context.runtime_bounds) is not self.w.shared.DeviceWaterC64QualificationBudget
+                or (type(context.runtime_bounds) is not self.w.shared.DeviceWaterC64QualificationBudget
+                    and type(context.runtime_bounds) is not self.w.shared.DeviceWaterC64CaseBudget)
                 or self.runner._limits.max_report_rows != REPORT_ROWS
                 or context.bridge_limits.max_report_rows != REPORT_ROWS):
             raise _Stop("refused", "device_water_profile", "exact qualified seven-field/4096 profile required")
@@ -695,9 +697,13 @@ def build_windowed_device_c64_runner(bed, schedule, *, wind, water, control, pro
     n, w = _dense._native(), _native()
     _require_entry_api(w)  # Missing separately accepted SYRUP seam refuses before copies.
     ctx = bed.context
-    if (type(qualification_budget) is not w.shared.DeviceWaterC64QualificationBudget
+    if ((type(qualification_budget) is not w.shared.DeviceWaterC64QualificationBudget
+            and type(qualification_budget) is not w.shared.DeviceWaterC64CaseBudget)
             or qualification_budget is not ctx.runtime_bounds):
         raise DenseRunnerError("qualification_budget", "exact budget owned by the shared context required")
+    if type(qualification_budget) is not w.shared.DeviceWaterC64QualificationBudget:
+        from .case_device_c64 import _check_case_bed_admission
+        _check_case_bed_admission(bed, qualification_budget)
     process = _process_check(ctx, checkpoint="construction")
     audit = _profile(n, w, bed, wind, schedule, profile, record_limits)
     bed.verify()

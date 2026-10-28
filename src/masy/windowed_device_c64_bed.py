@@ -301,7 +301,7 @@ class DeviceWindowedC64BedOwner(DeviceDenseBedOwner):
 
     @classmethod
     def from_device_bed(cls, state, context, *, case_record, time_s, limits,
-                        vegetation, threshold_modifier_state, trajectory_semantics):
+                        vegetation, threshold_modifier_state, trajectory_semantics, _case_admission=None):
         if cls is not DeviceWindowedC64BedOwner or type(limits) is not DeviceWindowedC64BedLimits:
             raise DeviceBedError("invalid_input", "exact device-windowed owner/limits required")
         limits.__post_init__()
@@ -311,8 +311,12 @@ class DeviceWindowedC64BedOwner(DeviceDenseBedOwner):
         exchange, shared = _native()
         if type(state) is not shared.WindowedSharedBedState or type(context) is not shared.WindowedDeviceWaterC64Context:
             raise DeviceBedError("invalid_input", "genuine seven-field device water state/context required")
-        if type(context.runtime_bounds) is not shared.DeviceWaterC64QualificationBudget:
+        if (type(context.runtime_bounds) is not shared.DeviceWaterC64QualificationBudget
+                and type(context.runtime_bounds) is not shared.DeviceWaterC64CaseBudget):
             raise DeviceBedError("invalid_input", "distinct qualification budget required")
+        if type(context.runtime_bounds) is not shared.DeviceWaterC64QualificationBudget:
+            from .case_device_c64 import _check_case_admission
+            _check_case_admission(_case_admission, state, context, context.runtime_bounds, case_record)
         shared._c64_qualification_runtime(context, verify_files=True)
         shared._profile(state, context)
         if tuple(f.name for f in dataclasses.fields(type(state))) != WINDOWED_FIELDS:
@@ -325,6 +329,8 @@ class DeviceWindowedC64BedOwner(DeviceDenseBedOwner):
             raise DeviceBedError("invalid_case", "case metadata exceeds finite profile")
         owner = object.__new__(cls)
         owner._context, owner._exchange, owner._shared = context, exchange, shared
+        if type(context.runtime_bounds) is not shared.DeviceWaterC64QualificationBudget:
+            owner._case_admission = _case_admission
         owner._native_scale_support = support
         owner._ops = _CupyOps(cp)
         owner._geometry, owner._mres = context.geometry, context.mass_resolution_kg
@@ -359,6 +365,9 @@ class DeviceWindowedC64BedOwner(DeviceDenseBedOwner):
         finally:
             owner._zero_op_copy_roles = None
         owner._accepted = _Accepted(accepted, mirror, t, 0)
+        if type(context.runtime_bounds) is not shared.DeviceWaterC64QualificationBudget:
+            from .case_device_c64 import _bind_case_admission_owner
+            _bind_case_admission_owner(_case_admission, owner)
         return owner
 
     @property
