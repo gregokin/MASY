@@ -558,3 +558,22 @@ class DeviceDenseResources:
             "limits": dataclasses.asdict(self._limits),
             "scope": "private pool/soil/static ownership only; driver, pool allocator and native peak unqualified",
         }
+
+    @classmethod
+    def _from_restored_boundary(cls, ticket, *, pool, soil, statics, shape, limits, _ops, generation):
+        """Genuine private/static construction followed by MASY label rebind.
+
+        The existing constructor, copies, mirrors, admission and all native
+        arrays are unchanged. No Native private counter or old ticket enters.
+        """
+        from .windowed_device_checkpoint import _checked_ticket, _integer
+        _checked_ticket(ticket)
+        _integer(generation, 4, "saved MASY resource generation")
+        if generation != ticket.current["bookkeeping"]["next_index"]:
+            raise DeviceResourceError("restore_generation", "resource/cursor mismatch")
+        owner = cls._create(pool=pool, soil=soil, statics=statics, shape=shape, limits=limits, _ops=_ops)
+        if owner.generation != 0 or owner.active:
+            raise DeviceResourceError("restore_generation", "fresh idle resources required")
+        owner._accepted = dataclasses.replace(owner._accepted, generation=generation)
+        owner.verify()
+        return owner
