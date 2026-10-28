@@ -4,7 +4,7 @@ MAPLE-SYRUP runs actual alternating MAPLE wind and SYRUP water on the same evolv
 
 | Path | Accepted result | User interface and limit |
 | --- | --- | --- |
-| Dense CPU | The existing MAPLE-case workflow completed a labelled synthetic 9 × 8, two-class case. | `tools/masy_case.py run`; supply an authored landscape and scientific inputs. Exact executed revisions and limits are in [CPU case qualification](case_cpu_qualification.md). |
+| Dense CPU | The MAPLE-case workflow completed a labelled synthetic 9 × 8, two-class case, including a fresh explicit water-policy run. | `tools/masy_case.py run`; supply an authored landscape and scientific inputs. Exact revisions and limits are in [CPU case qualification](case_cpu_qualification.md) and the additional CPU authored-policy qualification below. |
 | Windowed CPU | Native reduced wind and positive water alternated on a shared 4 × 4, one-class, six-voxel bed with three resident voxels. | Bounded Python interface; see [CPU windowed integration](windowed_cpu_integration.md). |
 | Windowed GPU wind and water | Wind → water → wind → water passed on an 8 × 8, one-class bed with 20 logical voxels and three resident voxels. Water-only, entry and rejected-input recovery checks also passed. | Closed C64 Python/qualification interfaces; [details](windowed_device_c64_integration.md). No arbitrary-landscape GPU CLI bridge is provided. |
 | GPU saved boundary restart | Three fresh processes saved after wind, recovered through water, then recovered and finished the remaining wind and water events. | Closed Small 4 × 4, one-class, six-voxel/three-resident-voxel profile. [Restart interface](windowed_device_boundary_restart.md). |
@@ -20,6 +20,14 @@ The Small restart result executed MAPLE `40d1a598b09929b2d0f831513fb6d5c015d8877
 All three restart processes exited and were reaped. Source, original inputs and compiled-runtime files were independently rechecked after each role. Sampled host/device usage stayed within the original controls. Samples establish neither peak allocator usage nor capacity for a different landscape; opaque external, primitive and constructor allocation terms remain unpriced.
 
 Masy source composition `04f765a1a76e3e8f1da3de8e5bd390461d5d61dd` combines the accepted C64 and corrected checkpoint files while preserving the existing CPU case workflow and current policy documentation. It is an exact source composition, not a new physical run or permission to migrate an existing checkpoint. Retain the original result identities above. New runs still need an explicitly resolved compatible source pair and a fresh immutable runtime; an old checkpoint must retain its original source lock. Qualification branches remain distinct from upstream main, and unrelated uncommitted upstream work is excluded.
+
+## Additional CPU authored-policy qualification
+
+A fresh real `tools/masy_case.py run` completed wind → rain and recession → wind on the unchanged synthetic 9 × 8, two-class, 20-voxel case. It executed MASY `ebc4b1745807df81f8d4f2b250b6179b1dbc10c5`, MAPLE `40d1a598b09929b2d0f831513fb6d5c015d88772` and SYRUP `919c82c702f3a1b485a35bd3d5c39960c3b577b8`, using fresh lock `24ded59b0510d7acb1007eecea9df907045cb1f618a0f0d29c195ec1ec15d55e`.
+
+The complete authored request explicitly selected pit storage, terminal-storage completion and mobile-sediment deposition at flow end. Its values survived preparation and reconstruction by the real case worker. Native water-removal and residual accounting matched the single rain receipt and aggregate. This unchanged CPU case removed zero surface water and positive soil water; it establishes policy forwarding and accounting, while positive terminal ponded-water removal remains the separate C64 GPU result above. No terrain, boundary, forcing, scientific coefficient or ordinary default was changed.
+
+Root independently joined all six required roles in the full 20-process record, checked all process exits and restored affinity/subreaper state, rehashed original inputs and the locked source/runtime, and read back all 16 final arrays, 20 scalars and five prescribed vegetation fields exactly. The original case worker took 10.357 seconds. Existing resource limits were retained; this observation is not a fit or performance guarantee. Final acceptance receipt SHA-256: `4626354000c8521a1369237b9fb149be6302b80f8dd8bc23842209acad58914a`.
 
 ## Interim ponded-water policy
 

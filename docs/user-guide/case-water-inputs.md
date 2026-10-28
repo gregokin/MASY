@@ -185,3 +185,20 @@ calls in 406.51 seconds under the original limits. This changes no ordinary
 case defaults and grants no general arbitrary-landscape GPU/windowed support
 or production calibration. The separate failure-guard check also passed;
 persisted restart is not covered by this C64 result.
+
+
+## Explicit CPU request settings, qualified October 28, 2026
+
+Set the following existing fields inside the complete authored run request:
+
+```text
+water_profile.spec.allow_pit_storage = true
+water_profile.control.completion_policy.terminal_storage_water = true
+water_profile.control.completion_policy.deposit_mobile_at_flow_end = true
+```
+
+These assignments identify fields, rather than a standalone request file. Supply all other required spec/control fields and descriptors explicitly. The qualified case retains `allow_flat_storage=false` and `allow_masked_nodata=false`; ordinary Native defaults are unchanged. These settings permit recognized closed depressions to retain water during an event and use Native terminal completion with externally accounted dry reset before wind. All remaining Native completion, routing and conservation gates still apply.
+
+A fresh real CPU case command passed these settings on the unchanged labelled synthetic 9 × 8/K2/V20 case with MASY `ebc4b17`, MAPLE `40d1a59` and SYRUP `919c82c`. The request, reconstructed water control and actual rain receipt were joined exactly, including the full surface/soil reset totals and aggregate. Surface removal in this CPU case was zero; soil removal was positive. Positive ponded-water removal was qualified separately by the C64 GPU case. See [current qualification status](../qualification_status_20261028.md) for complete revisions, evidence and limits.
+
+No adapter extension, ET law, production calibration or default change is needed to select this existing policy. A different landscape must still pass its own Native geometry, mask, flat-sink, boundary, completion and resource admission. Reuse neither an old runtime lock nor a diagnostic landscape archive as a restart for a new source pair.
