@@ -195,3 +195,17 @@ payloads stay local under Root's combined budgets and are excluded from
 Source-only review packets. Physical failure is truthful incomplete work;
 the unchanged last accepted HEAD and actual primary evidence remain the
 authority.
+
+The closed Native metadata registry additionally includes the canonical
+`maple.surface.voxels.windowed_delta:WindowedDeltaBudgets` and its exact six
+required fields. The original167 canonical entries, wire schema, class/field
+refusals and genuine Native constructor checks remain unchanged. This fixes
+the specific original-input encoding omission; it adds no arbitrary class
+import, alias fallback, budget change or storage/recovery qualification.
+Root's focused CPU metadata selector is
+`tests/native/check_windowed_device_checkpoint_registry.py::test_native_windowed_delta_budget_registry_roundtrip_and_strict_refusals`.
+It uses the real Native budget type and checks nested encoder/preflight/host
+decode identity, the exact old omission, malformed/unknown-class refusals and
+the unchanged Native constructor bound. It performs no transport or GPU work.
+The author has not executed it. Actual fresh-write and recovery roles still
+require independent review, a coherent runtime and Root qualification.
