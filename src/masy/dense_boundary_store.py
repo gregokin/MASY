@@ -233,7 +233,7 @@ def _check_seal(value, names, field, schema):
         _fail("metadata_seal", field)
 
 
-def _control_fields(value, *, intent=False, generation=False):
+def _control_fields(value, *, intent=False, generation=False, header=None):
     """Check wire kinds before equality (bool must never equal an integer)."""
     if type(value["store_id"]) is not str or not _NONCE.fullmatch(value["store_id"]):
         _fail("metadata_nonce", "store id")
@@ -255,7 +255,18 @@ def _control_fields(value, *, intent=False, generation=False):
         if value["receipt_bytes_sha256"] is not None:
             _digest(value["receipt_bytes_sha256"], "receipt raw hash")
     elif intent:
-        oi._source_identity(value["source_identity"])
+        if header is not None and _windowed_gpu_store(header):
+            # The owning GPU authority already validated this header identity.
+            if type(value["source_identity"]) is not dict:
+                _fail("metadata_layout", "GPU intent source identity")
+            try:
+                same_source = oi._json(value["source_identity"]) == oi._json(header["source_identity"])
+            except (TypeError, ValueError) as exc:
+                raise BoundaryStoreError("metadata_invalid", "GPU intent source identity") from exc
+            if not same_source:
+                _fail("ancestry", "intent runtime identity")
+        else:
+            oi._source_identity(value["source_identity"])
         _digest(value["environment_sha256"], "environment")
         parent_hash, parent_name = (
             value["expected_parent_head_file_sha256"],
@@ -1977,7 +1988,7 @@ def _generation_chain(root, header, store_sha, head, limits):
             _fail("ancestry", "generation/HEAD binding")
         intent, intent_raw = _record(path / "intent.json", limits.max_intent_bytes)
         _check_seal(intent, _INTENT, "intent_sha256", _store_schema(header) + ".intent")
-        _control_fields(intent, intent=True)
+        _control_fields(intent, intent=True, header=header)
         if _sha(intent_raw) != generation["intent_file_sha256"]:
             _fail("ancestry", "intent raw hash differs")
         for key in ("store_id", "attempt_id", "sequence", "operation_id"):

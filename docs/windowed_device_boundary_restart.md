@@ -261,3 +261,19 @@ They check exact Native header/preflight agreement and refusal of an int64
 replacement of only `base`. They execute no wind or water event and establish
 no GPU save/recovery acceptance. Root owns their execution and the separate
 physical restart qualification on freshly bound Sources and runtime.
+
+
+## GPU intent Source identity validation
+
+The private intent wire gate uses the existing exact GPU store schema/profile
+selector only when supplied the actual header by generation-chain validation.
+It requires an exact dictionary and complete canonical Source-identity byte
+equality with that already-authority-validated header. Unsupported canonical
+values and every missing, additional or changed Source operand refuse; no
+identity is normalized here. The existing subsequent intent/header environment
+and ancestry comparison remains. CPU intents retain the original strict
+four-field source-manifest-prototype validator, including its default call
+without a header. This dispatch changes no launch authority, source-currentness
+validation, schema, cap, physics or checkpoint payload. Synthetic metadata
+regressions establish this private check only; actual GPU restart remains a
+separate Root qualification.

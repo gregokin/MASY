@@ -542,3 +542,129 @@ def test_genuine_native_snapshot_with_int64_base_remains_refused(tmp_path):
             mass_resolution_kg=mres, max_bytes=LIMITS.native_max_bytes)
     assert path.read_bytes() == before
     assert state.base.dtype == np.dtype(np.int32) and state.base.tobytes() == base_before
+
+
+# 1097: private wire checks against a previously validated owning header.
+# These records carry synthetic metadata only; they are not file/runtime/GPU
+# authority and never invoke _Authority or create/recover a store.
+def _intent_source_metadata(source, *, schema=store.SCHEMA_WINDOWED_GPU):
+    return store._seal(dict(schema=schema + ".intent", store_id="1" * 32,
+        attempt_id="2" * 32, sequence=0,
+        expected_parent_head_file_sha256=None, expected_parent_generation=None,
+        operation_id="3" * 64, source_identity=copy.deepcopy(source),
+        environment_sha256=ENVIRONMENT), "intent_sha256")
+
+
+def _genuine_gpu_intent_metadata():
+    _shared, _budget, emitted = _synthetic_owning_qualification_record()
+    source = c._budget_identity(emitted)
+    header = dict(schema=store.SCHEMA_WINDOWED_GPU,
+                  profile=store.PROFILE_WINDOWED_GPU,
+                  source_identity=copy.deepcopy(source))
+    return header, _intent_source_metadata(source)
+
+
+def test_gpu_intent_checks_complete_genuine_budget_identity_without_mutating_metadata():
+    header, intent = _genuine_gpu_intent_metadata()
+    before = (copy.deepcopy(header), copy.deepcopy(intent))
+    raw = (oi._json(header), oi._json(intent))
+    # The actual pre-correction gate rejects this genuine owning identity.
+    with pytest.raises(oi.OriginalInputsError, match="unknown or missing fields"):
+        oi._source_identity(intent["source_identity"])
+    store._check_seal(intent, store._INTENT, "intent_sha256",
+                      store.SCHEMA_WINDOWED_GPU + ".intent")
+    assert store._control_fields(intent, intent=True, header=header) is None
+    assert header == before[0] and intent == before[1]
+    assert raw == (oi._json(header), oi._json(intent))
+    assert intent["source_identity"]["opaque_constructor_accounting"] is None
+    assert all(row[1] is None for key in ("opaque_external_bounds", "opaque_primitive_units")
+               for row in intent["source_identity"][key])
+
+
+@pytest.mark.parametrize("pair", [None,
+    (store.SCHEMA, store.PROFILE), (store.SCHEMA_V2, store.PROFILE_V2),
+    (store.SCHEMA_ACTIVE_WATER, store.PROFILE_ACTIVE_WATER),
+    (store.SCHEMA_ACTIVE_PROCESS, store.PROFILE_ACTIVE_PROCESS)])
+def test_cpu_intent_keeps_exact_prototype_validator_with_or_without_header(pair):
+    source = dict(kind="source_manifest_prototype", masy="4" * 64,
+                  maple="5" * 64, syrup="6" * 64)
+    header = None if pair is None else dict(schema=pair[0], profile=pair[1],
+                                           source_identity=copy.deepcopy(source))
+    intent = _intent_source_metadata(source, schema=store.SCHEMA if pair is None else pair[0])
+    before = copy.deepcopy(intent)
+    assert store._control_fields(intent, intent=True, header=header) is None
+    assert intent == before
+    _, gpu_intent = _genuine_gpu_intent_metadata()
+    for invalid in (gpu_intent["source_identity"], dict(source, extra=None),
+                    {k: v for k, v in source.items() if k != "maple"},
+                    dict(source, kind="other"), dict(source, maple=True)):
+        bad = copy.deepcopy(intent); bad["source_identity"] = copy.deepcopy(invalid)
+        with pytest.raises(oi.OriginalInputsError):
+            store._control_fields(bad, intent=True, header=header)
+
+
+@pytest.mark.parametrize("change", ["extra", "missing", "native_source", "uuid", "factory", "roster"])
+def test_gpu_intent_refuses_any_full_source_identity_drift(change):
+    header, intent = _genuine_gpu_intent_metadata()
+    source = intent["source_identity"]
+    if change == "extra": source["unissued_extra"] = None
+    elif change == "missing": del source["gpu_uuid"]
+    elif change == "native_source": source["native_source_identity"] = "7" * 64
+    elif change == "uuid": source["gpu_uuid"] = "GPU-11111111-1111-1111-1111-111111111111"
+    elif change == "factory": source["factory_source"]["size"] += 1
+    else: source["opaque_external_bounds"][0][1] = 0
+    # A correctly resealed intent still cannot change the saved Source identity.
+    intent = store._seal({k: v for k, v in intent.items() if k != "intent_sha256"}, "intent_sha256")
+    store._check_seal(intent, store._INTENT, "intent_sha256",
+                      store.SCHEMA_WINDOWED_GPU + ".intent")
+    before = (oi._json(header), oi._json(intent))
+    with pytest.raises(store.BoundaryStoreError) as refusal:
+        store._control_fields(intent, intent=True, header=header)
+    assert (refusal.value.code, refusal.value.detail) == ("ancestry", "intent runtime identity")
+    assert before == (oi._json(header), oi._json(intent))
+
+
+@pytest.mark.parametrize("invalid", [None, [], (), "not-an-identity", 1, True])
+def test_gpu_intent_refuses_non_dict_source_identity(invalid):
+    header, intent = _genuine_gpu_intent_metadata()
+    intent["source_identity"] = invalid
+    with pytest.raises(store.BoundaryStoreError) as refusal:
+        store._control_fields(intent, intent=True, header=header)
+    assert (refusal.value.code, refusal.value.detail) == ("metadata_layout", "GPU intent source identity")
+
+
+@pytest.mark.parametrize("invalid", ["non_json", "nonfinite", "cycle"])
+def test_gpu_intent_canonical_failures_are_closed_metadata_refusals(invalid):
+    header, intent = _genuine_gpu_intent_metadata()
+    source = intent["source_identity"]
+    source["invalid"] = object() if invalid == "non_json" else float("nan") if invalid == "nonfinite" else source
+    with pytest.raises(store.BoundaryStoreError) as refusal:
+        store._control_fields(intent, intent=True, header=header)
+    assert (refusal.value.code, refusal.value.detail) == ("metadata_invalid", "GPU intent source identity")
+
+
+@pytest.mark.parametrize("change", ["unknown_schema", "mixed_gpu_cpu", "mixed_cpu_gpu", "bool_schema", "bool_profile"])
+def test_gpu_intent_rejects_unknown_mixed_or_nonstring_header_selectors(change):
+    header, intent = _genuine_gpu_intent_metadata()
+    if change == "unknown_schema": header["schema"] += ".unknown"
+    elif change == "mixed_gpu_cpu": header["profile"] = store.PROFILE
+    elif change == "mixed_cpu_gpu": header["schema"] = store.SCHEMA
+    elif change == "bool_schema": header["schema"] = True
+    else: header["profile"] = False
+    with pytest.raises(store.BoundaryStoreError) as refusal:
+        store._control_fields(intent, intent=True, header=header)
+    assert refusal.value.code == "store_profile"
+
+
+@pytest.mark.parametrize("field,code", [
+    ("sequence", "metadata_integer"), ("store_id", "metadata_nonce"),
+    ("attempt_id", "metadata_nonce"), ("operation_id", "metadata_digest"),
+    ("environment_sha256", "metadata_digest"),
+    ("expected_parent_head_file_sha256", "metadata_digest"),
+    ("expected_parent_generation", "metadata_nonce")])
+def test_gpu_intent_preserves_plain_wire_integer_and_reference_guards(field, code):
+    header, intent = _genuine_gpu_intent_metadata()
+    intent[field] = True
+    with pytest.raises(store.BoundaryStoreError) as refusal:
+        store._control_fields(intent, intent=True, header=header)
+    assert refusal.value.code == code
