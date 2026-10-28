@@ -75,7 +75,9 @@ def _water_inputs(host, cp, vegetation):
     sediment = dataclasses.replace(water.sediment, xp=cp,
         **{f.name: to_device(getattr(water.sediment, f.name), cp)
            for f in dataclasses.fields(water.sediment) if f.name.startswith("d_")})
-    return dataclasses.replace(water, column=column, field=field, sediment=sediment,
+    # User-selected native strict-pit storage; preserve the original ring and flat-storage=False.
+    return dataclasses.replace(water, terrain=dataclasses.replace(water.terrain, allow_pit_storage=True),
+        column=column, field=field, sediment=sediment,
         vegetation_cover_fraction=vegetation.raster.cover_fraction,
         initial_soil_water_m=to_device(water.initial_soil_water_m, cp))
 
@@ -131,7 +133,8 @@ def components(root, cp, qualification_budget):
     bed = DeviceWindowedC64BedOwner.from_device_bed(state, context,
         case_record={"schema": "masy1040.authored_C64.v1", "n_voxels": 20, "window_voxels": 3,
             "cells": 64, "classes": 1, "origin_s": ORIGIN_S.hex(), "calibration": CALIBRATION,
-            "vegetation": AUTHORED_VEGETATION, "wet_inputs": "existing832_994_all_edges_open"},
+            "vegetation": AUTHORED_VEGETATION, "wet_inputs": "existing832_994_all_edges_open",
+            "water_routing": {"allow_pit_storage": True, "allow_flat_storage": False}},
         time_s=ORIGIN_S, limits=DeviceWindowedC64BedLimits(1 << 24, 5 << 30, 2 << 30, 16 << 30),
         vegetation=physical.vegetation, threshold_modifier_state=physical.threshold_modifier_state,
         trajectory_semantics=TRAJECTORY_ALGORITHM_VERSION)

@@ -144,6 +144,26 @@ def test_cover_requires_shared_owner_identity():
         c64._cover_identity(object(), owned)
 
 
+def test_native_pit_storage_is_an_explicit_boolean_routing_option():
+    # Plain flag metadata only; this is not a Native terrain or physical result.
+    for pit in (False, True):
+        flags = types.SimpleNamespace(allow_masked_nodata=False, nodata_value=None,
+                                      allow_flat_storage=False, allow_pit_storage=pit)
+        assert c64._routing_policy(flags) is True
+    assert "_routing_policy" in build_windowed_device_c64_runner.__code__.co_names
+
+
+@pytest.mark.parametrize("name,value", [("allow_masked_nodata", True), ("allow_masked_nodata", 0),
+    ("nodata_value", 0.0), ("allow_flat_storage", True), ("allow_flat_storage", 0),
+    ("allow_pit_storage", 0), ("allow_pit_storage", 1), ("allow_pit_storage", None),
+    ("allow_pit_storage", "True")])
+def test_masked_nodata_flat_and_nonboolean_pit_policies_stay_refused(name, value):
+    flags = types.SimpleNamespace(allow_masked_nodata=False, nodata_value=None,
+                                  allow_flat_storage=False, allow_pit_storage=True)
+    setattr(flags, name, value)
+    assert c64._routing_policy(flags) is False
+
+
 def _counters(value=0):
     return {name: value for name in ("gate_count", "logical_work_debited", "logical_read_bytes_debited",
         "versions_reserved", "h2d_bytes_reserved", "d2h_bytes_reserved", "scalar_reads_reserved",

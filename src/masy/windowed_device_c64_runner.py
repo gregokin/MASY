@@ -123,6 +123,12 @@ def _cover_identity(water_cover, vegetation_cover):
         raise DenseRunnerError("vegetation_identity", "water must use the canonical full vegetation holder's cover")
 
 
+def _routing_policy(terrain):
+    """Closed metadata policy; the caller first requires genuine TerrainReference."""
+    return (terrain.allow_masked_nodata is False and terrain.nodata_value is None
+            and terrain.allow_flat_storage is False and type(terrain.allow_pit_storage) is bool)
+
+
 def _combine_water_counters(previous, entry, event, limits):
     """Two real admitted calls share the existing four-event ceilings."""
     additive = ("gate_count", "logical_work_debited", "logical_read_bytes_debited", "versions_reserved",
@@ -708,11 +714,11 @@ def build_windowed_device_c64_runner(bed, schedule, *, wind, water, control, pro
         raise DenseRunnerError("storm_step_limit", "Native storm guard exceeds runner declaration")
     if type(control.report_every_s) is not float or not math.isfinite(control.report_every_s) or control.report_every_s <= 0:
         raise DenseRunnerError("water_control", "positive explicit report interval required")
-    if (type(water.terrain) is not n.TerrainReference or not water.terrain.strict
-            or water.terrain.allow_masked_nodata or water.terrain.dx_m != ctx.geometry.dx_m
+    if (type(water.terrain) is not n.TerrainReference or not _routing_policy(water.terrain)
+            or water.terrain.dx_m != ctx.geometry.dx_m
             or water.terrain.initial_committed_elevation_m.shape != (8, 8)
             or type(water.field) is not n.RainfallField or water.field.xp is not cp or water.field.shape != (8, 8)):
-        raise DenseRunnerError("water_geometry", "strict unmasked existing drainage and actual device rainfall field required")
+        raise DenseRunnerError("water_geometry", "unmasked no-nodata/no-flat terrain, boolean pit policy and actual device rainfall field required")
     _cover_identity(water.vegetation_cover_fraction, bed.vegetation.raster.cover_fraction)
     soil, pool = water.initial_soil_water_m, wind.initial_mobile_state
     if (type(soil) is not cp.ndarray or soil.shape != (8, 8) or soil.dtype != cp.float64

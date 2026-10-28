@@ -75,7 +75,20 @@ Native uniform vegetation constructor with height0.5m/cover0.25 and preserves
 the other three Native fields. The same owned five-array holder and exact
 cover reference are used by wind and water. Existing rainfall, soil, sediment,
 roughness, CUDA/upwind controls and all-edge-open water terrain mapping are
-reused without calibration, clipping, sink treatment or other physics changes.
+reused. The user-selected existing Native `TerrainReference.allow_pit_storage=True`
+lets water collect in strict closed depressions. The fixture case identity
+records this flag and `allow_flat_storage=False`; both the wrapper and the
+independent upstream oracle use the same terrain policy for initial routing
+and every genuine reroute. The C64 admission guard retains genuine exact
+terrain and geometry checks, refuses masked/nodata/flat policies, and accepts
+only a plain Boolean pit option. Terrain, forcing, outlets and calibration
+are unchanged; no filling, carving, overflow, drainage or evaporation rule is added.
+This option alone does not complete a water event: the unchanged completion
+policy keeps `terminal_storage_water=False`, all quiet/depth gates and genuine
+`DryHandoff`. Ponded water must satisfy the existing completion path within its
+original guard before wind may begin; a limit remains incomplete. No retained-water
+wind handoff or new completion rule is authorized. This Source selection still
+requires Root's actual review and affected qualification.
 No bare-wind/vegetated-water mismatch, seeded airborne mass or forced pending
 journal is introduced.
 
