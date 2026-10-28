@@ -260,10 +260,19 @@ def test_imported_case_four_events_match_native(tmp_path, cupy, device_water_c64
             for out, native in (("dry_surface_removed_m3", "surface_removed_m3"),
                                 ("dry_soil_removed_m3", "soil_removed_m3")):
                 assert receipt["water"][out] == wet_result.accounting[native]
-            assert wet_result.accounting["terminal_storage_removed_m3"] == (
-                wet_result.accounting["completion_after_terminal"]["terminal_surface_volume_m3"])
-            assert wet_result.accounting["moving_surface_removed_m3"] == (
-                wet_result.accounting["surface_removed_m3"] - wet_result.accounting["terminal_storage_removed_m3"])
+            accounting = wet_result.accounting
+            metrics = accounting["completion_after_terminal"]
+            assert wet_result.progress.policy.terminal_storage_water is True
+            assert wet_result.progress.policy.deposit_mobile_at_flow_end is True
+            if "terminal_surface_volume_m3" in metrics:
+                assert accounting["terminal_storage_removed_m3"] == metrics["terminal_surface_volume_m3"]
+                assert accounting["moving_surface_removed_m3"] == (
+                    accounting["surface_removed_m3"] - accounting["terminal_storage_removed_m3"])
+            else:
+                # Native quiet_metrics keeps its strict schema when this grid
+                # has no terminal mask; it does not synthesize ponding fields.
+                assert "terminal_storage_removed_m3" not in accounting
+                assert "moving_surface_removed_m3" not in accounting
             assert not bool(cupy.any(a.bed._accepted.state.water.depth_m))
             assert not bool(cupy.any(a.bed._accepted.state.water.mobile_mass_by_cell_class_kg))
             assert not bool(cupy.any(expected.soil))
