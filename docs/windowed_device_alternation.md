@@ -82,3 +82,10 @@ arbitrary landscapes or scale, calibration, a new CPU/GPU response law, or later
 upstream versions. Root supplies actual Source/runtime/grant/currentness facts
 and physical qualification separately. Existing Dense, CPU windowed and strict
 device profiles retain their original eligibility and checks.
+
+An additive accepted-event-boundary persistence candidate is documented in
+[windowed_device_boundary_restart.md](windowed_device_boundary_restart.md).
+It uses genuine Native resident snapshots and the existing atomic store,
+requires fresh owning authority in every OS role and preserves all original
+scientific controls. Its Source and bounded fresh-process physical restart
+qualification are separate from the standalone alternation interface above.

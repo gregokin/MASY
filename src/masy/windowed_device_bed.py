@@ -403,3 +403,26 @@ class DeviceWindowedBedOwner(DeviceDenseBedOwner):
             generation=self.generation, time_s=self.time_s.hex(), device_id=self._device,
             counters=dict(self._counts), known_frontier=dict(self._last_known),
             known_subset_only=True, opaque_terms=self._shared._QUALIFICATION_OPAQUE_TERMS, claim=CLAIM)
+
+    @classmethod
+    def _from_restored_boundary(cls, ticket, state, context, *, case_record, time_s,
+                                limits, vegetation, threshold_modifier_state,
+                                trajectory_semantics, generation):
+        """Actual constructors/mirrors first; checked MASY generation second.
+
+        No Native version/commit time/counter or input array is rewritten.
+        The nominal ticket is internal loader discipline, not a security proof.
+        """
+        from .windowed_device_checkpoint import _checked_ticket, _integer
+        _checked_ticket(ticket)
+        _integer(generation, 4, "saved MASY bed generation")
+        if generation != ticket.current["bookkeeping"]["next_index"]:
+            raise DeviceBedError("restore_generation", "accepted cursor/generation differs")
+        owner = cls.from_device_bed(state, context, case_record=case_record, time_s=time_s,
+            limits=limits, vegetation=vegetation, threshold_modifier_state=threshold_modifier_state,
+            trajectory_semantics=trajectory_semantics)
+        if owner.generation != 0 or owner._active is not None:
+            raise DeviceBedError("restore_generation", "fresh idle owning constructor required")
+        owner._accepted = dataclasses.replace(owner._accepted, generation=generation)
+        owner.verify()
+        return owner

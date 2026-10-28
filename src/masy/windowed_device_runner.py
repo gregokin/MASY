@@ -684,3 +684,122 @@ def build_windowed_device_runner(bed, schedule, *, wind, water, control, profile
     runner._accepted_bed = own.accepted_label()
     runner._accepted_private = own.private_label(n.np, ref, ref)
     return runner
+
+
+def _restore_windowed_device_runner(ticket):
+    """Adopt a fully admitted boundary; never invoke genesis or replay events.
+
+    This private loader path preserves the original constructors and event
+    bodies. Only MASY logical label generations are installed in NEW owners.
+    Native deep/commit/reconciliation/counter state is not rewritten.
+    """
+    from . import windowed_device_checkpoint as checkpoint
+    from .clock import decode_time
+    from .dense_device_bed import _CupyOps
+    from maple.core.backend import to_device, to_device_tree
+    from maple.surface.voxels.windowed_prefix import move_prefix_packets
+    checkpoint._checked_ticket(ticket)
+    inputs, current, authority = ticket.inputs, ticket.current, ticket.authority
+    book, saved = current["bookkeeping"], ticket.host_snapshot
+    cp, n, w = authority.cp, _dense._native(), _native()
+    schedule = DenseSchedule.from_record(inputs["schedule"])
+    _schedule_profile(schedule); _require_entry_api(w)
+    # `to_device_tree` drops the two init=False HOST bindings. Native owns
+    # counted packet placement and its binding to the NEW device base array.
+    column = to_device_tree(saved["voxel_column"], cp)
+    column = move_prefix_packets(column, saved["voxel_column"], cp)
+    state = w.shared.WindowedSharedBedState(voxel_column=column,
+        active_layer=to_device_tree(saved["active_layer"], cp),
+        water=to_device_tree(saved["water"], cp),
+        sediment_availability=to_device_tree(saved["sediment_availability"], cp),
+        **current["auxiliary"])
+    statics = inputs["statics"]
+    if type(statics) is not dict or tuple(statics) != STATIC_NAMES:
+        checkpoint._fail("statics", "exact ordered owned static roster")
+    context_values = dict(inputs["context"])
+    context_values.update(initial_available_fraction=statics["initial_available_fraction"], runtime_bounds=authority.budget)
+    context = w.shared.WindowedDeviceWaterContext(**context_values)
+    process = _process_check(context, checkpoint="restore_construction")
+    time_s = decode_time(book["native_time"])
+    if float(saved["time_s"]).hex() != time_s.hex() or saved["step"] != book["next_index"]:
+        checkpoint._fail("clock", "Native boundary/cursor changed")
+    bed = DeviceWindowedBedOwner._from_restored_boundary(ticket, state, context,
+        case_record=inputs["case"], time_s=time_s, limits=inputs["bed_limits"],
+        vegetation=statics["vegetation"], threshold_modifier_state=statics["threshold_modifier_state"],
+        trajectory_semantics=inputs["trajectory"], generation=book["bed_generation"])
+    host_config = inputs["host_config"]
+    host_profile = DeviceWindowedWindProfile(inputs["model_config"], host_config, inputs["record_limits"],
+        inputs["profile_source"], inputs["calibration"], inputs["label"])
+    pool, soil = current["pool"], current["soil"]
+    ops = _device._DeviceArrayOps(cp, 1)
+    audit = _profile(n, w, bed, DenseWindInputs(host_config, pool), schedule, host_profile, inputs["record_limits"])
+    if checkpoint._json(audit) != checkpoint._json(inputs["native_audit"]):
+        checkpoint._fail("native_audit", "full original Native configuration audit differs")
+    sc, policy = inputs["control"].sediment_control, inputs["control"].completion_policy
+    if (sc.transport_scheme != "upwind" or sc.storm.implementation != "cuda" or sc.cuda is not True
+            or sc.commit is not True or sc.record_exchange_history is not False or sc.deep_publication != "step"):
+        checkpoint._fail("water_control", "original actual CUDA/commit/upwind/step control")
+    sc.validated(); policy.validated(); w.shared._control_projection(context, sc)
+    frontier = _constructor_frontier(bed, pool, soil, statics, host_config, inputs["resource_limits"])
+    policy_source = host_config.initial_available_fraction
+    if (type(policy_source) is not n.np.ndarray or policy_source.shape != (4, 4, 1)
+            or policy_source.dtype != n.np.float64 or not policy_source.flags.c_contiguous
+            or ops.any_nonzero(to_device(policy_source, cp) != context.initial_available_fraction)):
+        checkpoint._fail("availability", "unchanged original wind/water policy")
+    resources = DeviceDenseResources._from_restored_boundary(ticket, pool=pool, soil=soil, statics=statics,
+        shape=(4, 4), limits=inputs["resource_limits"], _ops=_CupyOps(cp), generation=book["resource_generation"])
+    owned_context = dataclasses.replace(context, initial_available_fraction=resources.static("initial_available_fraction"))
+    bed._context = owned_context
+    bed._vegetation, bed._threshold = resources.static("vegetation"), resources.static("threshold_modifier_state")
+    cfg = dataclasses.replace(host_config, initial_available_fraction=resources.static("initial_available_fraction"))
+    wind = DenseWindInputs(cfg, None)
+    # ONE decoded terrain object is authoritative for water and routing.
+    water = DenseWaterInputs(terrain=inputs["terrain"], column=resources.static("column"),
+        field=resources.static("field"), vegetation_cover_fraction=bed.vegetation.raster.cover_fraction,
+        sediment=resources.static("sediment"), initial_soil_water_m=None)
+    own = _Ownership(bed, resources, ops, bed._admit(bed._accepted.state)[2])
+    issue = checkpoint._integer(book["routing_issue_counter"], 8, "routing issue counter")
+    own._routing_generation = issue  # MASY adapter metadata only, BEFORE issuing a namespace.
+    held, route = None, current["routing"]
+    if route is not None:
+        checkpoint._integer(route["generation"], issue, "held generation", 1)
+        graph = n.routing_graph_from_elevation(water.terrain, route["source"], xp=cp)
+        network, grid = n.transport_network(graph), n.physics_grid_from_graph(graph)
+        if (checkpoint._fingerprint(water.terrain, ticket.limits, cp) != route["terrain_sha256"]
+                or [checkpoint._fingerprint(v, ticket.limits, cp) for v in (graph, network, grid)] != route["cache_fingerprints"]):
+            checkpoint._fail("routing_identity", "full Native saved-source cache fingerprints differ")
+        held = SimpleNamespace(graph=graph, terrain=water.terrain, network=network, grid=grid,
+            source=route["source"], velocity=route["velocity"], phase=route["phase"],
+            generation=route["generation"], stamp=own._routing_stamp)
+        own.routing_guard(n.np, held, water, (4, 4), 1)
+    elif issue != 0:
+        checkpoint._fail("routing", "absent namespace with issued routing history")
+    # All logical generations are installed before issuing references/labels.
+    ref = _device._PrivateRef(resources.generation)
+    ledger = ClockLedger.from_record(book["ledger"])
+    runner = DeviceWindowedRunner(_TOKEN, _bed=bed, _schedule=schedule, _wind=wind, _water=water,
+        _control=inputs["control"], _limits=inputs["runner_limits"], _n_classes=1, _inventory_elements=16*7,
+        _inventory0=book["inventory0"], _pool=ref, _soil=ref, _routing=held, _ledger=ledger,
+        _next=book["next_index"], _n_accepted=book["n_accepted"], _totals=book["totals"],
+        _receipts=book["receipts"], _stop_receipt=None, _active_evidence=None,
+        _water_record=book["water_record"], _water_counters=book["water_counters"], _pending_water_counters=None,
+        _production=_EVIDENCE, _production_limits=owned_context, _worker_identity=process["process_identity"],
+        _wind_profile=dataclasses.replace(host_profile, wind_config=cfg), _host_config=host_config,
+        _native_audit=audit, _device_resources=resources, _resource_limits=inputs["resource_limits"],
+        _constructor_frontier=frontier, _device_ops=ops, _device_own=own,
+        _wind_enter_bound=_wind_binding(_cpu_windowed.WindowedRunner._wind_event),
+        _wind_accept_bound=_wind_binding(_cpu_windowed.WindowedRunner._wind_accept_record))
+    runner._static_parts = runner._static_parts_record(n)
+    runner._static_parts_sha256 = _bed._sha256(runner._static_parts)
+    runner._static_record, runner._static_sha256 = inputs["static_record"], inputs["static_sha256"]
+    runner._accepted_bed = own.accepted_label()
+    runner._accepted_private = own.private_label(n.np, ref, ref)
+    if (runner._static_parts_sha256 != inputs["static_parts_sha256"]
+            or checkpoint._json(runner._static_parts) != checkpoint._json(inputs["static_parts"])
+            or _bed._sha256(runner._static_record) != runner._static_sha256
+            or runner._accepted_bed != book["accepted_bed_label"]
+            or runner._accepted_private != book["accepted_private_label"]):
+        checkpoint._fail("restore_identity", "original controlling inputs/logical labels differ")
+    checkpoint.runner_admission(runner, ticket.limits)
+    ticket.consumed = True
+    return runner

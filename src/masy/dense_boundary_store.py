@@ -1866,6 +1866,8 @@ def _head_record(header, store_file_sha, name, generation, generation_file_sha):
 
 
 def _summary(manifest):
+    if type(manifest) is dict and manifest.get("schema") == "masy.windowed_device_boundary_image.v1":
+        return _windowed_gpu_module()._summary(manifest)
     state, route = manifest["state"], manifest["routing"]
     return {
         "next_index": state["next_index"],
@@ -2083,6 +2085,8 @@ def _generation_chain(root, header, store_sha, head, limits):
         current = parent
     if _dynamic_store(header):
         _history_v2(root, header, chain, limits)
+    if _windowed_gpu_store(header):
+        _windowed_gpu_module()._history(root, header, chain, limits)
     return chain
 
 
@@ -3132,6 +3136,8 @@ def _store_schema(header):
         return SCHEMA_ACTIVE_WATER
     if schema == SCHEMA_ACTIVE_PROCESS and profile == PROFILE_ACTIVE_PROCESS:
         return SCHEMA_ACTIVE_PROCESS
+    if schema == SCHEMA_WINDOWED_GPU and profile == PROFILE_WINDOWED_GPU:
+        return SCHEMA_WINDOWED_GPU
     _fail("store_profile", "unknown or mixed schema/profile pair")
 
 
@@ -3180,35 +3186,51 @@ def _reference_v2(directory, fmt, identity, root):
 
 
 def _owner_for(header, prepared):
+    if _windowed_gpu_store(header):
+        return _windowed_gpu_module()._owner(prepared)
     return _owner_v2(prepared) if _dynamic_store(header) else _owner(prepared)
 
 
 def _preflight_for(header, *args):
+    if _windowed_gpu_store(header):
+        return _windowed_gpu_module()._preflight(*args)
     function = b._preflight_metadata_v2 if _dynamic_store(header) else b._preflight_metadata
     return function(*args)
 
 
 def _artifacts_for(header, *args):
+    if _windowed_gpu_store(header):
+        return _windowed_gpu_module()._Artifacts(*args)
     kind = b._ArtifactsV2 if _dynamic_store(header) else b._Artifacts
     return kind(*args)
 
 
 def _prepare_for(header, *args, **kwargs):
+    if _windowed_gpu_store(header):
+        if "authority" not in kwargs:
+            _fail("fresh_role_authority", "new genuine GPU role authority required")
+        return _windowed_gpu_module()._prepare(*args, **kwargs)
     function = b.prepare_passive_boundary_v2 if _dynamic_store(header) else b.prepare_passive_boundary
     return function(*args, **kwargs)
 
 
 def _admit_owner_for(header, owner, limits):
+    if _windowed_gpu_store(header):
+        return _windowed_gpu_module().runner_admission(owner, limits)
     function = b._runner_admission_v2 if _dynamic_store(header) else b._runner_admission
     return function(owner, limits)
 
 
 def _compare_for(header, owner, readback, limits):
+    if _windowed_gpu_store(header):
+        return _windowed_gpu_module()._compare(owner, readback, limits)
     function = _compare_owners_v2 if _dynamic_store(header) else _compare_owners
     return function(owner, readback, limits)
 
 
 def _image_for(header, root, image, limits):
+    if _windowed_gpu_store(header):
+        return _windowed_gpu_module()._image_metadata(root, image, limits)
     dynamic = _dynamic_store(header)
     if type(image) is not dict or image.get("format") != (b.SCHEMA_V2 if dynamic else b.SCHEMA):
         _fail("image_reference", "image format must match the admitted store codec")
@@ -3216,6 +3238,8 @@ def _image_for(header, root, image, limits):
 
 
 def _reservation_for(header, limits, max_work_bytes):
+    if _windowed_gpu_store(header):
+        return _windowed_gpu_module()._reservation(limits, max_work_bytes)
     return _reservation_v2(limits, max_work_bytes) if _dynamic_store(header) else _reservation(limits, max_work_bytes)
 
 
@@ -4553,3 +4577,30 @@ def _abandon_active_issued(runner):
         return "released"
     finally:
         lease = runner = None
+
+
+# Closed additive accepted-boundary GPU profile. All four existing profiles
+# and their active/passive dispatches above retain their original receivers.
+SCHEMA_WINDOWED_GPU = "masy.windowed_device_boundary_store.v1"
+PROFILE_WINDOWED_GPU = "small_C16_K1_V6_W3_gpu_accepted_boundary_v1"
+
+def _windowed_gpu_store(header):
+    return _store_schema(header) == SCHEMA_WINDOWED_GPU
+
+def _windowed_gpu_module():
+    from . import windowed_device_checkpoint
+    return windowed_device_checkpoint
+
+def create_windowed_device_boundary_store(path, *, runner, qualification_budget,
+                                           limits=None, storage_contract):
+    module = _windowed_gpu_module()
+    return module.create_windowed_device_boundary_store(path, runner=runner,
+        qualification_budget=qualification_budget,
+        limits=module._GPU_DEFAULT if limits is None else limits, storage_contract=storage_contract)
+
+def recover_windowed_device_boundary_store(path, *, expected_store_file_sha256,
+                                            qualification_budget, limits=None):
+    module = _windowed_gpu_module()
+    return module.recover_windowed_device_boundary_store(path,
+        expected_store_file_sha256=expected_store_file_sha256, qualification_budget=qualification_budget,
+        limits=module._GPU_DEFAULT if limits is None else limits)
