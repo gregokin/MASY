@@ -7,6 +7,7 @@ MAPLE-SYRUP runs actual alternating MAPLE wind and SYRUP water on the same evolv
 | Dense CPU | The MAPLE-case workflow completed a labelled synthetic 9 × 8, two-class case, including a fresh explicit water-policy run. | `tools/masy_case.py run`; supply an authored landscape and scientific inputs. Exact revisions and limits are in [CPU case qualification](case_cpu_qualification.md) and the additional CPU authored-policy qualification below. |
 | Windowed CPU | Native reduced wind and positive water alternated on a shared 4 × 4, one-class, six-voxel bed with three resident voxels. | Bounded Python interface; see [CPU windowed integration](windowed_cpu_integration.md). |
 | Windowed GPU wind and water | Wind → water → wind → water passed on an 8 × 8, one-class bed with 20 logical voxels and three resident voxels. Water-only, entry and rejected-input recovery checks also passed. | Closed C64 Python/qualification interfaces; [details](windowed_device_c64_integration.md). No arbitrary-landscape GPU CLI bridge is provided. |
+| Imported NPY landscape on windowed GPU | The imported-case API completed W/R/W/R and matched direct native state and accounting after every event. | Exact 8 × 8, one-class, 20-logical/three-resident-voxel profile; [imported API and evidence](user-guide/case-device-c64.md). Public GPU command remains pending. |
 | GPU saved boundary restart | Three fresh processes saved after wind, recovered through water, then recovered and finished the remaining wind and water events. | Closed Small 4 × 4, one-class, six-voxel/three-resident-voxel profile. [Restart interface](windowed_device_boundary_restart.md). |
 
 The CPU case workflow accepts user-authored MAPLE landscapes within its documented admission rules. A successful synthetic case is not validation of another landscape's boundaries, forcing, class mixture, coefficients or resource fit. The windowed case-adoption command establishes storage adoption only; it does not grant GPU or event-execution eligibility.
@@ -38,3 +39,30 @@ Native completion settles the remaining mobile sediment, then externally removes
 ## Remaining qualification limits
 
 Production reduced-wind calibration on evolving multi-class beds remains pending. The current fixtures use clearly labelled synthetic calibration. General landscape dimensions, larger class counts, arbitrary-landscape GPU CLI execution and capacity/performance scaling remain separate work. C64 persisted restart, GPU mid-event restart and cross-backend checkpoint migration are not established by the Small boundary-restart result. The C64 report continues to declare its own restart support as false. Future vegetation/soil-water updates must use explicit versioned transactions and named water-budget exchanges; this status does not introduce those response laws.
+
+## Imported GPU case comparison
+
+A fresh imported NPY case completed wind → water → wind → water using MASY
+`9e7af84aecf46d4b7f6de7d0218534c03e8230c2`, MAPLE
+`40d1a598b09929b2d0f831513fb6d5c015d88772` and SYRUP
+`61dcf61de14ba302148a4fb1bfdbe08ddf4df10c`. The test-only optional-accounting
+correction is separately attributed to `fc39319ef5d04156eec037bbeaf71108b8c572ba`;
+the original verified runtime profile and probe were reused without retagging.
+The case had exactly 8 × 8 cells, one class, 20 logical voxels and three resident
+voxels. Both real initializations, all four wrapper events and all four direct
+native events finished within the unchanged original controls in 387.636 seconds.
+
+The affected test passed exact state comparisons and native sediment/water
+budget checks, preserved prescribed vegetation and availability, and verified
+wind finalization, event clocks and dry water handoffs. Native terminal split
+accounting is conditional on an actual terminal mask; this result does not
+replace the separate positive-ponding result above. Root rehashed 507 runtime
+source files, 133 compiled files, 625 input-reference visits and 590 distinct
+input files, plus all 565 assembly origins. Actual controller/worker processes
+were reaped and the selected GPU returned to idle. Final acceptance receipt
+SHA-256: `f054cd53b1f52710281a487a4230f0d34ab438bf0a0e6b3c2aef5228bd44ecad`.
+
+This result qualifies the bounded imported Python API. The public GPU command,
+C64 saved-boundary restart, broader dimensions/classes and measured production
+calibration remain separate work. It does not establish a general capacity or
+peak allocator bound.

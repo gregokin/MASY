@@ -1,10 +1,22 @@
 # Imported MAPLE cases on the bounded C64 GPU profile
 
-This API is an **unqualified implementation candidate** until Root accepts
-the exact source pair, controls and actual imported-case checks. The ordinary
-`tools/masy_case.py run` command continues to run Dense CPU cases. This change
-adds no GPU command, larger domain, C64 persisted restart or production
-calibration claim.
+The imported-case API passed a bounded native comparison on October 28, 2026:
+an authored synthetic NPY landscape completed wind → water → wind → water,
+matching independent MAPLE/SYRUP execution after every event. The accepted
+profile is exactly 8×8 cells, one class, 20 logical voxels and three resident
+voxels. The ordinary `tools/masy_case.py run` command runs Dense CPU cases.
+The public GPU command and C64 persisted restart remain separate work;
+production calibration and general landscape capacity remain pending.
+
+The actual run used MASY `9e7af84aecf46d4b7f6de7d0218534c03e8230c2`,
+MAPLE `40d1a598b09929b2d0f831513fb6d5c015d88772` and SYRUP
+`61dcf61de14ba302148a4fb1bfdbe08ddf4df10c`. Its separately committed test
+source was `fc39319ef5d04156eec037bbeaf71108b8c572ba`; runtime source and
+test source keep their distinct provenance. Both initializations, four wrapper
+events and four native comparison events shared one original 600-second
+allowance and finished in 387.636 seconds. Root independently checked source,
+compiled files, accounting and process/device cleanup. Final acceptance receipt
+SHA-256: `f054cd53b1f52710281a487a4230f0d34ab438bf0a0e6b3c2aef5228bd44ecad`.
 
 Start with the normal MAPLE `case.yaml`, `model.yaml`, `wind.yaml` and supplied
 NPY landscape under `source/`, together with complete explicit hydraulic,
