@@ -131,6 +131,12 @@ def test_four_c64_device_events_match_direct_native(tmp_path, cupy, device_water
     cp = cupy
     case = f.components(tmp_path/"wrapper", cp, device_water_c64_qualification_budget)
     oracle = f.components(tmp_path/"oracle", cp, device_water_c64_qualification_budget)
+    assert case.control.completion_policy is not oracle.control.completion_policy
+    assert dataclasses.asdict(case.control.completion_policy) == dataclasses.asdict(oracle.control.completion_policy)
+    assert case.control.completion_policy.terminal_storage_water is True
+    assert case.control.completion_policy.deposit_mobile_at_flow_end is True
+    assert case.bed.case_record["water_completion"] == oracle.bed.case_record["water_completion"]
+    assert case.bed.case_record["water_completion"]["schema"] == "masy.interim_accounted_ponded_water.v1"
     inputs = _snapshot(case)+_snapshot(oracle)
     old = case.initial.voxel_column.deep_store
     other_old = oracle.initial.voxel_column.deep_store
@@ -145,7 +151,7 @@ def test_four_c64_device_events_match_direct_native(tmp_path, cupy, device_water
     original_vegetation = tuple(np.ascontiguousarray(to_host(getattr(canonical.raster, name))).tobytes()
                                 for name in f.VEGETATION_FIELDS)
     assert runner._water.vegetation_cover_fraction is canonical.raster.cover_fraction
-    accepted = []
+    accepted, ponded_removed = [], []
     for index, direct in enumerate(f.direct_events(oracle, cp)):
         # A yield retains the actual upstream outcome. No oracle success is
         # manufactured from the wrapper's receipt or result fields.
@@ -182,9 +188,33 @@ def test_four_c64_device_events_match_direct_native(tmp_path, cupy, device_water
             assert float(to_host(result.by_class["actual_pickup"].sum())) > 0.0
             assert wet.accounting["sediment_closure"]["closed"]
             assert wet.accounting["storm_water_budget"]["closed"]
+            accounting, budget = wet.accounting, wet.accounting["storm_water_budget"]
+            after = accounting["completion_after_terminal"]
+            assert wet.progress.policy is oracle.control.completion_policy
+            assert accounting["policy"] == "external dry-again removal; no evapotranspiration simulated"
+            assert accounting["terminal_storage_removed_m3"] == after["terminal_surface_volume_m3"]
+            assert accounting["terminal_storage_cells"] == after["terminal_storage_cells"]
+            assert accounting["terminal_storage_removed_m3"] >= 0.0
+            assert accounting["moving_surface_removed_m3"] == (
+                accounting["surface_removed_m3"] - accounting["terminal_storage_removed_m3"])
+            assert accounting["surface_removed_m3"] == budget["surface_final_m3"]
+            assert accounting["soil_removed_m3"] == budget["soil_final_m3"] >= 0.0
+            assert abs(accounting["combined_water_residual_m3"]) <= budget["tolerance_m3"]
+            _same(wet.pre_reset_surface_m, result.state.storm.depth_m, "actual pre-reset surface water")
+            _same(wet.pre_reset_soil_m, result.state.storm.soil_water_m, "actual pre-reset soil water")
+            ponded_removed.append(accounting["terminal_storage_removed_m3"])
+            for name in ("rain_m3", "surface_initial_m3", "soil_initial_m3", "surface_final_m3", "soil_final_m3",
+                         "drainage_m3", "export_m3", "residual_m3", "tolerance_m3"):
+                assert receipt["water"][name] == budget[name]
+            for receipt_name, native_name in (("dry_surface_removed_m3", "surface_removed_m3"),
+                    ("dry_soil_removed_m3", "soil_removed_m3"), ("water_added_m3", "water_added_m3"),
+                    ("combined_water_residual_m3", "combined_water_residual_m3")):
+                assert receipt["water"][receipt_name] == accounting[native_name]
+            assert receipt["water"]["water_added_m3"] == 0.0
             assert float(to_host(result.peak_depth_m.max())) > 0.0
             for array in (direct.state.water.depth_m, direct.state.water.mobile_mass_by_cell_class_kg,
-                          direct.soil, wet.dry_state.storm.depth_m, wet.dry_state.sediment_velocity_m_s):
+                          direct.soil, wet.dry_state.storm.depth_m, wet.dry_state.storm.soil_water_m,
+                          wet.dry_state.sediment_velocity_m_s):
                 assert not cp.any(array)
             assert wet.dry_state.phase is None
             assert runner._routing.graph is not None
@@ -202,6 +232,7 @@ def test_four_c64_device_events_match_direct_native(tmp_path, cupy, device_water
         _old_files_unchanged(old.store_dir, files)
         _old_files_unchanged(other_old.store_dir, other_files)
     assert len(accepted) == 4 and case.bed.generation == 4
+    assert len(ponded_removed) == 2 and sum(ponded_removed) > 0.0
     report = runner.report()
     assert report["status"] == "complete" and len(report["receipts"]) == 4
     for row in report["receipts"]:

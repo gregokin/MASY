@@ -83,12 +83,30 @@ and every genuine reroute. The C64 admission guard retains genuine exact
 terrain and geometry checks, refuses masked/nodata/flat policies, and accepts
 only a plain Boolean pit option. Terrain, forcing, outlets and calibration
 are unchanged; no filling, carving, overflow, drainage or evaporation rule is added.
-This option alone does not complete a water event: the unchanged completion
-policy keeps `terminal_storage_water=False`, all quiet/depth gates and genuine
-`DryHandoff`. Ponded water must satisfy the existing completion path within its
-original guard before wind may begin; a limit remains incomplete. No retained-water
-wind handoff or new completion rule is authorized. This Source selection still
-requires Root's actual review and affected qualification.
+The user-selected interim policy is recorded as
+`masy.interim_accounted_ponded_water.v1`: select the existing Native
+`CompletionPolicy.terminal_storage_water=True` on each local fixture policy,
+retaining `deposit_mobile_at_flow_end=True` and every other native threshold,
+hold, rainfall, time/resource limit and default. Shared legacy defaults are
+unchanged. The two independent wrapper/oracle initializations use equal policy
+values in distinct objects. Only depth and surface-volume quiet criteria
+exclude recognized terminal-storage cells. Their water remains physical
+storage until the genuine Native terminal transaction explicitly removes it,
+with total/terminal/moving surface and separate soil removal in its accounting.
+Discharge, hold, rainfall-finished and finite/nonnegative checks remain; the
+already selected flow-end sediment policy still uses real Native deposition.
+No new mobile-threshold waiver is introduced.
+
+This is external interevent removal, not evapotranspiration. A future ET model
+requires a separate policy and qualification; this interim selection does not
+simulate it. The existing `DryHandoff` and zero surface/soil/mobile reset remain
+required before wind, with all water and class budgets closed under Native
+bounds. The selector checks actual positive terminal-water removal across its
+two rain handoffs, preserved pre-reset arrays, soil removal and exact shared
+wrapper/direct accounting fields. It does not invent a wrapper terminal-split
+metric that the current receipt does not expose. A limit remains incomplete.
+No retained-water wind handoff, new drainage, overflow or response law is
+authorized. Actual review and affected qualification remain Root-owned.
 No bare-wind/vegetated-water mismatch, seeded airborne mass or forced pending
 journal is introduced.
 

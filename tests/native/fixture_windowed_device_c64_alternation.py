@@ -134,7 +134,10 @@ def components(root, cp, qualification_budget):
         case_record={"schema": "masy1040.authored_C64.v1", "n_voxels": 20, "window_voxels": 3,
             "cells": 64, "classes": 1, "origin_s": ORIGIN_S.hex(), "calibration": CALIBRATION,
             "vegetation": AUTHORED_VEGETATION, "wet_inputs": "existing832_994_all_edges_open",
-            "water_routing": {"allow_pit_storage": True, "allow_flat_storage": False}},
+            "water_routing": {"allow_pit_storage": True, "allow_flat_storage": False},
+            "water_completion": {"schema": "masy.interim_accounted_ponded_water.v1",
+                "terminal_storage_water": True, "deposit_mobile_at_flow_end": True,
+                "removal": "native_external_dry_reset", "evapotranspiration_simulated": False}},
         time_s=ORIGIN_S, limits=DeviceWindowedC64BedLimits(1 << 24, 5 << 30, 2 << 30, 16 << 30),
         vegetation=physical.vegetation, threshold_modifier_state=physical.threshold_modifier_state,
         trajectory_semantics=TRAJECTORY_ALGORITHM_VERSION)
@@ -145,6 +148,8 @@ def components(root, cp, qualification_budget):
     water = _water_inputs(host, cp, physical.vegetation)
     control = legacy.runner_control(sediment_control=legacy.sediment_control(
         implementation="cuda", root_solver="bisection"))
+    control = dataclasses.replace(control,
+        completion_policy=dataclasses.replace(control.completion_policy, terminal_storage_water=True))
     limits = fx.limits
     assert limits.max_blocks == limits.max_total_outer_steps == limits.block.max_outer_steps == 1
     profile = DeviceWindowedC64WindProfile(fx.model, fx.config, limits,
