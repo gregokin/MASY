@@ -350,3 +350,85 @@ def test_unrelated_generic_json_guards_and_typed_limits_stay_closed():
     for field, value in (("max_nodes", 100001), ("max_depth", 25), ("max_metadata_bytes", (4 << 20) + 1)):
         with pytest.raises(ValueError, match="limit_cap"):
             dataclasses.replace(LIMITS, **{field: value})
+
+
+def _synthetic_owning_qualification_record():
+    """Real metadata constructor; refs label nonexistent synthetic files only.
+
+    No file is read and no authority/runtime/provider is constructed. The
+    fixed factory metadata satisfies the genuine descriptor's Source guard;
+    these references could not pass its real readonly-file/runtime gate.
+    """
+    from maple_syrup import windowed_shared_bed_device as shared
+
+    def ref(name, size=1, digest="1" * 64):
+        return shared.SourceReference("/synthetic-budget-metadata-only/" + name, size, digest)
+
+    budget = shared.DeviceWaterQualificationBudget(
+        native_source_identity="2" * 64,
+        current_runtime_ref=ref("current_runtime.json"),
+        factory_source=ref("test_windowed_shared_device_physical.py",
+            shared._QUALIFICATION_FACTORY_SIZE, shared._QUALIFICATION_FACTORY_SHA256),
+        grant=ref("product_budget.json"),
+        source_bindings=tuple((name, ref(name.replace(".", "/") + ".py"))
+                              for name in shared._SOURCE_MODULES),
+        gpu_uuid="GPU-00000000-0000-0000-0000-000000000000",
+        source_manifest_sha256="3" * 64)
+    assert type(budget) is shared.DeviceWaterQualificationBudget
+    return shared, budget, shared.qualification_budget_record(budget)
+
+
+def test_genuine_budget_opaque_tuple_projection_is_strict_json_without_changing_bytes():
+    shared, budget, emitted = _synthetic_owning_qualification_record()
+    before = copy.deepcopy(emitted)
+    budget_before = dataclasses.asdict(budget)
+    projected = c._budget_identity(emitted)
+    for name, roster in (("opaque_external_bounds", shared._EXTERNAL_ROLES),
+                         ("opaque_primitive_units", shared._UNIT_NAMES)):
+        assert type(emitted[name]) is tuple and all(type(row) is tuple for row in emitted[name])
+        assert emitted[name] == tuple((label, None) for label in roster)
+        assert type(projected[name]) is list and all(type(row) is list for row in projected[name])
+        assert projected[name] == [[label, None] for label in roster]
+    assert len(projected["opaque_external_bounds"]) == 11
+    assert len(projected["opaque_primitive_units"]) == 8
+    assert projected["opaque_constructor_accounting"] is None
+
+    # Reinsert only the genuine producer's two old tuple fields to reproduce
+    # the former strict-walker refusal, with no copied projection algorithm.
+    old_tuple_form = copy.deepcopy(projected)
+    for name in ("opaque_external_bounds", "opaque_primitive_units"):
+        old_tuple_form[name] = emitted[name]
+    assert c._json(old_tuple_form) == c._json(projected)
+    assert c._sha(old_tuple_form) == c._sha(projected)
+    record = _record("original")
+    record["source_identity"] = projected
+    body = dict(record); body.pop("manifest_sha256")
+    record["manifest_sha256"] = c._sha(body)
+    raw_before = c._json(record)
+    assert c._plain_record(record, LIMITS) is record
+    assert c._original_preflight(record, projected, ENVIRONMENT, LIMITS) is None
+    assert c._json(record) == raw_before
+    bad = copy.deepcopy(record); bad["source_identity"] = old_tuple_form
+    with pytest.raises(store.BoundaryStoreError, match="non-JSON value"):
+        c._plain_record(bad, LIMITS)
+    bad = copy.deepcopy(record); bad["source_identity"]["unrelated_tuple"] = (("x", None),)
+    with pytest.raises(store.BoundaryStoreError, match="non-JSON value"):
+        c._plain_record(bad, LIMITS)
+    assert emitted == before and dataclasses.asdict(budget) == budget_before
+
+
+def test_genuine_budget_already_json_rosters_keep_names_none_order_and_input():
+    import json
+
+    shared, budget, emitted = _synthetic_owning_qualification_record()
+    # The actual owning canonical encoder is the independent JSON-list path.
+    json_record = json.loads(shared.qualification_budget_bytes(budget))
+    before = copy.deepcopy(json_record)
+    projected = c._budget_identity(json_record)
+    assert projected == c._budget_identity(emitted)
+    assert c._json(projected) == c._json(c._budget_identity(emitted))
+    for name in ("opaque_external_bounds", "opaque_primitive_units"):
+        assert projected[name] == json_record[name]
+        assert all(type(row) is list and row[1] is None for row in projected[name])
+    assert projected["opaque_constructor_accounting"] is None
+    assert json_record == before

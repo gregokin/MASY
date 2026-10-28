@@ -421,6 +421,9 @@ def _budget_identity(record):
     result["factory_source"] = {k: result["factory_source"][k] for k in ("size", "sha256")}
     result["source_bindings"] = [dict(module=r["module"], size=r["size"], sha256=r["sha256"])
                                  for r in result["source_bindings"]]
+    for name in ("opaque_external_bounds", "opaque_primitive_units"):
+        if name in result:
+            result[name] = [list(row) for row in result[name]]
     return result
 
 

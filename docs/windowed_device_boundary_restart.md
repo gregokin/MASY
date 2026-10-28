@@ -238,3 +238,11 @@ does not stand for a Native holder or successful physical restore. The real
 Native class regression above stays unchanged. Root owns actual execution,
 independent Source review, current runtime/source evidence and the separate
 fresh write/recovery qualification; this correction alone issues none.
+
+The stable budget identity projects the two owning opaque metadata rosters
+to JSON lists, preserving every name, position and `None`. The owning record
+API emits tuples; JSON encoding already represents those tuples as lists, so
+canonical bytes and identity hashes remain exact. Strict metadata validation
+still rejects tuples elsewhere. The focused metadata checks use the genuine
+owning descriptor/record API with explicitly synthetic, unread references;
+they issue no execution authority or physical checkpoint acceptance.
