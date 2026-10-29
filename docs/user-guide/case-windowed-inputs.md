@@ -126,3 +126,97 @@ called by a collaborator run. The authored check covers an imported
 9×8/K2/V20 synthetic case, complete logical values and noncolumn fields,
 compact ownership, original-input immutability, explicit refusals and Native
 water inputs. Those values are interface fixtures, not calibration.
+
+## Reopen an initial imported C64 adoption
+
+The additional `save_initial_windowed_case` and `reopen_initial_windowed_case`
+APIs are a bounded initial-input capability. They are Source candidates pending
+Root's implementation review and genuine HOST checks. They provide no event
+restart, GPU placement, imported CaseBudget restoration or production
+calibration approval.
+
+This first profile is an imported, passive HOST 8×8/K1/V20/W3 bed, published
+full-v1/gen0 with one chunk, E1/P8, fixed capacity, datum `+0.0`, no pending
+journal/window cache, no initial seed/baseline and a mapping-cache capacity of
+8. The original authored geometry, class ordering, availability, vegetation,
+thresholds and numerical settings remain unchanged. Other profiles refuse.
+
+Compile once and keep its provenance as its own subject. Then genuinely use
+`resolve_case_inputs(mode="load")` **before the first adoption**, water
+preparation, request or reference. Load and compile are different identities;
+never retag an existing adopted owner. This loaded-subject path requires the
+actual availability builder to produce zero TransformLogs, because load does
+not restore those logs. Imported elevation logs do not authorize dropping
+availability provenance. A genuine loaded adoption must pass the existing
+Native/MASY checks.
+
+```python
+from masy.case_windowed import (
+    save_initial_windowed_case, reopen_initial_windowed_case,
+)
+
+# inputs is already a genuine loaded CaseInputs; windowed is its one adoption.
+# Use explicit caller-owned paths/limits in the original bounded worker.
+saved = save_initial_windowed_case(
+    inputs, windowed, capsule_dir=initial_capsule,
+    max_capsule_bytes=4 << 20,
+)
+# A later caller may already own a separately genuine mode='load' CaseInputs.
+reopened, receipt = reopen_initial_windowed_case(
+    freshly_loaded_inputs, capsule_dir=initial_capsule,
+    expected_capsule_sha256=saved["capsule"]["sha256"],
+    limits=windowed_limits, max_capsule_bytes=4 << 20,
+)
+```
+
+Reopen itself calls no Dense loader, compiler, adopter, DEM reconstruction or
+committed regrouping. The genuine Native snapshot supplies the column,
+active layer, availability and water and selects the **original manifest
+digest** at the same canonical store path. Two saved arrays supply the
+original Native committed voxel baseline and context available fraction.
+Authenticated matching caller inputs supply the ledger, other committed
+fields, config, noncolumn statics, vegetation and thresholds. The full
+original HOST record stays verbatim. Actual reconstructed values and saved
+object-alias positions must match before an owner is returned; fresh water
+preparation must keep the canonical vegetation-cover object.
+
+The six files are `native.npz`, `committed-voxel.npy`,
+`initial-available-fraction.npy`, `host-record.json`,
+`case-input-record.json` and final `CAPSULE.json`. The caller externally pins
+that final file's size/SHA. Files, headers, original deep descriptor/manifest
+and chunk are bounded and authenticated before Native reads. The Native
+archive is stamped and hashed before and after its genuine loader. Exclusive
+writes and directory fsync precede and follow the final publication marker;
+use an ordinary hard-link/fsync-capable filesystem, not drvfs. Failure keeps
+truthful partial files and returns no usable new owner. Existing artifacts
+are never replaced or deleted.
+
+Reopen preserves the original regrouping receipt, construction plan and
+band-size choice as **historical** fields. It does not repeat that arithmetic
+or present them as current measurements. Its separate receipt prices actual
+caller/copy/metadata/read occurrences and reports its own IO. Native runtime
+LRU contents/locks and global diagnostic counters are not historical physical
+state; they are not reset. Limits on capsule bytes are IO eligibility only,
+not an allocator/RSS/whole-process fit theorem. Opaque service costs and the
+original worker's actual limits still apply.
+
+Root's reference/writer protocol also retains a separately authenticated
+`original-input-proof.json`: full original compile/load/HOST records, all four
+raw prepared-water byte sequences, original own-encoded device request and
+public request. Reprepare water and invoke the real projector on the reopened
+owner; encode the **fresh** dict with that producer's encoder and compare
+bytes exactly to the original before fresh budget issuance. The product
+capsule issues no such budget and contains none of that external authority.
+
+Both serial roles require the same newly accepted immutable Source profile.
+Continuous must finish and all owned processes must be gone before writer
+reopens or publishes. Native content-addressed versions permit serial
+same-depth siblings from gen0; retain every branch/version/orphan under the
+same quotas. Never reset a HEAD, delete later files, copy the full store or
+assume an existing content filename was independently rehashed by its writer.
+
+The initial caller's existing genuine load still materializes its original
+Dense inputs, which may remain retained and positively counted. This is an
+explicit small C64 setup limitation, not scalable loading or per-event
+materialization. The reopened physical bed is exclusively the Native
+windowed snapshot plus its retained immutable deep references.
