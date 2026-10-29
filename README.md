@@ -2,6 +2,18 @@
 
 MAPLE-SYRUP is designed to alternate actual MAPLE wind events and actual SYRUP water events over one evolving MAPLE sediment landscape. Wind physics stays in `~/MAPLE` and water physics stays in `~/SYRUP`. SYRUP's existing `maple_syrup` package name remains unchanged, and the combined wrapper uses `masy`. The wrapper contains no copied transport physics, no re-created sediment bed between events and no simultaneous wind/water transport.
 
+**October 29 status:** the [supplied-case GPU command](docs/user-guide/case-gpu.md)
+passed wind → water → wind → water on the labelled synthetic 8 × 8, one-class,
+20-logical/three-resident-voxel profile, including final output and provenance
+checks. A separate [factory C64 checkpoint API](docs/windowed_device_c64_boundary_restart.md)
+passed fresh-process save/recovery and exact comparison with an uninterrupted
+run. That API rejects imported-case budgets; the supplied-case command has no
+save/recover command. The [CPU MAPLE-case workflow](docs/user-guide/case-cpu-workflow.md)
+accepts authored landscapes within its admission rules. See the
+[current qualification record](docs/qualification_status_20261028.md) for exact
+sources, evidence and limits. Production calibration and general GPU capacity
+remain pending. Earlier dated milestones below retain their original scope.
+
 **October 26 case CPU workflow:** the real command-line entry completed a labelled
 synthetic imported MAPLE case through wind → rain/recession → wind on one evolving
 bed: 9 × 8 cells, 2 classes, 20 voxels per column. Start with the

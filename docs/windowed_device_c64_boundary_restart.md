@@ -17,3 +17,35 @@ Restore diagnostics observe real traffic. Native counters are read before HOST s
 The limits remain Native safety fraction 0.5, active pool 2 GiB, sampled RSS 5 GiB, driver growth 9 GiB, operation storage 512 MiB, files 64 MiB, streams 4 MiB, CPU 480/540 seconds, whole role 600 seconds, FD 1024 and core 0. The original 1 GiB/256-inode disk headroom remains. Positive source/read/current-next-error banks, original constructor gates, caller/working/independent readback/mirror banks and reserves remain charged. Constructor, allocator and external-provider terms remain opaque: this is bounded physical qualification, not a universal allocation or fit theorem.
 
 Root's one Native selector is `tests/native/check_windowed_device_c64_boundary_restart.py::test_windowed_device_c64_boundary_restart_role`, invoked in four SERIAL fresh processes: continuous, write-W1, recover-R1, recover-finish. Protected fixtures supply one fresh genuine `device_water_c64_qualification_budget`, `windowed_device_c64_native_source_refs`, and the exact seven-field `windowed_device_c64_restart_role` descriptor. Recovery never invokes fixture genesis. The test compares all five scientific boundaries to the continuous run, preserves saved receipts/nine counters/deep references, checks a duplicate parent without transport replay, and completes actual remaining events. Its scientific observer performs one extra genuine checked private load per selected boundary and discards the additional owner; this work and its traffic remain inside the original role deadline and positive readback banks. The continuous branch has no persisted store. Actual Root Source/type/fit gates, Claude implementation review and all four physical roles are required before acceptance; authored Source alone establishes none of them.
+
+## Accepted physical qualification — October 29, 2026
+
+The type-graph gate and all four fresh GPU roles passed on MASY
+`efaed2ab08ab77d7e92f7476559de61989551c1f`, MAPLE
+`40d1a598b09929b2d0f831513fb6d5c015d88772` and SYRUP
+`61dcf61de14ba302148a4fb1bfdbe08ddf4df10c`, using immutable profile
+`7bf62f70e46d6ba80340f97a7b61258acef49d4fdb93b56db4f39b227eda844d`.
+The gate exercised real creation, save, HOST decode, the five additional holder
+types, checked device restoration, one wind event and readback in 113.933 seconds.
+
+| Actual fresh role | Worker elapsed time |
+| --- | ---: |
+| Uninterrupted four-event reference | 250.405 s |
+| Create and save after first wind | 114.797 s |
+| Recover through first water event | 182.336 s |
+| Recover and finish second wind and water | 257.891 s |
+
+All five scientific boundaries matched the uninterrupted reference byte for
+byte on the same backend. Raw accepted receipts, nine saved water counters,
+vegetation, routing, clocks and old deep versions were preserved. A duplicate
+old-parent submission caused no Native restore, transport or counter replay.
+Each role passed source/runtime checks and independent process
+cleanup; the selected GPU was released after each role. Sampled resource use
+remained within the original limits above. Root's final acceptance receipt
+SHA-256 is `4ca45e77d71d97f354183f539e7e8d2d5e84a216608e0f10227cbd0d3f1b7cfe`.
+
+This accepts the separate factory-profile store API. The
+[supplied-case GPU command](user-guide/case-gpu.md) uses an imported
+`DeviceWaterC64CaseBudget` and cannot use this store. Public save/recover,
+active-event recovery, migration, larger capacity and production calibration
+remain separate work.

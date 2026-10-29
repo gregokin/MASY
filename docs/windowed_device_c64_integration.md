@@ -1,4 +1,19 @@
-# C64 GPU windowed coupling Source prototype
+# C64 GPU windowed coupling
+
+The bounded 8×8, one-class, 20-logical/three-resident-voxel profile has passed
+actual wind → water → wind → water qualification. The
+[execution status](qualification_status_20261028.md) records the exact source
+identities and separate water, imported-case and restart results. The
+[factory C64 boundary store](windowed_device_c64_boundary_restart.md) separately
+passed its type gate and four fresh-process recovery roles on October 29.
+That store rejects imported-case budgets; these results do not establish
+general landscape capacity or production calibration.
+
+## Historical source prototype, before physical qualification
+
+The following design and review notes describe the earlier source prototype.
+Their provisional pins and pending-review statements retain that historical
+scope; the accepted results above have their own exact source identities.
 
 This is an unaccepted, unexecuted Source prototype for the labelled synthetic
 8×8/K1/V20/W3 domain. It adds two MASY owners and a separate fixture, physical

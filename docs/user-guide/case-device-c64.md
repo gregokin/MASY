@@ -5,8 +5,11 @@ an authored synthetic NPY landscape completed wind → water → wind → water,
 matching independent MAPLE/SYRUP execution after every event. The accepted
 profile is exactly 8×8 cells, one class, 20 logical voxels and three resident
 voxels. The ordinary `tools/masy_case.py run` command runs Dense CPU cases.
-The public GPU command and C64 persisted restart remain separate work;
-production calibration and general landscape capacity remain pending.
+The [public GPU command](case-gpu.md) separately passed its bounded physical
+qualification on October 29. The separate
+[factory C64 restart API](../windowed_device_c64_boundary_restart.md) rejects
+this imported-case budget, so supplied-case restart remains unsupported.
+Production calibration and general landscape capacity remain pending.
 
 The actual run used MASY `9e7af84aecf46d4b7f6de7d0218534c03e8230c2`,
 MAPLE `40d1a598b09929b2d0f831513fb6d5c015d88772` and SYRUP

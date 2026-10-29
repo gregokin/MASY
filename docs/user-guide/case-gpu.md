@@ -13,6 +13,13 @@ The supplied case uses the existing labelled synthetic calibration. Production
 calibration, larger capacity and C64 persisted restart are not qualified by
 this interface. A successful process alone is not an allocator theorem.
 
+The command passed its bounded physical qualification on October 29, 2026,
+including all four events, final Native diagnostic and final provenance checks.
+See the [exact execution record](../qualification_status_20261028.md#public-supplied-case-gpu-command).
+The case worker took 287.903 seconds on MASY `efaed2ab`, MAPLE `40d1a598`
+and SYRUP `61dcf61`, under unchanged original controls. This establishes the
+closed profile above, not production calibration or general capacity.
+
 ## Invocation
 
 Use the existing `/home/okin/MAPLE/.venv-cupy/bin/python` interpreter. Prepare
@@ -24,6 +31,8 @@ An operator must separately issue the closed, pinned case authority described
 below after checking the current committed source pair, actual runtime,
 compiled files and available physical device. Actual values are never filled
 from an example, a test factory, an older profile or guessed image counts.
+There is no automatic authority-issuer command. The run-specific qualification
+authority and grants are evidence of that run and cannot authorize another.
 
 ```bash
 /home/okin/MAPLE/.venv-cupy/bin/python -I -B tools/masy_case_gpu.py run \
