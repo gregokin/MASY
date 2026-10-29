@@ -862,6 +862,40 @@ def _checkpoint_restore_charge(maximum):
     return _checkpoint_raw_words(size, chunks) + _metadata_charge(maximum)
 
 
+def _checkpoint_retained_array_bytes(forest):
+    """Read array metadata without rebuilding holders or changing aliases.
+
+    Follow Native placement's array/container/init=True field rules, counting
+    every occurrence even below a repeated container. Only ancestors are
+    remembered: cycles refuse, while separate alias paths remain positive.
+    No holder constructor, array conversion or payload read is performed.
+    """
+    from maple.core.backend import is_array
+    active = {}
+
+    def total(value):
+        if is_array(value):
+            return int(getattr(value, "nbytes", 0) or 0)
+        if isinstance(value, (tuple, list)):
+            children = value
+        elif isinstance(value, dict):
+            children = (item for _key, item in value.items())
+        elif hasattr(value, "__dataclass_fields__"):
+            children = (getattr(value, field.name) for field in dataclasses.fields(value) if field.init)
+        else:
+            return 0
+        key = id(value)
+        if key in active:
+            raise CaseDeviceC64Error("checkpoint_handoff", "cyclic retained holder forest is unsupported")
+        active[key] = value
+        try:
+            return sum(total(item) for item in children)
+        finally:
+            del active[key]
+
+    return total(forest)
+
+
 def _checkpoint_retained(prepared):
     """Actual create caller roots, retained through this same-process handle.
 
@@ -871,7 +905,6 @@ def _checkpoint_retained(prepared):
     are additional positive payload occurrences on both sides of admission.
     """
     from .dense_device_resources import DeviceDenseResources
-    from maple.core.backend.arrays import array_leaf_inventory
     if (type(prepared) is not PreparedDeviceC64Case or prepared._token is not _TOKEN
             or prepared._failed is not False or prepared._checkpoint_handed_off is not False
             or type(prepared._host) is not CaseWindowedInputs
@@ -891,11 +924,10 @@ def _checkpoint_retained(prepared):
     prefix = _plan(prepared._host, prepared._prepared_host_water, None,
         prepared.qualification_budget, len(prepared._binding_bytes), placement.max_metadata_bytes)
     bed, private = prepared.bed._accepted, resources._accepted
-    leaves = array_leaf_inventory((bed.state, bed.mirror, private.pool, private.pool_mirror,
+    visible = _checkpoint_retained_array_bytes((bed.state, bed.mirror, private.pool, private.pool_mirror,
         private.soil, private.soil_mirror, resources._statics, resources._static_mirrors,
         runner._host_config, runner._wind_profile, runner._wind, runner._water,
         prepared.bed._context, prepared.bed._vegetation, prepared.bed._threshold))
-    visible = leaves["transfer_bytes"]
     raw = sum(len(value) for value in (prepared._binding_bytes,
         prepared._host._record_bytes, prepared._prepared_host_water._record_bytes))
     return dict(host_bytes=prefix["known_host_bytes"]+visible+raw,
