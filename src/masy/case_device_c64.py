@@ -13,6 +13,7 @@ import json
 import math
 import os
 import resource
+import sys
 import threading
 import types
 from pathlib import Path
@@ -34,6 +35,8 @@ _TOKEN = object()
 _ADMISSION_TOKEN = object()
 _BINDING_SCHEMA = "masy.device_c64_case_request.v1"
 _BACKEND_FIELDS = ("sediment_control.storm.implementation",)
+_CHECKPOINT_ORIGIN_SCHEMA = "masy.device_c64_case_origin.v1"
+_CHECKPOINT_VALIDATION_TOKEN = object()
 
 
 class CaseDeviceC64Error(ValueError):
@@ -557,6 +560,7 @@ class PreparedDeviceC64Case:
     _identity: dict
     _token: Any
     _failed: bool = False
+    _checkpoint_handed_off: bool = False
 
     def build_runner(self):
         self.verify()
@@ -571,6 +575,8 @@ class PreparedDeviceC64Case:
         return self._runner.stop_receipt  # Existing owner returns a deep copy.
 
     def verify(self):
+        if self._checkpoint_handed_off is not False:
+            raise CaseDeviceC64Error("case_handed_off", "accepted-boundary store owns this stepping attempt")
         if self._token is not _TOKEN or self._failed:
             raise CaseDeviceC64Error("case_stopped", "case boundary was refused; no replay")
         try:
@@ -713,7 +719,362 @@ def prepare_device_c64_case(windowed, prepared_host_water, *, schedule_input, cu
     return result.verify()
 
 
+@dataclasses.dataclass(frozen=True, eq=False, repr=False, slots=True)
+class _CheckpointOriginValidation:
+    token: Any
+    ticket_key: Any
+    budget: Any
+    case_bytes: bytes
+    request_sha256: str
+    used: bool = False
+
+
+def _checkpoint_source_check(origin):
+    """Current genuine producer bindings; never call a foreign mapping method."""
+    from importlib.machinery import ModuleSpec, SourceFileLoader
+    module = sys.modules.get(__name__)
+    ns = globals()
+    spec, loader = ns.get("__spec__"), ns.get("__loader__")
+    if (type(module) is not types.ModuleType or module.__dict__ is not ns
+            or type(origin) is not str or type(ns.get("__file__")) is not str or ns["__file__"] != origin
+            or type(spec) is not ModuleSpec or type(spec.origin) is not str or spec.origin != origin
+            or type(loader) is not SourceFileLoader or type(loader.path) is not str or loader.path != origin):
+        raise CaseDeviceC64Error("checkpoint_source", "genuine loaded producer origin required")
+    rows = ns.get("_SOURCE_BINDINGS")
+    if type(rows) is not tuple or not 0 < len(rows) <= 8192:
+        raise CaseDeviceC64Error("checkpoint_source", "closed producer binding image required")
+    for row in rows:
+        if type(row) is not tuple or len(row) != 4:
+            raise CaseDeviceC64Error("checkpoint_source", "closed producer binding row required")
+        owner, name, descriptor, code = row
+        if (type(owner) not in (dict, types.MappingProxyType)
+                or type(owner) is dict and owner is not ns
+                or type(name) is not str or type(code) is not types.CodeType):
+            raise CaseDeviceC64Error("checkpoint_source", "actual producer mapping/code required")
+        current = dict.get(owner, name) if type(owner) is dict else owner[name]
+        function = (current.__func__ if type(current) in (classmethod, staticmethod)
+                    else current.fget if type(current) is property else current)
+        if (current is not descriptor or type(function) is not types.FunctionType
+                or function.__code__ is not code
+                or code.co_filename == origin and function.__globals__ is not ns):
+            raise CaseDeviceC64Error("checkpoint_source", "producer function/code/global changed")
+    data = ns.get("_CHECKPOINT_DATA_BINDINGS")
+    names = ("_TOKEN", "_ADMISSION_TOKEN", "_CHECKPOINT_VALIDATION_TOKEN", "_CHECKPOINT_ORIGIN_SCHEMA",
+             "_CheckpointOriginValidation", "_CaseAdmission", "PreparedDeviceC64Case", "_SOURCE_BINDINGS")
+    if (type(data) is not tuple or len(data) != len(names)
+            or any(type(row) is not tuple or len(row) != 2 or type(row[0]) is not str for row in data)
+            or tuple(row[0] for row in data) != names):
+        raise CaseDeviceC64Error("checkpoint_source", "closed producer data image required")
+    for name, value in data:
+        if dict.get(ns, name) is not value:
+            raise CaseDeviceC64Error("checkpoint_source", "producer private capability binding changed")
+    return _source_frontier()
+
+
+def _checkpoint_pack_record(raw, maximum):
+    """An exact raw byte record represented by existing bounded scalar tags."""
+    if type(maximum) is not int or not 0 < maximum <= 4 << 20:
+        raise CaseDeviceC64Error("checkpoint_origin", "original metadata ceiling required")
+    if type(raw) is not bytes or not 0 < len(raw) <= maximum:
+        raise CaseDeviceC64Error("checkpoint_origin", "bounded original raw bytes required")
+    chunks = tuple(raw[start:start+2048].hex() for start in range(0, len(raw), 2048))
+    return dict(size=len(raw), sha256=_sha(raw), hex_chunks=chunks)
+
+
+def _checkpoint_unpack_record(record, maximum):
+    if type(maximum) is not int or not 0 < maximum <= 4 << 20:
+        raise CaseDeviceC64Error("checkpoint_origin", "unchanged metadata ceiling required")
+    if (type(record) is not dict or set(record) != {"size", "sha256", "hex_chunks"}
+            or type(record["size"]) is not int or not 0 < record["size"] <= maximum
+            or type(record["sha256"]) is not str or len(record["sha256"]) != 64
+            or any(c not in "0123456789abcdef" for c in record["sha256"])
+            or type(record["hex_chunks"]) is not tuple):
+        raise CaseDeviceC64Error("checkpoint_origin", "closed raw-record entry required")
+    size, chunks = record["size"], record["hex_chunks"]
+    if len(chunks) != (size+2047)//2048:
+        raise CaseDeviceC64Error("checkpoint_origin", "exact raw-record chunk count required")
+    for index, chunk in enumerate(chunks):
+        expected = 4096 if index+1 < len(chunks) else 2*(size-2048*index)
+        if (type(chunk) is not str or len(chunk) != expected
+                or any(c not in "0123456789abcdef" for c in chunk)):
+            raise CaseDeviceC64Error("checkpoint_origin", "canonical bounded raw-record hex required")
+    raw = bytes.fromhex("".join(chunks))
+    if len(raw) != size or _sha(raw) != record["sha256"]:
+        raise CaseDeviceC64Error("checkpoint_origin", "original raw-record digest differs")
+    if _checkpoint_pack_record(raw, maximum) != record:
+        raise CaseDeviceC64Error("checkpoint_origin", "raw record failed exact round trip")
+    return raw
+
+
+def _checkpoint_origin_charge(origin, maximum):
+    """Separate raw/hex/parser occurrence frontier, never a preparation plan.
+
+    A JSON lexical byte can introduce at most one value/key/container. Count
+    each such occurrence with the existing32-byte logical header, two8-byte
+    references, an8-byte scalar word and four-byte text. Raw, joined/repacked
+    hex, parsed text and re-encoding buffers coexist in each current/next/
+    first-error bank. The existing metadata term additionally retains derived
+    comparison DOMs and paired encodings. These are positive Source words,
+    not Python/provider allocator sizes.
+    """
+    if type(maximum) is not int or not 0 < maximum <= 4 << 20:
+        raise CaseDeviceC64Error("checkpoint_origin", "unchanged metadata ceiling required")
+    if (type(origin) is not dict or tuple(origin) != ("schema", "request", "host", "water")
+            or origin["schema"] != _CHECKPOINT_ORIGIN_SCHEMA):
+        raise CaseDeviceC64Error("checkpoint_origin", "exact imported raw capsule required")
+    size = chunks = 0
+    for name in ("request", "host", "water"):
+        entry = origin[name]
+        if (type(entry) is not dict or set(entry) != {"size", "sha256", "hex_chunks"}
+                or type(entry["size"]) is not int or not 0 < entry["size"] <= maximum
+                or type(entry["hex_chunks"]) is not tuple
+                or len(entry["hex_chunks"]) != (entry["size"]+2047)//2048):
+            raise CaseDeviceC64Error("checkpoint_origin", "bounded raw capsule sizes required")
+        size += entry["size"]
+        chunks += len(entry["hex_chunks"])
+    # The complete encoded origin, not just individual strings, shares the
+    # existing metadata cap with all other original typed inputs.
+    if 2*size > maximum:
+        raise CaseDeviceC64Error("checkpoint_origin", "hex raw capsule exceeds unchanged metadata cap")
+    return _checkpoint_raw_words(size, chunks) + _metadata_charge(maximum)
+
+
+def _checkpoint_raw_words(size, chunks):
+    # Origin root+three record dictionaries, their three chunk tuples and
+    # three raw byte objects; validation6/admission7 slots, three new ticket
+    # references/key, canonical case bytes (the existing65536 case ceiling),
+    # and the64-character request digest remain positive per occurrence.
+    # Besides joined hex2S and decoded text4S, exact repack retains another2S
+    # of hex; canonical re-encoding retains bytearray+final bytes up to2S.
+    fixed = 32*(1+3+3+3+1+1+1) + 8*(4+3*3+6+7+3) + 65536 + 4*64
+    return 3*(size + 2*size + 2*size + 4*size + 2*size
+              + (32+2*8+8)*size + 8*chunks + fixed)
+
+
+def _checkpoint_restore_charge(maximum):
+    """Prospective capsule/parser banks BEFORE any imported reference IO."""
+    if type(maximum) is not int or not 0 < maximum <= 4 << 20:
+        raise CaseDeviceC64Error("checkpoint_origin", "unchanged metadata ceiling required")
+    # Hex text alone is2*raw; the complete original envelope shares maximum.
+    # Sum of three ceil(size/2048) counts is <= ceil(total/2048)+2.
+    size = maximum//2
+    chunks = (size+2047)//2048 + 3
+    return _checkpoint_raw_words(size, chunks) + _metadata_charge(maximum)
+
+
+def _checkpoint_retained(prepared):
+    """Actual create caller roots, retained through this same-process handle.
+
+    Do not use this function on recovery: no initial HOST forest is created
+    there. It rederives the genuine initial plan rather than trusting a caller
+    mutation of prepared._prefix. Original accepted/mirror/static resources
+    are additional positive payload occurrences on both sides of admission.
+    """
+    from .dense_device_resources import DeviceDenseResources
+    from maple.core.backend.arrays import array_leaf_inventory
+    if (type(prepared) is not PreparedDeviceC64Case or prepared._token is not _TOKEN
+            or prepared._failed is not False or prepared._checkpoint_handed_off is not False
+            or type(prepared._host) is not CaseWindowedInputs
+            or type(prepared._prepared_host_water) is not PreparedCaseWindowedWater
+            or type(prepared.bed) is not DeviceWindowedC64BedOwner
+            or any(type(raw) is not bytes for raw in (prepared._binding_bytes,
+                prepared._host._record_bytes, prepared._prepared_host_water._record_bytes))):
+        raise CaseDeviceC64Error("checkpoint_handoff", "unconsumed genuine imported case required")
+    runner = prepared._runner
+    from .windowed_device_c64_runner import DeviceWindowedC64Runner
+    if type(runner) is not DeviceWindowedC64Runner or runner._bed is not prepared.bed:
+        raise CaseDeviceC64Error("checkpoint_handoff", "one actual runner/bed required")
+    resources = runner._device_resources
+    if type(resources) is not DeviceDenseResources:
+        raise CaseDeviceC64Error("checkpoint_handoff", "actual resource owner required")
+    placement = prepared._request_kwargs["placement_limits"]
+    prefix = _plan(prepared._host, prepared._prepared_host_water, None,
+        prepared.qualification_budget, len(prepared._binding_bytes), placement.max_metadata_bytes)
+    bed, private = prepared.bed._accepted, resources._accepted
+    leaves = array_leaf_inventory((bed.state, bed.mirror, private.pool, private.pool_mirror,
+        private.soil, private.soil_mirror, resources._statics, resources._static_mirrors,
+        runner._host_config, runner._wind_profile, runner._wind, runner._water,
+        prepared.bed._context, prepared.bed._vegetation, prepared.bed._threshold))
+    visible = leaves["transfer_bytes"]
+    raw = sum(len(value) for value in (prepared._binding_bytes,
+        prepared._host._record_bytes, prepared._prepared_host_water._record_bytes))
+    return dict(host_bytes=prefix["known_host_bytes"]+visible+raw,
+        device_bytes=prefix["known_device_bytes"]+visible)
+
+
+def _capture_checkpoint_origin(prepared, budget, maximum):
+    if (type(prepared) is not PreparedDeviceC64Case
+            or prepared.qualification_budget is not budget):
+        raise CaseDeviceC64Error("checkpoint_handoff", "this exact genuine case budget required")
+    prepared.verify()
+    host, water = prepared._host, prepared._prepared_host_water
+    request, host_raw, water_raw = prepared._binding_bytes, host._record_bytes, water._record_bytes
+    if (type(request) is not bytes or type(host_raw) is not bytes or type(water_raw) is not bytes
+            or _sha(request) != budget.case_request_binding_sha256
+            or _sha(host_raw) != host.identity_sha256 or _sha(water_raw) != water.identity_sha256):
+        raise CaseDeviceC64Error("checkpoint_origin", "actual owning raw identities required")
+    origin = dict(schema=_CHECKPOINT_ORIGIN_SCHEMA,
+        request=_checkpoint_pack_record(request, maximum), host=_checkpoint_pack_record(host_raw, maximum),
+        water=_checkpoint_pack_record(water_raw, maximum))
+    _checkpoint_origin_charge(origin, maximum)
+    prepared.verify()
+    if (prepared._host is not host or prepared._prepared_host_water is not water
+            or prepared._binding_bytes != request or host._record_bytes != host_raw or water._record_bytes != water_raw):
+        raise CaseDeviceC64Error("checkpoint_origin", "owning raw inputs changed during capture")
+    # Distinct from scientific/input failure; no constructor/event may reuse
+    # this public stepping capability after any store construction attempt.
+    prepared._checkpoint_handed_off = True
+    return origin
+
+
+def _checkpoint_json(raw, maximum):
+    def pairs(rows):
+        result = {}
+        for name, value in rows:
+            if type(name) is not str or name in result:
+                raise CaseDeviceC64Error("checkpoint_origin", "unique primitive JSON keys required")
+            result[name] = value
+        return result
+    def integer(text):
+        digits = text[1:] if text.startswith("-") else text
+        if len(digits) > 19:
+            raise CaseDeviceC64Error("checkpoint_origin", "owning signed63 JSON integer required")
+        value = int(text)
+        if not -(1 << 63) < value < (1 << 63):
+            raise CaseDeviceC64Error("checkpoint_origin", "owning signed63 JSON integer required")
+        return value
+    def constant(_text):
+        raise CaseDeviceC64Error("checkpoint_origin", "finite canonical JSON required")
+    try:
+        value = json.loads(raw, object_pairs_hook=pairs, parse_int=integer, parse_constant=constant)
+        if type(value) is not dict or _bytes(value, maximum) != raw:
+            raise CaseDeviceC64Error("checkpoint_origin", "exact owning canonical JSON bytes required")
+        return value
+    except (ValueError, TypeError, RecursionError, OverflowError) as exc:
+        if type(exc) is CaseDeviceC64Error:
+            raise
+        raise CaseDeviceC64Error("checkpoint_origin", "invalid bounded original JSON") from exc
+
+
+def _validate_checkpoint_origin(ticket, origin, inputs, genesis_time):
+    """C5 joins on admitted HOST views, BEFORE the Native snapshot loader."""
+    from . import windowed_device_c64_checkpoint as checkpoint
+    checkpoint._checked_ticket(ticket)
+    authority = ticket.authority
+    if (authority.case_mode is not True or ticket.case_validation is not None
+            or ticket.case_genesis_time != genesis_time):
+        raise CaseDeviceC64Error("checkpoint_validation", "one actual imported ticket/epoch required")
+    maximum = ticket.limits.max_metadata_bytes
+    _checkpoint_origin_charge(origin, maximum)
+    raws = {name: _checkpoint_unpack_record(origin[name], maximum) for name in ("request", "host", "water")}
+    request, host, water = (_checkpoint_json(raws[name], maximum) for name in ("request", "host", "water"))
+    case = inputs["case"]
+    closed = ((request, ("schema", "windowed_identity_sha256", "water_identity_sha256", "native_case_identity_sha256",
+        "authored_file_pins", "storage_choices", "native_committed_regrouping", "host_model_sha256", "case_schedule",
+        "projected_schedule", "cuda_control", "backend_changes", "derived_cuda", "record_limits", "bridge_limits",
+        "bed_limits", "resource_limits", "runner_limits", "placement_limits", "metadata_projection_logical_bytes",
+        "calibration", "label", "initial_time_hex")),
+        (host, ("schema", "native_case_identity_sha256", "case_directory", "file_pins", "input_limits",
+        "complete_initial_provenance", "held", "native_committed_regrouping", "limits", "construction_plan",
+        "storage_choices", "ledger_reconciliation_baseline", "initial_mobile_state", "backend", "event_eligibility",
+        "device_placement", "caller_dense_input_may_remain_owned", "whole_process_fit_or_release_claim", "known_plan_excludes")),
+        (water, ("schema", "windowed_case_sha256", "native_inputs", "event_eligibility", "device_placement")),
+        (case, ("schema", "windowed_identity_sha256", "water_identity_sha256", "case_request_binding_sha256",
+        "calibration", "label", "complete_provenance", "source_identity")))
+    if any(type(value) is not dict or set(value) != set(names) for value, names in closed):
+        raise CaseDeviceC64Error("checkpoint_origin", "complete closed original record fields required")
+    if (type(case) is not dict or case.get("schema") != "masy.imported_device_c64_case.v1"
+            or request.get("schema") != _BINDING_SCHEMA
+            or host.get("schema") != "masy.case_windowed_inputs.v1"
+            or water.get("schema") != "masy.case_windowed_water_inputs.v1"):
+        raise CaseDeviceC64Error("checkpoint_origin", "exact imported origin schemas required")
+    def same(left, right, name):
+        if _bytes(left, maximum) != _bytes(right, maximum):
+            raise CaseDeviceC64Error("checkpoint_origin_join", name)
+    digest = _sha(raws["request"])
+    same(digest, authority.budget.case_request_binding_sha256, "fresh budget request")
+    same(digest, case.get("case_request_binding_sha256"), "case request")
+    same(case["source_identity"], authority.budget.native_source_identity, "case Native Source")
+    for name, field in (("host", "windowed_identity_sha256"), ("water", "water_identity_sha256")):
+        same(_sha(raws[name]), request.get(field), field)
+        same(request.get(field), case.get(field), "case "+field)
+    same(water.get("windowed_case_sha256"), request.get("windowed_identity_sha256"), "water HOST")
+    for target, original in (("native_case_identity_sha256", "native_case_identity_sha256"),
+            ("authored_file_pins", "file_pins"), ("storage_choices", "storage_choices"),
+            ("native_committed_regrouping", "native_committed_regrouping")):
+        same(request.get(target), host.get(original), target)
+    same(request.get("projected_schedule"), inputs["schedule"], "projected schedule")
+    same(request.get("cuda_control"), _canonical(inputs["control"]), "CUDA control")
+    same(request.get("host_model_sha256"), _sha(_bytes(_canonical(inputs["model_config"]), maximum)), "original model")
+    same(request.get("record_limits"), _canonical(inputs["record_limits"]), "Native record limits")
+    for name in ("bed_limits", "resource_limits", "runner_limits"):
+        same(request.get(name), dataclasses.asdict(inputs[name]), name)
+    same(request.get("bridge_limits"), _bridge_image(authority.bridge_limits), "full bridge/run_dir")
+    same(request["backend_changes"], list(_BACKEND_FIELDS), "only explicit backend selection")
+    same(request["derived_cuda"], dict(kind="Native read-only property", host=False, device=True), "derived CUDA")
+    for name in ("label", "calibration"):
+        same(request.get(name), inputs[name], name)
+        same(request.get(name), case.get(name), "case "+name)
+    same(request.get("calibration"), "synthetic_test_fixture", "calibration domain")
+    if type(request["label"]) is not str or not request["label"].strip() or len(request["label"]) > 4096:
+        raise CaseDeviceC64Error("checkpoint_origin_join", "original bounded label required")
+    same(request.get("initial_time_hex"), checkpoint.decode_time(genesis_time).hex(), "original epoch")
+    proof = _CheckpointOriginValidation(_CHECKPOINT_VALIDATION_TOKEN, ticket.case_key,
+        authority.budget, _bytes(case, 65536), digest)
+    ticket.case_validation = proof
+    return proof
+
+
+def _mint_checkpoint_admission(ticket, state, context, budget, case_record):
+    from . import windowed_device_c64_checkpoint as checkpoint
+    checkpoint._checked_ticket(ticket)
+    proof = ticket.case_validation
+    shared = checkpoint._shared()
+    if (ticket.authority.case_mode is not True or ticket.authority.budget is not budget
+            or type(state) is not shared.WindowedSharedBedState
+            or type(context) is not shared.WindowedDeviceWaterC64Context
+            or type(proof) is not _CheckpointOriginValidation
+            or proof.token is not _CHECKPOINT_VALIDATION_TOKEN or proof.ticket_key is not ticket.case_key
+            or proof.budget is not budget or proof.used is not False
+            or proof.request_sha256 != budget.case_request_binding_sha256
+            or _bytes(ticket.inputs["case"], 65536) != proof.case_bytes
+            or _bytes(case_record, 65536) != proof.case_bytes
+            or context.runtime_bounds is not budget):
+        raise CaseDeviceC64Error("checkpoint_admission", "one validated live ticket construction required")
+    object.__setattr__(proof, "used", True)  # Failed construction cannot remint.
+    return _CaseAdmission(_ADMISSION_TOKEN, proof.request_sha256, state, context, budget, proof.case_bytes)
+
+
+def create_device_c64_case_boundary_store(path, *, prepared_case, qualification_budget,
+        bridge_limits, native_source_refs, limits=None, storage_contract):
+    """Handoff an imported genesis to the accepted-boundary atomic store API.
+
+    Root owns one-use/fresh-role authority and the original complete controls.
+    This does not add a public resume command or a restart qualification claim.
+    """
+    if type(prepared_case) is not PreparedDeviceC64Case:
+        raise CaseDeviceC64Error("checkpoint_handoff", "exact genuine prepared imported case required")
+    from . import windowed_device_c64_checkpoint as checkpoint
+    return checkpoint._create_imported_boundary_store(path, prepared_case=prepared_case,
+        qualification_budget=qualification_budget, bridge_limits=bridge_limits,
+        native_source_refs=native_source_refs,
+        limits=checkpoint._DEFAULT if limits is None else limits, storage_contract=storage_contract)
+
+
+def recover_device_c64_case_boundary_store(path, *, expected_store_file_sha256,
+        qualification_budget, bridge_limits, native_source_refs, limits=None):
+    """Recover an imported accepted boundary without compile/adopt/genesis."""
+    from . import windowed_device_c64_checkpoint as checkpoint
+    return checkpoint._recover_imported_boundary_store(path,
+        expected_store_file_sha256=expected_store_file_sha256, qualification_budget=qualification_budget,
+        bridge_limits=bridge_limits, native_source_refs=native_source_refs,
+        limits=checkpoint._DEFAULT if limits is None else limits)
+
+
 _SOURCE_BINDINGS = _capture_source_bindings(globals())
+_CHECKPOINT_DATA_BINDINGS = tuple((name, globals()[name]) for name in (
+    "_TOKEN", "_ADMISSION_TOKEN", "_CHECKPOINT_VALIDATION_TOKEN", "_CHECKPOINT_ORIGIN_SCHEMA",
+    "_CheckpointOriginValidation", "_CaseAdmission", "PreparedDeviceC64Case", "_SOURCE_BINDINGS"))
 
 __all__ = ["CaseDeviceC64Error", "CaseDeviceC64PlacementLimits", "PreparedDeviceC64Case",
            "device_c64_request_binding", "prepare_device_c64_case"]

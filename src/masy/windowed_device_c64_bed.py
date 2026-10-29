@@ -373,7 +373,7 @@ class DeviceWindowedC64BedOwner(DeviceDenseBedOwner):
     @classmethod
     def _from_restored_c64_boundary(cls, ticket, state, context, *, case_record, time_s,
                                     limits, vegetation, threshold_modifier_state,
-                                    trajectory_semantics, generation):
+                                    trajectory_semantics, generation, _case_admission=None):
         """Actual Native constructor first; only a MASY generation is rebound."""
         from .windowed_device_c64_checkpoint import _checked_ticket, _integer
         _checked_ticket(ticket)
@@ -383,10 +383,15 @@ class DeviceWindowedC64BedOwner(DeviceDenseBedOwner):
         if generation != ticket.current["bookkeeping"]["next_index"]:
             raise DeviceBedError("restore_generation", "bed/cursor mismatch")
         if type(context.runtime_bounds) is not _native()[1].DeviceWaterC64QualificationBudget:
-            raise DeviceBedError("qualification_budget", "factory C64 only; CaseBudget unsupported")
+            shared = _native()[1]
+            if (not ticket.authority.case_mode or type(context.runtime_bounds) is not shared.DeviceWaterC64CaseBudget
+                    or context.runtime_bounds is not ticket.authority.budget):
+                raise DeviceBedError("qualification_budget", "factory C64 only; CaseBudget unsupported")
+            from .case_device_c64 import _check_case_admission
+            _check_case_admission(_case_admission, state, context, context.runtime_bounds, case_record)
         owner = cls.from_device_bed(state, context, case_record=case_record, time_s=time_s,
             limits=limits, vegetation=vegetation, threshold_modifier_state=threshold_modifier_state,
-            trajectory_semantics=trajectory_semantics)
+            trajectory_semantics=trajectory_semantics, _case_admission=_case_admission)
         if owner.generation != 0 or owner._active is not None:
             raise DeviceBedError("restore_generation", "fresh idle Native owner required")
         owner._accepted = dataclasses.replace(owner._accepted, generation=generation)

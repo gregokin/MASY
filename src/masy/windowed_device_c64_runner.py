@@ -825,7 +825,8 @@ def _restore_windowed_device_c64_runner(ticket):
         sediment_availability=to_device_tree(saved["sediment_availability"], cp),
         **current["auxiliary"])
     if type(authority.budget) is not w.shared.DeviceWaterC64QualificationBudget:
-        checkpoint._fail("qualification_budget", "factory-only restore")
+        if not authority.case_mode or type(authority.budget) is not w.shared.DeviceWaterC64CaseBudget:
+            checkpoint._fail("qualification_budget", "factory-only restore")
     statics = inputs["statics"]
     if type(statics) is not dict or tuple(statics) != STATIC_NAMES:
         checkpoint._fail("statics", "exact ordered owned static roster")
@@ -836,10 +837,19 @@ def _restore_windowed_device_c64_runner(ticket):
     time_s = decode_time(book["native_time"])
     if float(saved["time_s"]).hex() != time_s.hex() or saved["step"] != book["next_index"]:
         checkpoint._fail("clock", "Native boundary/cursor changed")
+    case_admission = None
+    if authority.case_mode:
+        producer = checkpoint._case_producer(authority.budget)
+        producer._checkpoint_source_check(authority.budget.producer_source.path)
+        case_admission = producer._mint_checkpoint_admission(ticket, state, context,
+            authority.budget, inputs["case"])
     bed = DeviceWindowedC64BedOwner._from_restored_c64_boundary(ticket, state, context,
         case_record=inputs["case"], time_s=time_s, limits=inputs["bed_limits"],
         vegetation=statics["vegetation"], threshold_modifier_state=statics["threshold_modifier_state"],
-        trajectory_semantics=inputs["trajectory"], generation=book["bed_generation"])
+        trajectory_semantics=inputs["trajectory"], generation=book["bed_generation"],
+        _case_admission=case_admission)
+    if authority.case_mode:
+        producer._check_case_bed_admission(bed, authority.budget)
     bed._runner_consumed = True  # Permanent one-attempt MASY builder latch.
     ticket.before["bed_after_constructor"] = dict(bed._counts)
     host_config = inputs["host_config"]

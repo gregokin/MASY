@@ -37,6 +37,9 @@ STORE_SCHEMA = "masy.windowed_device_c64_boundary_store.v1"
 ORIGINAL_SCHEMA = "masy.windowed_device_c64_originals.v1"
 PHYSICAL_SCHEMA = "masy.windowed_device_c64_native_snapshot.v1"
 RUNTIME_SCHEMA = STORE_SCHEMA + ".runtime"
+CASE_ORIGINAL_SCHEMA = "masy.windowed_device_c64_case_originals.v1"
+CASE_RUNTIME_SCHEMA = STORE_SCHEMA + ".case_runtime"
+CASE_BUDGET_SCHEMA = "maple_syrup.windowed_device_water.c64_case_budget.v1"
 CLAIM = codec.CLAIM
 E1_MODULE = "maple.core.backend.prefix_cell_reductions"
 PREFIX_MODULE = "maple.surface.voxels.windowed_prefix"
@@ -46,6 +49,7 @@ _ACTIVE_SCOPE = None
 _DTYPES, _BED, _COUNTERS = codec._DTYPES, codec._BED, codec._COUNTERS
 _INPUT_FIELDS, _CURRENT_FIELDS, _ORIGINAL_FIELDS = codec._INPUT_FIELDS, codec._CURRENT_FIELDS, codec._ORIGINAL_FIELDS
 _RUNNER_FIELDS = codec._RUNNER_FIELDS
+_CASE_ORIGINAL_FIELDS = (*_ORIGINAL_FIELDS, "case_origin")
 _fail = codec._fail
 _keys = codec._keys
 _integer = codec._integer
@@ -85,7 +89,8 @@ def _shared():
 
 class _RestoreTicket:
     __slots__ = ("key", "pid", "thread", "phase", "authority", "limits", "inputs",
-                 "current", "host_snapshot", "manifest", "before", "diagnostics", "pending_refs")
+                 "current", "host_snapshot", "manifest", "before", "diagnostics", "pending_refs",
+                 "case_key", "case_validation", "case_genesis_time")
 
     def __init__(self, key):
         if key is not _KEY:
@@ -94,6 +99,7 @@ class _RestoreTicket:
         self.phase, self.authority = "constructing", None
         self.limits = self.inputs = self.current = self.host_snapshot = self.manifest = None
         self.before = self.diagnostics = self.pending_refs = None
+        self.case_key, self.case_validation, self.case_genesis_time = object(), None, None
 
     def __reduce_ex__(self, protocol):
         raise TypeError("C64 restore tickets cannot be serialized")
@@ -224,12 +230,17 @@ def _read_plan(image, accepted, reference_bytes):
 class _Authority:
     """Fresh Root-owned role facts; this object issues no launch authority."""
     __slots__ = ("budget", "bridge_limits", "limits", "native_source_refs", "cp", "pid",
-                 "thread", "device", "stream", "record", "source_rows", "native_images", "class_images", "native_code_bytes")
+                 "thread", "device", "stream", "record", "source_rows", "native_images", "class_images", "native_code_bytes",
+                 "case_mode", "case_code_bytes", "case_restore_bytes", "retained_host_bytes", "retained_device_bytes")
 
-    def __init__(self, budget, bridge_limits, native_source_refs, limits):
+    def __init__(self, budget, bridge_limits, native_source_refs, limits, *, case_mode=False, prepared_case=None):
         shared = _shared()
-        if type(budget) is not shared.DeviceWaterC64QualificationBudget:
+        if type(case_mode) is not bool:
+            _fail("authority", "closed factory/imported selection required")
+        if not case_mode and type(budget) is not shared.DeviceWaterC64QualificationBudget:
             _fail("authority", "exact factory C64 budget required; CaseBudget unsupported")
+        if case_mode and type(budget) is not shared.DeviceWaterC64CaseBudget:
+            _fail("authority", "exact imported CaseBudget required; factory budget unsupported")
         if type(bridge_limits) is not shared.PositiveWindowedDeviceWaterLimits:
             _fail("authority", "genuine explicit fresh bridge limits required")
         C64BoundaryStoreLimits.__post_init__(limits)
@@ -252,6 +263,20 @@ class _Authority:
         self.stream = int(cp.cuda.get_current_stream().ptr)
         self.source_rows, self.native_images, self.class_images = (), (), ()
         self.native_code_bytes = 0
+        self.case_mode, self.case_code_bytes, self.case_restore_bytes = case_mode, 0, 0
+        self.retained_host_bytes = self.retained_device_bytes = 0
+        if case_mode:
+            producer = _case_producer(budget)
+            self.case_code_bytes = producer._checkpoint_source_check(budget.producer_source.path)
+            self.case_restore_bytes = producer._checkpoint_restore_charge(limits.image.max_metadata_bytes)
+            if prepared_case is not None:
+                if (type(prepared_case) is not vars(producer)["PreparedDeviceC64Case"]
+                        or prepared_case.qualification_budget is not budget):
+                    _fail("authority", "exact prepared case/fresh budget alias required")
+                held = producer._checkpoint_retained(prepared_case)
+                self.retained_host_bytes, self.retained_device_bytes = held["host_bytes"], held["device_bytes"]
+        elif prepared_case is not None:
+            _fail("authority", "factory path has no imported preparation")
         if type(_ACTIVE_SCOPE) is not _Scope:
             _fail("scope", "ticket/writer scope precedes authority construction")
         _ACTIVE_SCOPE.authority = self
@@ -260,8 +285,8 @@ class _Authority:
             _ACTIVE_SCOPE.ticket.limits = limits.image
         self.prelude()  # No reference/file/import operation precedes admission.
         self._authenticate()
-        evidence = shared.c64_qualification_budget_record(budget)
-        self.record = dict(schema=RUNTIME_SCHEMA,
+        evidence = _authority_budget_record(self)
+        self.record = dict(schema=CASE_RUNTIME_SCHEMA if case_mode else RUNTIME_SCHEMA,
             source_identity=self._identity(evidence), environment=_environment(cp),
             evidence=evidence, grant=dataclasses.asdict(budget.grant),
             native_source_refs=[dict(module=n, **dataclasses.asdict(r)) for n, r in native_source_refs],
@@ -286,8 +311,10 @@ class _Authority:
         refs = (*shared._c64_refs(self.budget), *(ref for _, ref in self.native_source_refs))
         raw = sum(ref.size for ref in refs)
         plan = _read_plan(self.limits.image, self.limits.max_accepted, raw)
-        host = plan["host_bytes"] + 3*raw + shared._c64_code_charge() + _code_charge() + self.native_code_bytes + self.bridge_limits.reserve_host_bytes
-        device = self.bridge_limits.reserve_device_bytes
+        host = (plan["host_bytes"] + 3*raw + shared._c64_code_charge() + _code_charge()
+                + self.native_code_bytes + self.case_code_bytes + self.case_restore_bytes + self.retained_host_bytes
+                + self.bridge_limits.reserve_host_bytes)
+        device = self.bridge_limits.reserve_device_bytes + self.retained_device_bytes
         if (host > min(self.limits.max_memory_bytes, self.bridge_limits.max_host_bytes, 5 << 30)
                 or device > min(self.bridge_limits.max_device_bytes, 2 << 30)):
             _fail("read_frontier", "complete positive read/Source/reserve banks exceed original caps")
@@ -324,16 +351,22 @@ class _Authority:
     def _authenticate(self):
         self.prelude()
         shared = _shared()
-        for ref in (self.budget.current_runtime_ref, self.budget.factory_source):
-            shared._read_reference(ref)
-        if shared._read_reference(self.budget.grant) != shared.c64_qualification_budget_bytes(self.budget):
-            _fail("authority", "fresh genuine complete C64 budget bytes changed")
-        for name, ref in self.budget.source_bindings:
-            module = sys.modules.get(name)
-            if (type(module) is not ModuleType or type(vars(module).get("__file__")) is not str
-                    or vars(module)["__file__"] != ref.path):
-                _fail("source_origin", name)
-            shared._read_reference(ref)
+        if self.case_mode:
+            shared._c64_case_budget_runtime(self.budget, verify_files=True)
+            producer = _case_producer(self.budget)
+            self.case_code_bytes = producer._checkpoint_source_check(self.budget.producer_source.path)
+            self.prelude()
+        else:
+            for ref in (self.budget.current_runtime_ref, self.budget.factory_source):
+                shared._read_reference(ref)
+            if shared._read_reference(self.budget.grant) != shared.c64_qualification_budget_bytes(self.budget):
+                _fail("authority", "fresh genuine complete C64 budget bytes changed")
+            for name, ref in self.budget.source_bindings:
+                module = sys.modules.get(name)
+                if (type(module) is not ModuleType or type(vars(module).get("__file__")) is not str
+                        or vars(module)["__file__"] != ref.path):
+                    _fail("source_origin", name)
+                shared._read_reference(ref)
         source_rows = []
         for name in ("windowed_device_c64_checkpoint", "windowed_device_checkpoint", "dense_boundary_store",
                      "dense_device_resources", "windowed_device_c64_bed", "windowed_device_c64_runner"):
@@ -354,8 +387,9 @@ class _Authority:
         _keys(saved, ("schema", "source_identity", "environment", "environment_sha256", "evidence", "grant",
                       "native_source_refs", "masy_source"), "C64 runtime")
         self.budget.validated(); self._authenticate()
-        current = _shared().c64_qualification_budget_record(self.budget)
-        if (saved["schema"] != RUNTIME_SCHEMA or _json(saved["source_identity"]) != _json(self._identity(current))
+        current = _authority_budget_record(self)
+        expected_schema = CASE_RUNTIME_SCHEMA if self.case_mode else RUNTIME_SCHEMA
+        if (saved["schema"] != expected_schema or _json(saved["source_identity"]) != _json(self._identity(current))
                 or saved["environment"] != _environment(self.cp)
                 or saved["environment_sha256"] != _sha(saved["environment"])
                 or _json(_budget_identity(saved["evidence"])) != _json(_budget_identity(current))
@@ -719,8 +753,79 @@ def _check_class_images(authority):
                 _fail("class_source", "actual class function/code/globals/defaults changed")
 
 
+def _case_producer(budget):
+    """Safe binding lookup before calling the pinned owning producer hooks."""
+    from importlib.machinery import ModuleSpec, SourceFileLoader
+    if type(budget) is not _shared().DeviceWaterC64CaseBudget:
+        _fail("case_source", "exact genuine CaseBudget required")
+    budget.validated()
+    module = sys.modules.get("masy.case_device_c64")
+    if type(module) is not ModuleType:
+        _fail("case_source", "actual already-loaded imported producer required")
+    ns = module.__dict__
+    spec, loader = dict.get(ns, "__spec__"), dict.get(ns, "__loader__")
+    origin = budget.producer_source.path
+    if (budget.producer_module != "masy.case_device_c64" or type(dict.get(ns, "__name__")) is not str
+            or ns["__name__"] != budget.producer_module or type(dict.get(ns, "__file__")) is not str
+            or ns["__file__"] != origin
+            or type(spec) is not ModuleSpec or type(spec.origin) is not str or spec.origin != origin
+            or type(loader) is not SourceFileLoader or type(loader.path) is not str or loader.path != origin):
+        _fail("case_source", "locked producer file/spec/loader required")
+    for name in ("_checkpoint_source_check", "_checkpoint_restore_charge", "_checkpoint_retained",
+                 "_capture_checkpoint_origin", "_validate_checkpoint_origin", "_mint_checkpoint_admission",
+                 "_check_case_bed_admission"):
+        function = dict.get(ns, name)
+        if (type(function) is not FunctionType or function.__globals__ is not ns
+                or type(function.__module__) is not str or function.__module__ != budget.producer_module or function.__code__.co_filename != origin
+                or function.__code__.co_name != name):
+            _fail("case_source", "genuine owning producer function/code required")
+    return module
+
+
+def _authority_budget_record(authority):
+    shared = _shared()
+    return (shared.c64_case_budget_record(authority.budget) if authority.case_mode
+            else shared.c64_qualification_budget_record(authority.budget))
+
+
+def _original_schema(source):
+    return CASE_ORIGINAL_SCHEMA if type(source) is dict and source.get("schema") == CASE_BUDGET_SCHEMA else ORIGINAL_SCHEMA
+
+
+def _original_fields(schema):
+    if type(schema) is not str:
+        _fail("original_identity", "plain code-owned originals schema required")
+    if schema == CASE_ORIGINAL_SCHEMA:
+        return _CASE_ORIGINAL_FIELDS
+    if schema == ORIGINAL_SCHEMA:
+        return _ORIGINAL_FIELDS
+    _fail("original_identity", "closed factory/imported originals schema required")
+
+
+def _check_store_kind(header, *, imported):
+    """Both directions refuse BEFORE any snapshot/typed-owner load."""
+    if type(imported) is not bool or type(header) is not dict:
+        _fail("store_kind", "closed header/origin selection required")
+    expected_runtime = CASE_RUNTIME_SCHEMA if imported else RUNTIME_SCHEMA
+    expected_original = CASE_ORIGINAL_SCHEMA if imported else ORIGINAL_SCHEMA
+    runtime, originals = header.get("runtime_reference"), header.get("originals")
+    if (type(runtime) is not dict or runtime.get("schema") != expected_runtime
+            or type(originals) is not dict or originals.get("format") != expected_original
+            or _original_schema(header.get("source_identity")) != expected_original):
+        _fail("store_kind", "factory/imported runtime and original formats cannot cross")
+
+
 def _budget_identity(record):
     """Stable scientific/Source operands; actual role references stay evidence."""
+    if type(record) is dict and record.get("schema") == CASE_BUDGET_SCHEMA:
+        result = copy.deepcopy(record)
+        result.pop("current_runtime_ref")
+        result["producer_source"] = {k: result["producer_source"][k] for k in ("size", "sha256")}
+        result["source_bindings"] = [dict(module=r["module"], size=r["size"], sha256=r["sha256"])
+                                     for r in result["source_bindings"]]
+        for name in ("opaque_external_bounds", "opaque_primitive_units"):
+            result[name] = [list(row) for row in result[name]]
+        return result
     result = copy.deepcopy(record)
     result.pop("current_runtime_ref")
     result["factory_source"] = {k: result["factory_source"][k] for k in ("size", "sha256")}
@@ -736,12 +841,13 @@ def _original_preflight(record, source, environment, limits):
     _keys(record, ("schema", "wire", "payload", "profile", "source_identity",
                   "environment_sha256", "manifest_sha256"), "original capsule")
     _plain_record(record, limits)
-    if (record["schema"] != ORIGINAL_SCHEMA or record["profile"] != PROFILE
+    schema = _original_schema(source)
+    if (record["schema"] != schema or record["profile"] != PROFILE
             or _json(record["source_identity"]) != _json(source)
             or record["environment_sha256"] != environment):
         _fail("original_identity", "original profile/Source/environment")
     _wire_preflight(record["wire"], limits)
-    _wire_root(record["wire"], _ORIGINAL_FIELDS, "original root")
+    _wire_root(record["wire"], _original_fields(schema), "original root")
     first = record["wire"]["root"]["v"][0][1]
     if first.get("t") != "dict" or tuple(v[0] for v in first["v"]) != _INPUT_FIELDS:
         _fail("original_inputs", "complete ordered original inputs")
@@ -752,6 +858,9 @@ def _write_wire(directory, material, *, schema, limits, authority, extra):
     import numpy as np
     from maple.core.backend import to_host
     authority.prelude()
+    if (schema == CASE_ORIGINAL_SCHEMA and not authority.case_mode
+            or schema == ORIGINAL_SCHEMA and authority.case_mode):
+        _fail("store_kind", "factory/imported original write cannot cross")
     directory = Path(directory)
     encoder = _Encoder(limits, authority.cp)
     tree = encoder.node(material)
@@ -772,19 +881,28 @@ def _write_wire(directory, material, *, schema, limits, authority, extra):
     row = _file_row(path, limits.max_serialized_bytes)
     row.pop("path")
     record = dict(schema=schema, wire=wire, payload=row, **extra)
-    if schema == ORIGINAL_SCHEMA:
+    if schema in (ORIGINAL_SCHEMA, CASE_ORIGINAL_SCHEMA):
         _original_preflight(dict(record, manifest_sha256="0" * 64),
                             record["source_identity"], record["environment_sha256"], limits)
     _plain_record(dict(record, manifest_sha256="0" * 64), limits)
     record["manifest_sha256"] = _sha(record)
     _plain_record(record, limits)
+    if schema == CASE_ORIGINAL_SCHEMA:
+        authority = _scope_authority()
+        if not authority.case_mode:
+            _fail("store_kind", "factory authority cannot write imported originals")
+        _original_preflight(record, authority.record["source_identity"], authority.record["environment_sha256"], limits)
     store._sealed_write(directory, "manifest.json", record, limits.max_metadata_bytes)
     return record
 
 
 def _read_wire(directory, *, expected_file_sha=None, expected_seal=None, schema, limits, expand):
     import numpy as np
-    _scope_authority().prelude()
+    authority = _scope_authority()
+    authority.prelude()
+    if (schema == CASE_ORIGINAL_SCHEMA and not authority.case_mode
+            or schema == ORIGINAL_SCHEMA and authority.case_mode):
+        _fail("store_kind", "factory/imported original read cannot cross")
     directory = Path(directory)
     raw = _read_file(directory / "manifest.json", limits.max_metadata_bytes)
     if expected_file_sha is not None and hashlib.sha256(raw).hexdigest() != expected_file_sha:
@@ -796,6 +914,8 @@ def _read_wire(directory, *, expected_file_sha=None, expected_seal=None, schema,
     if _sha(body) != seal or expected_seal is not None and seal != expected_seal:
         _fail("manifest_hash", "manifest seal")
     _plain_record(record, limits)
+    if schema == CASE_ORIGINAL_SCHEMA:
+        _original_preflight(record, authority.record["source_identity"], authority.record["environment_sha256"], limits)
     total = _wire_preflight(record["wire"], limits)
     _keys(record["payload"], ("size", "sha256"), "raw payload")
     row = dict(path=str(directory / "a_0000.npy"), **record["payload"])
@@ -1199,7 +1319,11 @@ def runner_admission(runner, limits):
         _fail("profile_cap", "closed C64/K1/V20/four-event profile")
     runner._bed.verify(); runner._device_resources.verify()
     if type(runner._bed.context.runtime_bounds) is not _shared().DeviceWaterC64QualificationBudget:
-        _fail("qualification_budget", "factory-only C64 boundary; imported CaseBudget refused")
+        authority = _scope_authority()
+        if (not authority.case_mode or runner._bed.context.runtime_bounds is not authority.budget
+                or type(authority.budget) is not _shared().DeviceWaterC64CaseBudget):
+            _fail("qualification_budget", "factory-only C64 boundary; imported CaseBudget refused")
+        _case_producer(authority.budget)._check_case_bed_admission(runner._bed, authority.budget)
     runner._bed._validate(runner._bed._accepted.state, runner._bed.time_s)
     cp = runner._device_ops.xp
     passive = runner._bed._compact(lambda state: cp.stack((
@@ -1258,7 +1382,7 @@ def _preflight(manifest, source, environment, limits):
             or _json(manifest["source_identity"]) != _json(source)
             or manifest["environment_sha256"] != environment):
         _fail("image_identity", "exact profile/Source/environment")
-    _reference(manifest["originals"], ORIGINAL_SCHEMA)
+    _reference(manifest["originals"], _original_schema(source))
     _digest(manifest["case_sha256"], "case"); _digest(manifest["schedule_sha256"], "schedule")
     for name in ("genesis", "physical"): _reference(manifest[name], PHYSICAL_SCHEMA)
     _keys(manifest["state"], ("next_index", "n_accepted", "native_time", "accepted_bed_label"), "state")
@@ -1333,10 +1457,11 @@ class _Artifacts:
             size = rec["snapshot"]["size"] + sum(r["size"] for r in rec["deep_files"])
             paths = [dict(path=str(self.root / ref["relative_path"] / "checkpoint.json"),
                           size=len(_json(rec))), rec["snapshot"], *rec["deep_files"]]
-        elif ref["format"] == ORIGINAL_SCHEMA:
-            _reference(ref, ORIGINAL_SCHEMA)
+        elif ref["format"] == (CASE_ORIGINAL_SCHEMA if _scope_authority().case_mode else ORIGINAL_SCHEMA):
+            schema = CASE_ORIGINAL_SCHEMA if _scope_authority().case_mode else ORIGINAL_SCHEMA
+            _reference(ref, schema)
             rec, _p, _raw = _read_wire(self.root / ref["relative_path"], expected_file_sha=ref["manifest_file_sha256"],
-                expected_seal=ref["identity"], schema=ORIGINAL_SCHEMA, limits=self.limits, expand=False)
+                expected_seal=ref["identity"], schema=schema, limits=self.limits, expand=False)
             size = rec["payload"]["size"]
             paths = [dict(path=str(self.root / ref["relative_path"] / "manifest.json"), size=len(_json(rec))),
                      dict(path=str(self.root / ref["relative_path"] / "a_0000.npy"), size=size)]
@@ -1512,6 +1637,9 @@ def _history(root, header, chain, limits, *, authority=None, ticket=None):
     for child, parent in zip(chain, chain[1:]):
         if child[2]["ledger"]["entries"][:-1] != parent[2]["ledger"]["entries"]:
             _fail("clock_history", "old clock entries cannot be rewritten")
+    if ticket is not None and _scope_authority().case_mode:
+        _checked_ticket(ticket)
+        ticket.case_genesis_time = copy.deepcopy(epoch)
 
 
 
@@ -1556,25 +1684,34 @@ def _prepare(path, *, artifact_root, expected_manifest_sha256, expected_source_i
     artifacts = _Artifacts(artifact_root, manifest["originals"], manifest["genesis"], manifest["physical"], limits, raw)
     try:
         ref = manifest["originals"]
+        original_schema = _original_schema(expected_source_identity)
         original_path = Path(artifact_root) / ref["relative_path"]
         original, _payload, _raw = _read_wire(original_path, expected_file_sha=ref["manifest_file_sha256"],
-            expected_seal=ref["identity"], schema=ORIGINAL_SCHEMA, limits=limits, expand=False)
+            expected_seal=ref["identity"], schema=original_schema, limits=limits, expand=False)
         _original_preflight(original, expected_source_identity, expected_environment_sha256, limits)
         physical = _physical_read(artifact_root, manifest["physical"], limits)
         total = original["wire"]["numeric_bytes"] + manifest["wire"]["numeric_bytes"] + physical["numeric_bytes"]
         _boundary_admit(total, total, limits, authority)
         original2, original_payload, _raw = _read_wire(original_path,
             expected_file_sha=ref["manifest_file_sha256"], expected_seal=ref["identity"],
-            schema=ORIGINAL_SCHEMA, limits=limits, expand=True)
+            schema=original_schema, limits=limits, expand=True)
         manifest2, payload, _raw = _read_wire(path, expected_seal=expected_manifest_sha256,
             schema=SCHEMA, limits=limits, expand=True)
         if original != original2 or manifest != manifest2:
             _fail("manifest_changed", "metadata changed before expansion")
         originals_host = _decode(original["wire"], original_payload, limits, authority.cp, host=True)
         current_host = _decode(manifest["wire"], payload, limits, authority.cp, host=True)
-        _keys(originals_host, _ORIGINAL_FIELDS, "decoded originals")
+        _keys(originals_host, _original_fields(original_schema), "decoded originals")
         inputs_host = originals_host["inputs"]
         ctx = inputs_host["context"]
+        if authority.case_mode:
+            if ticket.case_genesis_time is None:
+                _fail("case_origin", "authenticated generation-chain epoch required")
+            ticket.limits = limits
+            producer = _case_producer(authority.budget)
+            producer._checkpoint_source_check(authority.budget.producer_source.path)
+            producer._validate_checkpoint_origin(ticket, originals_host["case_origin"],
+                inputs_host, ticket.case_genesis_time)
         # Physical archive, canonical deep root and every full-v1 metadata/chunk
         # row were authenticated above, BEFORE this genuine Native HOST loader.
         artifacts.check()
@@ -1667,6 +1804,7 @@ class _C64GPUStore(store.DenseBoundaryStore):
 
     def _stable(self):
         self._binding()
+        _check_store_kind(self._header, imported=self._authority.case_mode)
         self._authority.prelude()
         inventory = store._inventory(self._root, self._limits, expected_root=os.fstat(self._rootfd))
         raw = store._read(self._root / "STORE.json", 128 << 10,
@@ -1715,13 +1853,13 @@ class _C64GPUStore(store.DenseBoundaryStore):
     def _extra_original(self, manifest, wrapper_raw):
         ref = self._header["originals"]
         rec, _payload, _raw = _read_wire(self._root / ref["relative_path"], expected_file_sha=ref["manifest_file_sha256"],
-            expected_seal=ref["identity"], schema=ORIGINAL_SCHEMA, limits=self._limits.image, expand=False)
+            expected_seal=ref["identity"], schema=_original_schema(self._header["source_identity"]), limits=self._limits.image, expand=False)
         if manifest["originals"] != ref:
             _fail("original_identity", "immutable original reference")
         return rec
 
     def _save_physical(self, path, owner, pack):
-        if pack["schema"] != ORIGINAL_SCHEMA:
+        if pack["schema"] != _original_schema(self._header["source_identity"]):
             _fail("original_identity", "actual original capsule")
         return _physical_write(path, owner, self)
 
@@ -1735,6 +1873,8 @@ class _C64GPUStore(store.DenseBoundaryStore):
     def report(self):
         value = super().report()
         value["scope"] = "C64 same-backend factory GPU accepted-boundary profile; no active-event/CaseBudget resume"
+        if self._authority.case_mode:
+            value["scope"] = "imported C64 same-backend accepted-boundary API; no active-event/public-CLI/general-capacity claim"
         value["qualification"] = dict(known_subset_only=True, claim=CLAIM, allocation_or_fit_proof=None)
         value["restore_diagnostics"] = copy.deepcopy(self._restore_diagnostics)
         return value
@@ -1857,6 +1997,128 @@ def recover_windowed_device_c64_boundary_store(path, *, expected_store_file_sha2
             raise
 
 
+def _create_imported_boundary_store(path, *, prepared_case, qualification_budget,
+        bridge_limits, native_source_refs, limits=_DEFAULT, storage_contract):
+    """Imported guarded genesis; all original atomic publication rules remain."""
+    path = Path(_path(path))  # Exact plain syntax is the only pre-ticket work.
+    ticket = _RestoreTicket(_KEY)
+    handle = None
+    try:
+        with _attempt(ticket):
+            C64BoundaryStoreLimits.__post_init__(limits)
+            store.StorageContract.__post_init__(storage_contract)
+            authority = _Authority(qualification_budget, bridge_limits, native_source_refs, limits,
+                case_mode=True, prepared_case=prepared_case)
+            producer = _case_producer(qualification_budget)
+            runner = prepared_case._runner
+            runner_admission(runner, limits.image)
+            if (runner._next != 0 or runner._n_accepted != 0 or runner._receipts
+                    or runner._bed.context.runtime_bounds is not qualification_budget
+                    or dataclasses.asdict(runner._bed.context.bridge_limits) != dataclasses.asdict(bridge_limits)):
+                _fail("fresh_runner", "untouched genuine runner and its exact fresh role budget/limits required")
+            if not path.is_relative_to(Path(bridge_limits.run_dir)):
+                _fail("run_scope", "store remains inside the genuine governed run directory")
+            origin = producer._capture_checkpoint_origin(prepared_case, qualification_budget, limits.image.max_metadata_bytes)
+            initial = _reservation(limits, runner._limits.max_work_bytes)
+            _disk_admit(runner._bed.context, runner._bed._accepted.state.voxel_column.deep_store.store_dir,
+                disk_bytes=initial["disk_bytes"]+(72 << 20), entries=initial["entries"])
+            handle = _C64GPUStore._open(path, limits, create=True)
+            handle._authority, handle._restore_diagnostics = authority, None
+            handle._disk_context = runner._bed.context
+            handle._deep_store_path = runner._bed._accepted.state.voxel_column.deep_store.store_dir
+            probe, probe_sha = store._probe(handle._root, handle._rootfd)
+            os.mkdir(handle._root / "originals", 0o700); os.mkdir(handle._root / "generations", 0o700)
+            handle._header = dict(schema=STORE_SCHEMA, store_id=uuid.uuid4().hex, profile=PROFILE,
+                source_identity=copy.deepcopy(authority.record["source_identity"]), runtime_reference=copy.deepcopy(authority.record),
+                environment_sha256=authority.record["environment_sha256"],
+                storage_contract=dict(schema=STORE_SCHEMA+".storage", operator_declares_local=True,
+                    operator_declares_fsync_durable=True, observed_fs_type=probe["observation"]["fs_type"],
+                    observed_fs_id=probe["f_fsid"], root_path=str(handle._root), root_dev=probe["root_dev"],
+                    root_ino=probe["root_ino"], probe_file_sha256=probe_sha),
+                limits=store._limits_record(limits), originals=None, genesis_physical=None)
+            handle._admit([], runner._limits.max_work_bytes, initial=True)
+            original_path = handle._root / "originals" / ("o-"+uuid.uuid4().hex)
+            original = _write_wire(original_path,
+                dict(inputs=_inputs(runner), initial_pool=runner._device_resources._accepted.pool,
+                    initial_soil=runner._device_resources._accepted.soil, inventory0=runner._inventory0,
+                    case_origin=origin),
+                schema=CASE_ORIGINAL_SCHEMA, limits=limits.image, authority=authority,
+                extra=dict(profile=PROFILE, source_identity=handle._header["source_identity"],
+                    environment_sha256=handle._header["environment_sha256"]))
+            handle._header["originals"] = dict(format=CASE_ORIGINAL_SCHEMA, relative_path=str(original_path.relative_to(handle._root)),
+                manifest_file_sha256=_file_row(original_path/"manifest.json", limits.image.max_metadata_bytes)["sha256"], identity=original["manifest_sha256"])
+            directory, intent, halt = handle._reserve(0, None, runner._schedule.digest)
+            physical = _physical_write(directory/"physical", runner, handle)
+            handle._header["genesis_physical"] = physical
+            handle._header = store._seal(handle._header, "store_sha256")
+            store._sealed_write(handle._root, "STORE.json", handle._header, 128 << 10)
+            handle._store_raw = oi._json(handle._header)
+            image = _image_write(directory/"image", runner, physical, handle)
+            head = handle._seal_generation(directory, intent, None, image)
+            prepared, chain = handle._load(head)
+            _compare(runner, _owner(prepared), limits.image)
+            state = handle._idle_state(head, prepared, chain[0][1])
+            state = _complete_restore(ticket, prepared, handle, state)
+        with _writer_scope(authority):
+            handle._publish(head, state, None, halt)
+        return handle
+    except BaseException as primary:
+        if handle is not None:
+            try:
+                handle.close()
+            except BaseException:
+                try:
+                    primary.add_note("C64 handle cleanup was unconfirmed")
+                except BaseException:
+                    pass
+        raise
+
+
+
+def _recover_imported_boundary_store(path, *, expected_store_file_sha256,
+        qualification_budget, bridge_limits, native_source_refs, limits=_DEFAULT):
+    """Imported-only selected HEAD, fresh role evidence, no initial-case replay."""
+    path = Path(_path(path))
+    _digest(expected_store_file_sha256, "external STORE hash")
+    ticket = _RestoreTicket(_KEY)
+    with _attempt(ticket):
+        authority = _Authority(qualification_budget, bridge_limits, native_source_refs, limits, case_mode=True)
+        handle = _C64GPUStore._open(path, limits, create=False)
+        handle._authority, handle._restore_diagnostics = authority, None
+        try:
+            store._inventory(handle._root, limits, expected_root=os.fstat(handle._rootfd))
+            header, raw = store._record(handle._root/"STORE.json", 128 << 10,
+                links=store._published_links(handle._root, "STORE.json"))
+            store._check_seal(header, store._STORE, "store_sha256", STORE_SCHEMA)
+            if (type(header["store_id"]) is not str or store._NONCE.fullmatch(header["store_id"]) is None
+                    or store._sha(raw) != expected_store_file_sha256 or header["profile"] != PROFILE
+                    or store._limits_record(store._limits_load_for(header, header["limits"])) != store._limits_record(limits)):
+                _fail("store_identity", "exact store/profile/limits required")
+            _check_store_kind(header, imported=True)
+            authority.check(header["runtime_reference"])
+            handle._header, handle._store_raw = header, raw
+            handle._stable(); head, head_raw = handle._head()
+            prepared, chain = handle._load(head)
+            state = handle._idle_state(head, prepared, chain[0][1])
+            store._sync_tree(handle._root); handle._stable()
+            if handle._head()[1] != head_raw:
+                _fail("parent_drift", "HEAD changed during recovery")
+            os.fsync(handle._rootfd)
+            state = _complete_restore(ticket, prepared, handle, state)
+            handle._state = state
+            return handle
+        except BaseException as primary:
+            try:
+                handle.close()
+            except BaseException:
+                try:
+                    primary.add_note("C64 handle cleanup was unconfirmed")
+                except BaseException:
+                    pass
+            raise
+
+
+
 def _check_module_image():
     """Current in-process locked owner image; no IO and no foreign methods."""
     from importlib.machinery import ModuleSpec, SourceFileLoader
@@ -1891,6 +2153,7 @@ _CLASS_BINDINGS = tuple((name, value) for name, value in tuple(globals().items()
     if type(value) is type and value.__module__ == __name__)
 _DATA_BINDINGS = tuple((name, globals()[name]) for name in (
     "SCHEMA", "PROFILE", "STORE_SCHEMA", "ORIGINAL_SCHEMA", "PHYSICAL_SCHEMA", "RUNTIME_SCHEMA",
+    "CASE_ORIGINAL_SCHEMA", "CASE_RUNTIME_SCHEMA", "CASE_BUDGET_SCHEMA", "_CASE_ORIGINAL_FIELDS",
     "CLAIM", "E1_MODULE", "PREFIX_MODULE", "_KEY", "_DTYPES", "_BED", "_COUNTERS",
     "_INPUT_FIELDS", "_CURRENT_FIELDS", "_ORIGINAL_FIELDS", "_RUNNER_FIELDS", "_C64_TYPES", "_DEFAULT"))
 _SOURCE_BINDINGS = _capture_source_bindings(globals())
