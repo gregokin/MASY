@@ -15,8 +15,11 @@ transport and GPU placement need separate qualification.
 Within a locked, bounded CPU worker, use a fresh run-owned case copy and a
 fresh store outside that case directory. The existing case workflow owns
 input discovery and Native compilation; its compile mode publishes Native
-processed files, so select the run-owned copy explicitly. The native loader's
-existing case-configuration restrictions still apply in load mode.
+processed files, so select the run-owned copy explicitly. On the separately
+qualified MAPLE `a88f71cc` revision, the compiled-case loader authenticates and
+reloads the authored package model configuration in load mode; it does not
+silently substitute default model settings. Compilation and loading still have distinct provenance. The initial
+capsule workflow below requires a genuine load before its first adoption.
 
 ```python
 from pathlib import Path
@@ -130,10 +133,12 @@ water inputs. Those values are interface fixtures, not calibration.
 ## Reopen an initial imported C64 adoption
 
 The additional `save_initial_windowed_case` and `reopen_initial_windowed_case`
-APIs are a bounded initial-input capability. They are Source candidates pending
-Root's implementation review and genuine HOST checks. They provide no event
-restart, GPU placement, imported CaseBudget restoration or production
-calibration approval.
+APIs are an implemented bounded initial-input capability with separate Source
+and genuine HOST validation. They provide no event restart, GPU placement,
+imported CaseBudget restoration or production calibration approval. The
+[imported GPU saved-boundary API](case-device-c64-restart.md) has its own
+physical qualification. This capsule alone grants no execution authority or
+physical qualification.
 
 This first profile is an imported, passive HOST 8×8/K1/V20/W3 bed, published
 full-v1/gen0 with one chunk, E1/P8, fixed capacity, datum `+0.0`, no pending

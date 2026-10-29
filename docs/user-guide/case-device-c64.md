@@ -7,8 +7,11 @@ profile is exactly 8×8 cells, one class, 20 logical voxels and three resident
 voxels. The ordinary `tools/masy_case.py run` command runs Dense CPU cases.
 The [public GPU command](case-gpu.md) separately passed its bounded physical
 qualification on October 29. The separate
-[factory C64 restart API](../windowed_device_c64_boundary_restart.md) rejects
-this imported-case budget, so supplied-case restart remains unsupported.
+[factory C64 restart API](../windowed_device_c64_boundary_restart.md) still
+rejects this imported-case budget. A separate
+[imported accepted-boundary API](case-device-c64-restart.md) passed its own
+four-role qualification on October 29 for the exact Sources recorded there.
+No public save/resume command, active-event recovery or migration is added.
 Production calibration and general landscape capacity remain pending.
 
 The actual run used MASY `9e7af84aecf46d4b7f6de7d0218534c03e8230c2`,

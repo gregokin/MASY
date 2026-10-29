@@ -10,6 +10,7 @@ MAPLE-SYRUP runs actual alternating MAPLE wind and SYRUP water on the same evolv
 | Imported NPY landscape on windowed GPU | The imported-case API matched direct native state/accounting after every event. The public command separately completed all four events and final output/provenance checks. | Exact 8 × 8, one-class, 20-logical/three-resident-voxel profile; [API evidence](user-guide/case-device-c64.md) and [GPU command](user-guide/case-gpu.md). Fresh operator-issued authority is required. |
 | GPU saved boundary restart | Three fresh processes saved after wind, recovered through water, then recovered and finished the remaining wind and water events. | Closed Small 4 × 4, one-class, six-voxel/three-resident-voxel profile. [Restart interface](windowed_device_boundary_restart.md). |
 | Factory C64 GPU saved boundary restart | A fresh four-event reference and three save/recovery processes passed, with exact scientific state at all five boundaries and duplicate-operation handling. | Separate factory 8 × 8, one-class, 20-logical/three-resident-voxel store API. [C64 restart evidence](windowed_device_c64_boundary_restart.md). Imported-case budgets remain unsupported. |
+| Imported C64 GPU accepted-boundary API | The type-graph gate and all four serial roles passed; all five scientific boundaries matched the uninterrupted reference exactly, with duplicate handling. | Implemented same-Source/backend/UUID 8 × 8/K1/V20/W3 API; [contract](user-guide/case-device-c64-restart.md). No public CLI resume or broader profile qualification. |
 
 The CPU case workflow accepts user-authored MAPLE landscapes within its documented admission rules. A successful synthetic case is not validation of another landscape's boundaries, forcing, class mixture, coefficients or resource fit. The windowed case-adoption API establishes storage adoption only; it does not grant GPU or event-execution eligibility.
 
@@ -39,7 +40,10 @@ Native completion settles the remaining mobile sediment, then externally removes
 
 ## Remaining qualification limits
 
-Production reduced-wind calibration on evolving multi-class beds remains pending. The current fixtures use clearly labelled synthetic calibration. General landscape dimensions, larger class counts, GPU execution beyond the closed qualified profiles and capacity/performance scaling remain separate work. Imported-case persisted restart, GPU mid-event restart and cross-backend checkpoint migration remain unsupported. The separate factory C64 store qualification does not change the imported-case report's `restart_qualified=false` and `general_domain_qualified=false` or the common runner's conservative restart flag. Future vegetation/soil-water updates must use explicit versioned transactions and named water-budget exchanges; this status does not introduce those response laws.
+Production reduced-wind calibration on evolving multi-class beds remains pending. The current fixtures use clearly labelled synthetic calibration. General landscape dimensions, larger class counts, GPU execution beyond the closed qualified profiles and capacity/performance scaling remain separate work. The closed imported-case accepted-boundary API has its separate bounded
+qualification below. GPU mid-event
+restart, public CLI resume and cross-backend checkpoint migration remain
+unsupported. Neither the separate factory nor imported C64 store qualification changes the imported-case report's `restart_qualified=false` and `general_domain_qualified=false` or the common runner's conservative restart flag. Future vegetation/soil-water updates must use explicit versioned transactions and named water-budget exchanges; this status does not introduce those response laws.
 
 ## Imported GPU case comparison
 
@@ -119,6 +123,46 @@ unlisted lazy-loaded libraries. They remain failed attempts. This acceptance
 belongs only to the fresh operation with its complete verified inventory.
 It qualifies the [closed GPU command](user-guide/case-gpu.md), with fresh
 operator-issued authority and explicit scientific inputs. Its Native diagnostic
-is not a combined checkpoint. Supplied-case restart, automatic authority
-issuance, other dimensions/classes and production calibration remain separate
-work. The separate factory restart result above does not change those limits.
+is not a combined checkpoint. Restart through this command, automatic
+authority issuance, other dimensions/classes and production calibration
+remain separate work. The separate factory restart result above does not change those limits.
+
+## Imported C64 saved-boundary API — accepted October 29
+
+The imported type-graph gate and all four serial GPU roles passed on MASY
+`5784565605074c7d08490588e12181a49c36d897`, MAPLE
+`a88f71cc924466440a4633c24c487ac631308f4e` and SYRUP
+`61dcf61de14ba302148a4fb1bfdbe08ddf4df10c`, under immutable runtime profile
+`2d3117dc14a370fff7ba5a6568cff2aaa411daf207375829541cc214deb67632`.
+
+| Role | Worker elapsed time |
+| --- | ---: |
+| Uninterrupted four-event reference | 237.997 s |
+| Save after first wind | 122.165 s |
+| Recover and complete first water | 186.181 s |
+| Recover and finish second wind/water | 290.046 s |
+
+All five accepted scientific boundaries matched the uninterrupted reference
+exactly, including resident/deep sediment, prescribed vegetation, soil,
+routing, clocks and accounting. Complete saved receipt prefixes and all nine
+water counters survived recovery. A duplicate acknowledgement changed neither
+HEAD, receipt, transfer counters nor restore diagnostics; it replayed no
+transport or event accounting. Referenced old deep versions remain retained.
+Root independently checked Source/runtime currentness and owned-process
+closure; the selected GPU returned idle. The original execution limits and
+Native numerical checks stayed unchanged. Sampled resource measurements do
+not establish allocator peaks or capacity for another landscape.
+
+Final acceptance receipt SHA-256:
+`51fca7ebf5b0c9090f21b3d58e9b34f61083ca9d080c95c6b50c4ee822d16b23`.
+
+This new [imported store API](user-guide/case-device-c64-restart.md) is separate
+from the factory store and the earlier public-command execution. All four
+roles used the identical original imported case, initial capsule, raw HOST,
+water and request bindings; recovery neither compiled nor adopted a new bed.
+Its scope is 8 × 8, one class, 20 logical and three resident voxels, with the
+same Source identities, backend and physical GPU UUID at accepted boundaries.
+It adds no public save/resume command, active-event recovery, migration,
+multi-class/general capacity or production calibration. Existing conservative
+generic report flags remain unchanged; this specific store result does not
+expand them. Historical results above retain their exact original subjects.

@@ -1,9 +1,10 @@
 # Imported C64 GPU accepted-boundary checkpoint API
 
-This candidate adds an API for the existing imported 8×8/K1/V20/W3 GPU case at
-accepted event boundaries. It adds no public save/resume command. Physical
-qualification, general capacity, calibration, active-event recovery and backend
-or device migration are not established by this Source change.
+The implemented imported-case API saves and recovers accepted event boundaries
+for the closed 8×8/K1/V20/W3 GPU profile. Its separate four-role physical
+qualification passed on October 29, 2026, for the exact subject below. It adds
+no public save/resume command; active-event recovery, migration, broader
+capacity and production calibration remain outside this interface.
 
 `masy.case_device_c64.create_device_c64_case_boundary_store` accepts `path` and
 the keyword arguments `prepared_case`, `qualification_budget`, `bridge_limits`,
@@ -60,7 +61,63 @@ allocation terms remain opaque. The original 600-second operation deadline,
 480/540 CPU limits, 2 GiB pool, 5 GiB RSS, 9 GiB driver growth, 512 MiB owned
 storage, 64 MiB files, 4 MiB streams and Native 0.5 safety fraction are unchanged.
 
-The separate initial adopted-HOST persist/reopen contract and protected fresh
-role fixtures are still pending. They must preserve identical original raw
-bindings without a second adoption or compiler replay. No fallback budget,
-test factory or assumed loader is supplied by this API.
+## Initial adoption and fresh roles
+
+The initial-input owner now supplies `save_initial_windowed_case` and
+`reopen_initial_windowed_case`; see [the HOST contract](case-windowed-inputs.md#reopen-an-initial-imported-c64-adoption).
+Compile once, then genuinely load the authenticated compiled package before
+the first adoption, water preparation and original request. Compiler and load
+provenance are different subjects and remain separately recorded. Native's
+package-configuration reload correction preserves the authenticated authored
+model settings when loading; it does not replace them with defaults or change
+numerical laws.
+
+Saving the passive initial HOST owner publishes a bounded six-file capsule.
+A later writer already owns a genuine fresh load of the same compiled case;
+reopen itself neither loads Dense inputs nor compiles/adopts/regroups. It
+selects the same retained initial Native manifest at the same canonical deep
+and bridge paths and verifies all saved fields and aliases. The original raw
+HOST, four prepared-water records and own-encoded device request must match
+before fresh owning CaseBudget issuance. This capsule reopens the initial
+input only. Evolving accepted-state recovery uses the checkpoint store above.
+Retain every referenced old deep version; do not reset HEAD or delete branches.
+
+The corrected retained read-only occurrence inventory remains part of the
+original restore validation and positive known-owner accounting. It does not
+relax read-only/currentness/alias checks or grant release credit. Constructor,
+allocator and external-provider terms remain opaque.
+
+## Qualification status and exact subject
+
+The imported type-graph gate and all four serial GPU roles passed on MASY
+`5784565605074c7d08490588e12181a49c36d897`, MAPLE
+`a88f71cc924466440a4633c24c487ac631308f4e` and SYRUP
+`61dcf61de14ba302148a4fb1bfdbe08ddf4df10c`, under immutable runtime profile
+`2d3117dc14a370fff7ba5a6568cff2aaa411daf207375829541cc214deb67632`.
+
+| Role | Worker elapsed time |
+| --- | ---: |
+| Uninterrupted four-event reference | 237.997 s |
+| Save after first wind | 122.165 s |
+| Recover and complete first water | 186.181 s |
+| Recover and finish second wind/water | 290.046 s |
+
+All five accepted scientific boundaries matched the uninterrupted reference
+exactly, including resident/deep sediment, prescribed vegetation, soil,
+routing, clocks and accounting. Complete saved receipt prefixes and all nine
+water counters survived recovery. A duplicate acknowledgement changed neither
+HEAD, receipt, transfer counters nor restore diagnostics; it replayed no
+transport or event accounting. Referenced old deep versions remain retained.
+Root independently checked Source/runtime currentness and owned-process
+closure; the selected GPU returned idle. The original execution limits and
+Native numerical checks stayed unchanged. Sampled resource measurements do
+not establish allocator peaks or capacity for another landscape.
+
+Final acceptance receipt SHA-256:
+`51fca7ebf5b0c9090f21b3d58e9b34f61083ca9d080c95c6b50c4ee822d16b23`.
+
+This accepts the Python store API for same-Source/backend/physical-UUID
+recovery at accepted event boundaries. The historical factory and public
+command results retain their original locked Sources. Public CLI resume,
+active-event recovery, backend/device/Source migration, broader dimensions or
+class counts and production calibration remain separate work.

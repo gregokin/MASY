@@ -228,3 +228,13 @@ completion and does not silently resume. Partial compiler/store output may
 remain; inputs are not restored by deleting or rewriting deep versions.
 Root must independently accept source, controls and the bounded physical
 qualification before publication claims extend beyond this labelled run.
+
+## Accepted-boundary API work is separate
+
+The [imported checkpoint API](case-device-c64-restart.md) is a separate Python
+capability with a new Source subject and its own accepted four-role
+qualification, described in that guide. It adds no command here. This command's
+accepted `efaed2ab/40d1a598/61dcf61` execution and Native physical diagnostic
+remain their original evidence; neither becomes an accepted imported restart
+on `57845656/a88f71cc/61dcf61`. Public save/resume and active-event restart
+remain unsupported by this CLI.

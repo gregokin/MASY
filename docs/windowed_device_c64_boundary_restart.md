@@ -49,3 +49,14 @@ This accepts the separate factory-profile store API. The
 `DeviceWaterC64CaseBudget` and cannot use this store. Public save/recover,
 active-event recovery, migration, larger capacity and production calibration
 remain separate work.
+
+## Separate imported-case capability
+
+The [imported accepted-boundary API](user-guide/case-device-c64-restart.md)
+belongs to `masy.case_device_c64` and uses `DeviceWaterC64CaseBudget` plus the
+actual imported HOST/water/request identity. This factory API continues to
+reject that budget and origin. Its accepted `efaed2ab/40d1a598/61dcf61` result
+above remains tied to that exact Source profile. A new imported qualification
+on `57845656/a88f71cc/61dcf61` cannot rebind this old receipt or qualify a
+public save/resume command. The separate imported API has now passed its own
+bounded qualification; see its guide for the exact new subject and receipt.
