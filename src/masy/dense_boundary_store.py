@@ -22,7 +22,7 @@ import sys
 import threading
 import uuid
 from pathlib import Path
-from types import SimpleNamespace
+from types import SimpleNamespace, ModuleType, FunctionType, CodeType, MappingProxyType
 
 from masy import dense_checkpoint as bridge
 from masy import dense_original_inputs as oi
@@ -255,7 +255,7 @@ def _control_fields(value, *, intent=False, generation=False, header=None):
         if value["receipt_bytes_sha256"] is not None:
             _digest(value["receipt_bytes_sha256"], "receipt raw hash")
     elif intent:
-        if header is not None and _windowed_gpu_store(header):
+        if header is not None and (_windowed_gpu_store(header) or _c64_gpu_store(header)):
             # The owning GPU authority already validated this header identity.
             if type(value["source_identity"]) is not dict:
                 _fail("metadata_layout", "GPU intent source identity")
@@ -1877,6 +1877,8 @@ def _head_record(header, store_file_sha, name, generation, generation_file_sha):
 
 
 def _summary(manifest):
+    if type(manifest) is dict and manifest.get("schema") == "masy.windowed_device_c64_boundary_image.v1":
+        return _c64_gpu_module()._summary(manifest)
     if type(manifest) is dict and manifest.get("schema") == "masy.windowed_device_boundary_image.v1":
         return _windowed_gpu_module()._summary(manifest)
     state, route = manifest["state"], manifest["routing"]
@@ -1930,8 +1932,10 @@ def _image_metadata(root, image, limits):
     return manifest, raw
 
 
-def _generation_chain(root, header, store_sha, head, limits):
+def _generation_chain(root, header, store_sha, head, limits, *, authority=None, ticket=None):
     """Metadata/byte-bound ancestry; selected full native preparation is separate."""
+    if _c64_gpu_store(header):
+        _c64_gpu_module()._chain_admit(authority, ticket, limits)
     if _active_store(header):
         return _active_module()._generation_chain(root, header, store_sha, head, limits)
     _inventory(
@@ -2098,6 +2102,8 @@ def _generation_chain(root, header, store_sha, head, limits):
         _history_v2(root, header, chain, limits)
     if _windowed_gpu_store(header):
         _windowed_gpu_module()._history(root, header, chain, limits)
+    if _c64_gpu_store(header):
+        _c64_gpu_module()._history(root, header, chain, limits, authority=authority, ticket=ticket)
     return chain
 
 
@@ -2158,7 +2164,7 @@ class DenseBoundaryStore:
 
     @classmethod
     def _open(cls, root, limits, *, create):
-        BoundaryStoreLimits.__post_init__(limits)
+        _limits_admit(cls, limits)
         root = Path(root).absolute()
         if str(root) != os.path.realpath(root) or root.name in ("", ".", ".."):
             _fail("path_refused", "canonical no-symlink root required")
@@ -2251,7 +2257,7 @@ class DenseBoundaryStore:
             _fail("store_closed", "handle is closed")
         if os.getpid() != self._pid or threading.get_ident() != self._thread:
             _fail("handle_binding", "fork/thread reuse is unsupported")
-        BoundaryStoreLimits.__post_init__(self._limits)
+        _limits_admit(type(self), self._limits, self._header)
         if self._header is not None and self._header.get("limits") != _limits_record(
             self._limits
         ):
@@ -3149,6 +3155,8 @@ def _store_schema(header):
         return SCHEMA_ACTIVE_PROCESS
     if schema == SCHEMA_WINDOWED_GPU and profile == PROFILE_WINDOWED_GPU:
         return SCHEMA_WINDOWED_GPU
+    if schema == SCHEMA_C64_GPU and profile == PROFILE_C64_GPU:
+        return SCHEMA_C64_GPU
     _fail("store_profile", "unknown or mixed schema/profile pair")
 
 
@@ -3197,12 +3205,16 @@ def _reference_v2(directory, fmt, identity, root):
 
 
 def _owner_for(header, prepared):
+    if _c64_gpu_store(header):
+        return _c64_gpu_module()._owner(prepared)
     if _windowed_gpu_store(header):
         return _windowed_gpu_module()._owner(prepared)
     return _owner_v2(prepared) if _dynamic_store(header) else _owner(prepared)
 
 
 def _preflight_for(header, *args):
+    if _c64_gpu_store(header):
+        return _c64_gpu_module()._preflight(*args)
     if _windowed_gpu_store(header):
         return _windowed_gpu_module()._preflight(*args)
     function = b._preflight_metadata_v2 if _dynamic_store(header) else b._preflight_metadata
@@ -3210,6 +3222,8 @@ def _preflight_for(header, *args):
 
 
 def _artifacts_for(header, *args):
+    if _c64_gpu_store(header):
+        return _c64_gpu_module()._Artifacts(*args)
     if _windowed_gpu_store(header):
         return _windowed_gpu_module()._Artifacts(*args)
     kind = b._ArtifactsV2 if _dynamic_store(header) else b._Artifacts
@@ -3217,6 +3231,10 @@ def _artifacts_for(header, *args):
 
 
 def _prepare_for(header, *args, **kwargs):
+    if _c64_gpu_store(header):
+        if "authority" not in kwargs or "ticket" not in kwargs:
+            _fail("fresh_role_authority", "constructing C64 ticket and fresh authority required")
+        return _c64_gpu_module()._prepare(*args, **kwargs)
     if _windowed_gpu_store(header):
         if "authority" not in kwargs:
             _fail("fresh_role_authority", "new genuine GPU role authority required")
@@ -3226,6 +3244,8 @@ def _prepare_for(header, *args, **kwargs):
 
 
 def _admit_owner_for(header, owner, limits):
+    if _c64_gpu_store(header):
+        return _c64_gpu_module().runner_admission(owner, limits)
     if _windowed_gpu_store(header):
         return _windowed_gpu_module().runner_admission(owner, limits)
     function = b._runner_admission_v2 if _dynamic_store(header) else b._runner_admission
@@ -3233,6 +3253,8 @@ def _admit_owner_for(header, owner, limits):
 
 
 def _compare_for(header, owner, readback, limits):
+    if _c64_gpu_store(header):
+        return _c64_gpu_module()._compare(owner, readback, limits)
     if _windowed_gpu_store(header):
         return _windowed_gpu_module()._compare(owner, readback, limits)
     function = _compare_owners_v2 if _dynamic_store(header) else _compare_owners
@@ -3240,6 +3262,8 @@ def _compare_for(header, owner, readback, limits):
 
 
 def _image_for(header, root, image, limits):
+    if _c64_gpu_store(header):
+        return _c64_gpu_module()._image_metadata(root, image, limits)
     if _windowed_gpu_store(header):
         return _windowed_gpu_module()._image_metadata(root, image, limits)
     dynamic = _dynamic_store(header)
@@ -3249,6 +3273,8 @@ def _image_for(header, root, image, limits):
 
 
 def _reservation_for(header, limits, max_work_bytes):
+    if _c64_gpu_store(header):
+        return _c64_gpu_module()._reservation(limits, max_work_bytes)
     if _windowed_gpu_store(header):
         return _windowed_gpu_module()._reservation(limits, max_work_bytes)
     return _reservation_v2(limits, max_work_bytes) if _dynamic_store(header) else _reservation(limits, max_work_bytes)
@@ -4615,3 +4641,111 @@ def recover_windowed_device_boundary_store(path, *, expected_store_file_sha256,
     return module.recover_windowed_device_boundary_store(path,
         expected_store_file_sha256=expected_store_file_sha256, qualification_budget=qualification_budget,
         limits=module._GPU_DEFAULT if limits is None else limits)
+
+
+# Separate C64 passive profile; every original selector stays old-only.
+SCHEMA_C64_GPU = "masy.windowed_device_c64_boundary_store.v1"
+PROFILE_C64_GPU = "C64_K1_V20_W3_gpu_accepted_boundary_v1"
+
+
+def _c64_module_if_loaded():
+    """Inspect only a genuine current sibling; normal old paths never import it."""
+    from importlib.machinery import ModuleSpec, SourceFileLoader
+    module = sys.modules.get("masy.windowed_device_c64_checkpoint")
+    if type(module) is not ModuleType:
+        return None
+    ns = module.__dict__
+    origin = str(Path(__file__).with_name("windowed_device_c64_checkpoint.py"))
+    spec, loader = ns.get("__spec__"), ns.get("__loader__")
+    if (type(ns.get("__name__")) is not str
+            or ns["__name__"] != "masy.windowed_device_c64_checkpoint"
+            or type(ns.get("__file__")) is not str or ns["__file__"] != origin
+            or type(spec) is not ModuleSpec or type(spec.origin) is not str
+            or spec.origin != origin or type(loader) is not SourceFileLoader
+            or type(loader.path) is not str or loader.path != origin
+            or ns.get("_SHARED_STORE") is not sys.modules[__name__]):
+        return None
+    checker = ns.get("_check_module_image")
+    if (type(checker) is not FunctionType or checker.__globals__ is not ns
+            or checker.__code__.co_filename != origin):
+        return None
+    # The locked cold Source import authenticates the image initially; this
+    # image check refuses later object/code/constant drift without file IO.
+    bindings = ns.get("_SOURCE_BINDINGS")
+    if type(bindings) is not tuple or not 1 <= len(bindings) <= 8192:
+        return None
+    for row in bindings:
+        if type(row) is not tuple or len(row) != 4:
+            return None
+        owner, name, original, code = row
+        if (type(owner) not in (dict, MappingProxyType) or type(name) is not str
+                or not 0 < len(name) <= 4096 or type(code) is not CodeType
+                or type(original) not in (FunctionType, classmethod, staticmethod, property)):
+            return None
+        if type(owner) is dict:
+            if owner is not ns:
+                return None
+            current = dict.get(ns, name)
+        else:
+            # A supplied mappingproxy can wrap a foreign Mapping. Never call
+            # it: resolve only real builtin class dictionaries in this image.
+            matches = []
+            for kind in dict.values(ns):
+                if (type(kind) is type
+                        and type(type.__getattribute__(kind, "__module__")) is str
+                        and type.__getattribute__(kind, "__module__") == ns["__name__"]):
+                    descriptor = type.__getattribute__(kind, "__dict__").get(name)
+                    if descriptor is original:
+                        matches.append(descriptor)
+            if len(matches) != 1:
+                return None
+            current = matches[0]
+        function = (current.__func__ if type(current) in (classmethod, staticmethod)
+                    else current.fget if type(current) is property else current)
+        if current is not original or type(function) is not FunctionType or function.__code__ is not code:
+            return None
+    return module
+
+
+def _c64_gpu_module():
+    module = _c64_module_if_loaded()
+    if module is None:
+        _fail("c64_source", "genuine already-loaded current C64 checkpoint owner required")
+    module.__dict__["_check_module_image"]()
+    return module
+
+
+def _c64_gpu_store(header):
+    return _store_schema(header) == SCHEMA_C64_GPU
+
+
+def _limits_admit(cls, limits, header=None):
+    module = _c64_module_if_loaded()
+    if module is not None:
+        ns = module.__dict__
+        is_handle = cls is ns.get("_C64GPUStore")
+        is_limits = type(limits) is ns.get("C64BoundaryStoreLimits")
+        if is_handle or is_limits:
+            if not is_handle or not is_limits:
+                _fail("limit_layout", "C64 handle iff exact C64 limits")
+            ns["_check_module_image"]()
+            ns["C64BoundaryStoreLimits"].__post_init__(limits)
+            if header is not None and not _c64_gpu_store(header):
+                _fail("limit_identity", "C64 limits require exact C64 header")
+            return
+    # Preserve the exact validator and its old subclass/None/error semantics.
+    BoundaryStoreLimits.__post_init__(limits)
+    if header is not None and _c64_gpu_store(header):
+        _fail("limit_identity", "C64 header requires exact C64 handle/limits")
+
+
+def _limits_load_for(header, record):
+    if not _c64_gpu_store(header):
+        return _limits_load(record)
+    module = _c64_gpu_module()
+    kind, image_kind = module.C64BoundaryStoreLimits, module.C64BoundaryImageLimits
+    _keys(record, (f.name for f in dataclasses.fields(kind)), "C64 store limits")
+    values = dict(record)
+    _keys(values["image"], (f.name for f in dataclasses.fields(image_kind)), "C64 image limits")
+    values["image"] = image_kind(**values["image"])
+    return kind(**values)

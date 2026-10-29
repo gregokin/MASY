@@ -577,3 +577,21 @@ class DeviceDenseResources:
         owner._accepted = dataclasses.replace(owner._accepted, generation=generation)
         owner.verify()
         return owner
+
+    @classmethod
+    def _from_restored_c64_boundary(cls, ticket, *, pool, soil, statics, limits, _ops, generation):
+        """Separate genuine C64 ticket; original Small hook stays unchanged."""
+        from .windowed_device_c64_checkpoint import _checked_ticket, _integer
+        _checked_ticket(ticket)
+        if cls is not DeviceDenseResources:
+            raise DeviceResourceError("restore_kind", "exact resource owner required")
+        _integer(generation, 4, "saved C64 resource generation")
+        if generation != ticket.current["bookkeeping"]["next_index"]:
+            raise DeviceResourceError("restore_generation", "resource/cursor mismatch")
+        owner = cls._create(pool=pool, soil=soil, statics=statics,
+                            shape=(8, 8), limits=limits, _ops=_ops)
+        if owner.generation != 0 or owner.active:
+            raise DeviceResourceError("restore_generation", "fresh idle resources required")
+        owner._accepted = dataclasses.replace(owner._accepted, generation=generation)
+        owner.verify()
+        return owner

@@ -171,6 +171,21 @@ def _class(tag):
     return cls, names, enum
 
 
+def _class_table_for(limits):
+    """Only an explicitly selected genuine C64 limit adds its closed rows."""
+    module = store._c64_module_if_loaded()
+    if module is not None and type(limits) is vars(module)["C64BoundaryImageLimits"]:
+        return vars(module)["_class_table"](limits)
+    return _class_table()
+
+
+def _class_for(tag, limits):
+    module = store._c64_module_if_loaded()
+    if module is not None and type(limits) is vars(module)["C64BoundaryImageLimits"]:
+        return vars(module)["_class"](tag, limits)
+    return _class(tag)
+
+
 class _Encoder:
     """Bound metadata first; no download/hash/copy until complete admission."""
     def __init__(self, limits, cp):
@@ -202,7 +217,7 @@ class _Encoder:
                     "v": self.node(value.item(), depth + 1)}
         tag = kind.__module__ + ":" + kind.__qualname__
         if isinstance(value, enum.Enum):
-            cls, _names, is_enum = _class(tag)
+            cls, _names, is_enum = _class_for(tag, self.limits)
             if kind is not cls or not is_enum:
                 _fail("class", "unknown enum")
             return {"t": "enum", "c": tag, "v": self.node(value.value, depth + 1)}
@@ -239,7 +254,7 @@ class _Encoder:
                 else:
                     children = [self.node(v, depth + 1) for v in value]
                 return {"t": kind.__name__, "i": index, "v": children}
-            cls, names, is_enum = _class(tag)
+            cls, names, is_enum = _class_for(tag, self.limits)
             if kind is not cls or is_enum:
                 _fail("class", "exact registered holder required")
             if hasattr(value, "__dict__") and set(vars(value)) != set(names):
@@ -313,7 +328,7 @@ def _wire_preflight(wire, limits):
             visit(node["v"], depth + 1); return
         if tag == "enum":
             _keys(node, ("t", "c", "v"), "enum")
-            if node["c"] not in _class_table() or not _class_table()[node["c"]][1]:
+            if node["c"] not in _class_table_for(limits) or not _class_table_for(limits)[node["c"]][1]:
                 _fail("class", "enum roster")
             visit(node["v"], depth + 1); return
         keys = ("t", "i", "c", "v") if tag == "class" else ("t", "i", "v")
@@ -335,8 +350,8 @@ def _wire_preflight(wire, limits):
                     _fail("class_fields", "named children")
                 names = tuple(v[0] for v in children)
                 if len(set(names)) != len(names): _fail("class_fields", "duplicate key")
-                if tag == "class" and (node["c"] not in _class_table()
-                        or names != _class_table()[node["c"]][0] or _class_table()[node["c"]][1]):
+                if tag == "class" and (node["c"] not in _class_table_for(limits)
+                        or names != _class_table_for(limits)[node["c"]][0] or _class_table_for(limits)[node["c"]][1]):
                     _fail("class_fields", "frozen Source field order")
                 children = [v[1] for v in children]
             for child in children: visit(child, depth + 1)
@@ -385,7 +400,7 @@ def _decode(wire, payload, limits, cp, *, host=False, inputs_only=False):
         if t == "path": return Path(v)
         if t == "ref": return seen[v]
         if t == "numpy_scalar": return np.dtype(n["dtype"]).type(node(v))
-        if t == "enum": return _class(n["c"])[0](node(v))
+        if t == "enum": return _class_for(n["c"], limits)[0](node(v))
         if t == "array":
             r = wire["arrays"][v]
             value = payload[r["offset"]:r["offset"] + r["bytes"]].view(np.dtype(r["dtype"])).reshape(r["shape"]).copy(order="C")
@@ -397,7 +412,7 @@ def _decode(wire, payload, limits, cp, *, host=False, inputs_only=False):
             value = [node(x) for x in v]
             if t == "tuple": value = tuple(value)
         elif t == "dict": value = {k: node(x) for k, x in v}
-        else: value = _class(n["c"])[0](**{k: node(x) for k, x in v})
+        else: value = _class_for(n["c"], limits)[0](**{k: node(x) for k, x in v})
         seen[n["i"]] = value
         return value
     root = wire["root"]

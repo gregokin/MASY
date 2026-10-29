@@ -370,6 +370,29 @@ class DeviceWindowedC64BedOwner(DeviceDenseBedOwner):
             _bind_case_admission_owner(_case_admission, owner)
         return owner
 
+    @classmethod
+    def _from_restored_c64_boundary(cls, ticket, state, context, *, case_record, time_s,
+                                    limits, vegetation, threshold_modifier_state,
+                                    trajectory_semantics, generation):
+        """Actual Native constructor first; only a MASY generation is rebound."""
+        from .windowed_device_c64_checkpoint import _checked_ticket, _integer
+        _checked_ticket(ticket)
+        if cls is not DeviceWindowedC64BedOwner:
+            raise DeviceBedError("restore_kind", "exact C64 owner required")
+        _integer(generation, 4, "saved C64 bed generation")
+        if generation != ticket.current["bookkeeping"]["next_index"]:
+            raise DeviceBedError("restore_generation", "bed/cursor mismatch")
+        if type(context.runtime_bounds) is not _native()[1].DeviceWaterC64QualificationBudget:
+            raise DeviceBedError("qualification_budget", "factory C64 only; CaseBudget unsupported")
+        owner = cls.from_device_bed(state, context, case_record=case_record, time_s=time_s,
+            limits=limits, vegetation=vegetation, threshold_modifier_state=threshold_modifier_state,
+            trajectory_semantics=trajectory_semantics)
+        if owner.generation != 0 or owner._active is not None:
+            raise DeviceBedError("restore_generation", "fresh idle Native owner required")
+        owner._accepted = dataclasses.replace(owner._accepted, generation=generation)
+        owner.verify()
+        return owner
+
     @property
     def context(self):
         self._scope()
