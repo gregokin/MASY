@@ -44,7 +44,7 @@ def _sealed_prefix(store, ref):
     raw = _read(profile_path, 32 << 20, immutable=True)
     lock = json.loads(raw, object_pairs_hook=_pairs)
     body = dict(lock); identity = body.pop('profile_id')
-    if identity != ref or hashlib.sha256(_canonical(body)).hexdigest() != ref or lock['store'] != str(store):
+    if identity != ref or hashlib.sha256(_canonical(body) + b'\n').hexdigest() != ref or lock['store'] != str(store):
         raise ValueError('profile identity/path mismatch')
     obj = lock['objects']['masy']; ident = obj['object_id']
     if type(ident) is not str or len(ident) != 64 or any(ch not in '0123456789abcdef' for ch in ident):

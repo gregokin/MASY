@@ -376,3 +376,37 @@ def test_nonmodel_already_exited_child_keeps_exact_exit_and_reap():
         if child.poll() is None:
             os.killpg(child.pid, signal.SIGKILL); child.wait()
         if fd is not None: os.close(fd)
+
+
+def test_public_launcher_reads_genuine_GPU_profile(case_gpu_profile_scope):
+    """Root supplies actual immutable metadata; no fake profile or run grant.
+
+    Protected fixture fields are store, profile, profile_ref and launcher.
+    The genuine owner performs its real Source/profile checks. This calls
+    no public main, Native bootstrap, provider, model or GPU operation.
+    """
+    import importlib.util
+    from masy import gpu_runtime as gpu
+
+    scope = case_gpu_profile_scope
+    assert type(scope) is dict and set(scope) == {'store', 'profile', 'profile_ref', 'launcher'}
+    store = Path(scope['store'])
+    assert store.is_absolute() and store.resolve() == store
+    profile_id = scope['profile']
+    assert type(profile_id) is str and len(profile_id) == 64
+    assert all(ch in '0123456789abcdef' for ch in profile_id)
+    profile_ref, launcher_ref = scope['profile_ref'], scope['launcher']
+    assert Path(profile_ref['path']) == store / 'profiles' / (profile_id + '.json')
+    assert Path(launcher_ref['path']).name == 'masy_case_gpu.py'
+    profile_raw = cli.pinned(profile_ref, immutable=True)
+    launcher_raw = cli.pinned(launcher_ref, immutable=True)
+    profile, _limits, _bootstrap = gpu._load_profile(str(store), profile_id)
+    assert profile['profile_id'] == profile_id and profile['store'] == str(store)
+    spec = importlib.util.spec_from_file_location('_profile_digest_metadata_launcher', launcher_ref['path'])
+    assert spec is not None and spec.loader is not None
+    launcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(launcher)
+    prefix = launcher._sealed_prefix(str(store), profile_id)
+    assert prefix == str(Path(profile['objects']['masy']['path']) / 'source' / 'src')
+    assert cli.pinned(profile_ref, immutable=True) == profile_raw
+    assert cli.pinned(launcher_ref, immutable=True) == launcher_raw
