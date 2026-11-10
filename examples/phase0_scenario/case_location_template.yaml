@@ -1,0 +1,5 @@
+# Illustrative EXCERPT of the MAPLE `case.yaml` `location` section (not a complete MAPLE case).
+# The scheduler reads latitude from the ACTUAL case file of the landscape being simulated
+# (maple/core/parameters/location.py semantics: no default when omitted, null refused).
+location:
+  latitude_deg: 32.6

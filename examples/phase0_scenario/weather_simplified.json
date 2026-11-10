@@ -1,0 +1,31 @@
+{
+  "schema": "masy.weather.v1",
+  "weather_id": "illustrative_simplified_winter_week",
+  "utc_offset": "+00:00",
+  "sampling": "daily",
+  "units": {
+    "temperature": "degC",
+    "relative_humidity": "fraction",
+    "vpd": "kPa",
+    "shortwave_radiation": "MJ_m2_day",
+    "pet": "mm_day"
+  },
+  "temperature": {"tmean": "arithmetic_mean_of_tmin_tmax", "extrema": true},
+  "humidity": {"supplied": "rh", "derivation": "maple_syrup.weather_pet"},
+  "radiation": {"supplied": false},
+  "pet": {"method": "ecohyd_hargreaves"},
+  "provenance": {
+    "kind": "prescribed",
+    "description": "Illustrative template only: winter values invented for the Phase 0 scenario example; not observations, not a calibration.",
+    "source": "masy examples/phase0_scenario (authored by hand)"
+  },
+  "rows": [
+    {"date": "2027-12-30", "tmin_c": -2.0, "tmax_c": 12.0, "relative_humidity_fraction": 0.45},
+    {"date": "2027-12-31", "tmin_c": -1.0, "tmax_c": 13.0, "relative_humidity_fraction": 0.40},
+    {"date": "2028-01-01", "tmin_c": 0.0, "tmax_c": 14.0, "relative_humidity_fraction": 0.42},
+    {"date": "2028-01-02", "tmin_c": 1.0, "tmax_c": 15.0, "relative_humidity_fraction": 0.50},
+    {"date": "2028-01-03", "tmin_c": 2.0, "tmax_c": 11.0, "relative_humidity_fraction": 0.70},
+    {"date": "2028-01-04", "tmin_c": 1.5, "tmax_c": 12.5, "relative_humidity_fraction": 0.55},
+    {"date": "2028-01-05", "tmin_c": 0.5, "tmax_c": 13.5, "relative_humidity_fraction": 0.48}
+  ]
+}

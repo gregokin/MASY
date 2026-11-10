@@ -1,0 +1,10 @@
+{
+  "schema": "masy.rain_event.v1",
+  "event_id": "rain_a",
+  "water_profile_id": "illustrative_profile",
+  "intervals": [
+    {"duration_s": 600.0, "intensity_mm_h": 30.0},
+    {"duration_s": 1200.0, "intensity_mm_h": 12.0}
+  ],
+  "recession_guard_s": 7200.0
+}

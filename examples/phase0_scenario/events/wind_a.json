@@ -1,0 +1,10 @@
+{
+  "schema": "masy.wind_event.v1",
+  "event_id": "wind_a",
+  "wind_forcing": {
+    "blocks": [
+      {"shear_velocity_m_s": 0.42, "direction_deg": 270.0, "duration_s": 1800.0},
+      {"shear_velocity_m_s": 0.55, "direction_deg": 250.0, "duration_s": 1800.0}
+    ]
+  }
+}

@@ -1,5 +1,20 @@
 # MAPLE-SYRUP project instructions
 
+## Shared scheduler/subsurface program — 2026-11-10
+
+The user authorized the Phase0–3 MAPLE–SYRUP–LEAF program with automatic
+Codex–Claude implementation, independent review, and validated phase publication.
+MASY is the temporal coordinator; MAPLE initializes landscape and owns sediment,
+LEAF initializes plants/computes demand, SYRUP owns all water/accounting. Wind,
+rain/recession and interevent periods never overlap; E/T/growth are interevent
+only, with no catch-up. Latitude comes from MAPLE case.yaml. The published
+temporal/weather foundation is qualified separately from native integration:
+see docs/shared_scheduler_phase0_qualification.md. Continuous layered storm
+handoffs, LEAF bridges and combined physical restart remain open. The governing
+program is SYRUP docs/subsurface_hydrology/development_phases_20261109.md.
+Preserve old locks, defaults, dirty work and other jobs; no copied physics.
+
+
 ## Project and priority
 
 Work root: `/home/okin/MASY`; display name MAPLE-SYRUP, wrapper namespace `masy`. MAPLE: `/home/okin/MAPLE`. Water extension SYRUP: `/home/okin/SYRUP` (existing distribution/import `maple-syrup` / `maple_syrup`). MAHLERAN scientific reference: `/home/okin/MAHLERAN`.

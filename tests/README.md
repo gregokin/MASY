@@ -65,4 +65,27 @@ All 361 captured native test/helper files are verified against exact committed G
 source/metadata preparation and limits are in [committed-pair qualification](../docs/committed_pair_qualification.md).
 Historical (MASY-08): no runtime code or committed product tests changed; the stdlib suite was not rerun for that documentation task.
 
+Shared scheduler Phase 0 foundation (2026-11-10) adds stdlib-only tests that run under both `unittest discover` and pytest
+(`PYTHONPATH=src python -B -m pytest --rootdir=. --confcutdir=. -c /dev/null tests/test_phase0_*.py tests/test_root_uptake_contract.py`):
+
+| File | Covers |
+|---|---|
+| `test_phase0_scenario.py` | strict JSON/YAML-subset documents (composition-time depth/entry quotas, giant numbers), bounded reads, relative references; dated calendar (leap day, year boundary, offsets, no-leap index); wind/rain/interevent event files; scenario reuse, source-hash binding, static scheduled-start rules |
+| `test_phase0_weather_pet.py` | declarative PET registry (no physics in `masy.pet`), lazy delegate origin; weather schema bound 1:1 to the owning library's `DailyWeather`, humidity derived by the library, explicit PET with mean temperature only, tolerance pass-through, coverage, latitude binding from `case.yaml` semantics |
+| `test_phase0_coordinator.py` | capability preflight independent of process gates, staging declaration required, dispatch mutation refused (edges/gate/identity/weather/keys), public records are independent copies, exact durations and realized recession, process gate and no retroactive weather, incomplete/exception/bad-end refusals leaving cursor and ledger unchanged, overlap and gap policies, cursor round trip, resumed-continuation identity, source/adapter/latitude mismatch and tamper detection |
+| `test_phase0_resume_replay.py` | correction 02: resume replays the accepted prefix through the live schedule rules (Codex reproducer: +30 s cursor against a +20 s scenario refused; scheduled start early/late, spurious idle, idle under `refuse`, interevent commit change, wrong first commit on replay and live, capability policy, weather coverage; valid rain recession determines the next start); accepted records read-only; `scenario_changed` after binding |
+| `test_root_uptake_contract.py` | exact-rational reference of the agreed LEAF/SYRUP plant-water contract (user example, two-plant case, zero demand, violations); the reference arithmetic lives in `tests/_root_uptake_reference.py`, not in `src/masy` |
+| `_phase0_support.py` | temp-dir scenario trees and mechanical fake adapters; reports the owning PET library origin and skips library-dependent tests explicitly when it is absent |
+
+Weather-bearing tests need the actual SYRUP `maple_syrup.weather_pet` on the import path.
+The independently tested adopted pair passed 223 tests and 217 subtests across
+the Phase0 modules plus clock/case/dense schedule/contracts/source/config tests.
+These are development source identities, not a locked native runtime. Existing
+native suites require their genuine locked imports and are not qualified by
+metadata-only tests. The separate `native/check_phase0_subsurface.py` passed
+67/67 checks on each of NumPy, Numba and CUDA; see
+[qualification](../docs/shared_scheduler_phase0_qualification.md) and the
+[explicit source-root invocation](../docs/phase0_native_interevent.md).
+
+
 Current published wrapper milestone `bf46354` passed 307 stdlib checks and 46 native configuration checks, with no skips. MASY-09’s reference pair passed 153 tests plus 61 subtests and 96 separate component checks. That reference retains its original locked runtime; later wrapper commits have separate identities. GPU source-profile tests use bounded immutable Git fixtures. Two provenance/retention tests also inspect the existing local historical source object, task08 source-built metadata receipt and retained CPU lock. These source-only checks run no accelerator or model. Packaging fixtures for a fresh checkout remains collaborator-workflow work.

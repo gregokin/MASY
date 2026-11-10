@@ -1,0 +1,6 @@
+{
+  "schema": "masy.interevent.v1",
+  "event_id": "interevent_2d",
+  "duration_s": 172800,
+  "processes": {"evaporation": true, "transpiration": true, "growth": true}
+}

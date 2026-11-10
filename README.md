@@ -131,6 +131,24 @@ cd /home/okin/MASY && /home/okin/MAPLE/.venv/bin/python -B -m unittest discover 
 
 On the task-80 source prototype, 12 completed groups passed 543 tests plus 150 subtests, with byte-exact whole default and synthetic production-feature parity. Its store component failed, and the task-82 narrow parent/child import-symmetry attempt also refused at exact environment identity before its kill point; both failed attempts are preserved. Task 86 measured the cause as exactly the missing compiled `readline`/`resource` child extensions, with every other environment operand exact. Task 87 appended those two symbols symmetrically to the test `cpu_declarations` tuple only (no guard, physics, tolerance or runtime change; native runtime `4139f62a…` unchanged). Its fresh targeted run then passed 17 methods plus 50 subtests (store 2, routing 5+6, schema 10+44) and two native controls, with no failures or skips. Publication and a fresh committed lock remain pending. At MASY `bf46354`, 307 stdlib tests and 46 separate native configuration checks pass with no skips. The MASY-09 reference pair passed 153 tests plus 61 subtests and 96 separate component checks. MASY-06’s 264-test result and MASY-08’s 113/15/22/3 native results are historical. GPU source-profile provenance tests also inspect local immutable historical source/build receipts and the retained CPU lock; they launch no accelerator or model. Fresh-checkout test-fixture packaging remains collaborator-workflow work. See [tests/README.md](tests/README.md) and [verification](agent_handoffs/verification.md) for exact sources, receipts and limits.
 
+## Shared temporal/weather foundation (2026-11-10)
+
+An additive dated-scenario layer now exists next to the unchanged case/dense schedules:
+reusable wind / rain / interevent event files referenced by ordered scenarios with explicit
+calendar start, source hashes, realized-time accounting (recession included), a process gate
+that confines evaporation/transpiration/growth to interevent occurrences, a shared weather
+document whose physics (humidity derivation, `ecohyd_hargreaves`/explicit PET) is delegated to
+SYRUP's owning `maple_syrup.weather_pet` library with latitude bound from MAPLE's
+`location.latitude_deg`, a mechanical adapter protocol that refuses missing adapters, mutated
+dispatches, unstaged adapters and overlap, and a temporal-cursor restart record. No native
+adapter, continuous soil-moisture handoff, native transaction or combined native restart is
+implemented or claimed. Read [docs/shared_scheduler_phase0.md](docs/shared_scheduler_phase0.md);
+the illustrative template is `examples/phase0_scenario/`.
+The [qualification record](docs/shared_scheduler_phase0_qualification.md)
+distinguishes metadata tests from the [actual native interevent checks](docs/phase0_native_interevent.md):
+67/67 passed on each of NumPy, Numba and GPU0 with bitwise-identical final
+soil water. These are small interevent tests, not persistent rain or LEAF coupling.
+
 ## Project rules
 
 Read [AGENTS.md](AGENTS.md) and the [scientific brief](docs/scientific_brief.md) before agent work. Then read the [implementation phases](docs/implementation_plan.md) and the [observed upstream interfaces](docs/upstream_interface_audit.md). The current task and its status live in `agent_handoffs/`. No model, GPU job, package installation, Git initialization, commit or push is performed by the preflight or the runtime tool. MASY now has a Git baseline, but the preflight's own MASY observation still uses file manifests and an explicit `--expect-lock`, not MASY's Git state.

@@ -1,0 +1,54 @@
+{
+  "schema": "masy.scenario.v1",
+  "scenario_id": "phase0_illustrative_sequence",
+  "calendar": {
+    "start": "2027-12-30T00:00:00+00:00",
+    "convention": "proleptic_gregorian",
+    "leap_seconds": "none"
+  },
+  "native_epoch_s": 0.0,
+  "gap_policy": "idle",
+  "requires_continuous_soil_moisture": false,
+  "weather": {
+    "file": "weather_simplified.json",
+    "sha256": "54ef385fc85a87fc4d246a161b24fd843e9744403f9d05233042e50678d3cf4a"
+  },
+  "events": [
+    {
+      "occurrence_id": "interevent1",
+      "file": "events/interevent_2d.json",
+      "sha256": "6617dfed60cf9249cf978a5099f9615b84dbad0ba6a8735508f36b32501aafb5",
+      "scheduled_start": null
+    },
+    {
+      "occurrence_id": "wind1",
+      "file": "events/wind_a.json",
+      "sha256": "ecbf395311f9506c9ac33adb66ad1137317207c2d84d576365f4f4694bac12b0",
+      "scheduled_start": null
+    },
+    {
+      "occurrence_id": "interevent2",
+      "file": "events/interevent_23h.json",
+      "sha256": "f972f0c4f2fd2776558f9576ac3abdfb739600a33cf5e6cf98f5d0d66796209c",
+      "scheduled_start": null
+    },
+    {
+      "occurrence_id": "rain1",
+      "file": "events/rain_a.json",
+      "sha256": "edf9379bdef287eca4fc8ab839df2a717429bdbc1200871ad65a956d1152fc94",
+      "scheduled_start": null
+    },
+    {
+      "occurrence_id": "interevent3",
+      "file": "events/interevent_2d.json",
+      "sha256": "6617dfed60cf9249cf978a5099f9615b84dbad0ba6a8735508f36b32501aafb5",
+      "scheduled_start": "2028-01-02T03:00:00+00:00"
+    },
+    {
+      "occurrence_id": "wind2",
+      "file": "events/wind_a.json",
+      "sha256": "ecbf395311f9506c9ac33adb66ad1137317207c2d84d576365f4f4694bac12b0",
+      "scheduled_start": null
+    }
+  ]
+}
