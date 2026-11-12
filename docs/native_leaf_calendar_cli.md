@@ -1,14 +1,14 @@
 # Native LEAF + water calendar CLI (`masy.native_water_run.v2`)
 
-Status: DEVELOPMENT candidate (C3). Same command surface as `docs/native_calendar_run.md`: `run`, `manifest`, pause (`--pause-after-occurrences N`), `--resume DIR --expected-seal-sha256 HEX`, seal. The only difference is the
+Status: opt-in v2 CLI; bounded C1 qualification is recorded in `phase1_release_qualification.md`. Same command surface as `docs/native_calendar_run.md`: `run`, `manifest`, pause (`--pause-after-occurrences N`), `--resume DIR --expected-seal-sha256 HEX`, seal. The only difference is the
 configuration schema: `schema: masy.native_water_run.v2` adds ONE closed `leaf` block to the v1 keys (plus the optional `cuda` block, unchanged). v1 files, records, artifacts and the parent's five-module closure are unchanged;
 a v1 file containing `leaf` is refused as an unknown key, a v2 file without `leaf` is refused, and `v2` never silently runs water-only.
 
-## Closed `leaf` block (every key required; unknown keys, Booleans-as-integers, strings-as-numbers, relative `leaf_root` and escaping paths are refused)
+## Closed `leaf` block (mode-specific `leaf_root`; other keys required; unknown keys, Booleans-as-integers, strings-as-numbers, relative `leaf_root` and escaping paths are refused)
 | key | meaning |
 |---|---|
 | `leaf_variant` | `"8da"` only (the d4fe codec-v2 family is not accepted by the CLI) |
-| `leaf_root` | absolute path of the clean LEAF 8da reference capsule (23 modules + pyproject); verified by the literal source profile BEFORE any LEAF import |
+| `leaf_root` | Development only; production must omit it (derived from the verified capsule; a supplied value is refused). In development, use an absolute path of the clean LEAF 8da reference capsule (23 modules + pyproject); verified by the literal source profile BEFORE any LEAF import |
 | `catalog`, `plants` | relative files; `plants` is the plain LEAF CSV, its companion `<stem>.metadata.json` must sit beside it (all three are pinned by bytes) |
 | `cadence_days` | integer 1..7, the growth grid |
 | `geometry` | `max_edges`, `max_bytes`, `canopy_max_edges`, `canopy_max_bytes` (positive ints), `builder` in `numpy` / `compiled` |
@@ -21,7 +21,7 @@ and an unresolved SURFACE anchor whose cell is inactive/unknown are typed refusa
 
 ## Order (every refusal before the first physical step exits 2)
 parent: closed bounded config -> cold zero-memory refusal -> closed bootstrap identity -> child environment (runtime + MASY `src` + `leaf_root`). worker: identity -> run directory -> input pins (incl. the three LEAF files)
--> MASY/SYRUP census -> LEAF source census (`verify_profile`) -> plant-file control (caps) -> case/layered preparation -> public LEAF loaders and joins -> `NativeWaterSession.create_leaf(_cuda)` or
+-> MASY/SYRUP census -> LEAF source census (`verify_profile` (development) or `verify_profile_delivery` (production)) -> plant-file control (caps) -> case/layered preparation -> public LEAF loaders and joins -> `NativeWaterSession.create_leaf(_cuda)` or
 `resume_leaf(_cuda)` (plants are NOT read at resume; the biology comes from the joint artifact) -> scheduled run. `limits.storm.max_steps` is the per-call native work budget; the whole occurrence is bounded by `limits.max_accepted_steps_per_occurrence` and `call_step_budget` (the accepted C5 worker continues incomplete native calls of the same occurrence). A step-budget exhaustion ends exit 3 with no checkpoint; a partial storm is never checkpointed.
 
 ## CSV record count (I/O control only)
@@ -42,5 +42,12 @@ The artifact is the joint `masy.native_water_leaf_checkpoint.v1` (`physical/` + 
 `RUN_STATUS.json`/`MASY_RUN_RESULT` summaries gain bounded `leaf_source`, `leaf_inputs` and `leaf` entries (generation, plant counts, calendar cursor, pending growth days, participant id). Nothing unbounded (plant rows) is written to status files.
 
 ## Limits
-CPU runs are exercised by `tests/native_leaf_calendar_cli`. The CUDA file-CLI tests in `tests/native_leaf_calendar_cuda` are opt-in (`NLC_ALLOW_GPU=1`, guarded Root launcher); the author has no GPU authority and ran none. Root's own GPU0 run of the masked + SURFACE case (the adopted `test_leaf_cuda_masked_surface.py`, on the earlier C3b summary schema: 2 passed, NumPy 2-layer / Numba 3-layer vs CUDA, 45 physical NPZ keys max relative difference 0, exact new-bed GPU restart incl. biology) is cited from Root's receipt for that exact source scope only; it is not a new hardware claim for this tree.
-`production_committed`: v1 configurations still refuse (`production_recipe_unavailable`). A separate opt-in v2 production path now exists as an unqualified candidate (see `docs/native_production.md`); qualification on actual C1 sources and a released recipe/receipt is pending, so no production claim is made here. Dated-clock limit: event/interevent instants must be exactly representable in the microsecond LEAF clock; a `0.05 s` interval is refused typed (`leaf_instant_not_exact`) while the dyadic `0.0625 s` completes. Instants are never rounded or rebound, and the old clocks are not retrofitted (a separate nominal-calendar contract belongs to Phase 1.5). No wind, no Phase 1.5, no new physics. Example: `examples/native_leaf_calendar_cli/`.
+CUDA file-CLI tests remain explicitly opt-in. Actual committed-runtime CPU/CUDA run and restart evidence is in `phase1_release_qualification.md`; this is a small fixed-geometry qualification, not a capacity or field claim.
+`production_committed`: the v2 C1 path now has actual bounded CPU and CUDA
+run/restart qualification; see [native_production.md](native_production.md)
+and [the exact code/evidence record](phase1_release_qualification.md).
+v1 production still refuses. Dated-clock limit: event/interevent boundary
+instants must be exactly representable in the microsecond LEAF clock;
+unsupported instants are refused rather than rounded. No wind, Phase 1.5
+recharge, moving-soil, field or scaling qualification is implied. Example:
+`examples/native_leaf_calendar_cli/`.
