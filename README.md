@@ -2,6 +2,16 @@
 
 MAPLE-SYRUP is designed to alternate actual MAPLE wind events and actual SYRUP water events over one evolving MAPLE sediment landscape. Wind physics stays in `~/MAPLE` and water physics stays in `~/SYRUP`. SYRUP's existing `maple_syrup` package name remains unchanged, and the combined wrapper uses `masy`. The wrapper contains no copied transport physics, no re-created sediment bed between events and no simultaneous wind/water transport.
 
+**November 12 daily scheduling:** the new [daily CSV inputs and inspector](docs/daily_scheduler.md)
+put daily weather/PET/rainfall in one weather file and calendar controls/reusable
+wind occurrences in `scenario.csv`. Same-day wind precedes rain; precipitation
+at or below the weather header's 5 mm example threshold attempts native recharge.
+The separate [native daily water API](docs/daily_native_water.md) connects the
+qualified Phase 1.5 CPU lifecycle and physical boundary restart. Wind exchange
+with persistent layered water and LEAF transactions remain gated. See the
+[qualification record](docs/daily_scheduler_qualification_20261112.md) for scope
+and verification. Existing commands, schemas and locks retain their meanings.
+
 **October 29 status:** the [supplied-case GPU command](docs/user-guide/case-gpu.md)
 passed wind → water → wind → water on the labelled synthetic 8 × 8, one-class,
 20-logical/three-resident-voxel profile, including final output and provenance

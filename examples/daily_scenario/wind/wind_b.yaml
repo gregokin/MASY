@@ -1,0 +1,6 @@
+# Illustrative synthetic native MAPLE wind record (not a calibrated forcing).
+wind_forcing:
+  blocks:
+    - shear_velocity_m_s: 0.35
+      direction_deg: 270.0
+      duration_s: 900.0

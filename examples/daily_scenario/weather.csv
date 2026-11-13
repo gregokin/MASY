@@ -1,0 +1,12 @@
+# format: masy.daily_weather.v1
+# pet_method: ecohyd_hargreaves
+# precipitation_threshold_mm: 5.0
+# source: Illustrative synthetic weather
+date,tmin_c,tmean_c,tmax_c,precipitation_mm,precipitation_intensity_mm_h
+2030-06-01,18,25,32,0,0
+2030-06-02,19,26,33,2,6
+2030-06-03,20,27,34,5,10
+2030-06-04,19,24,29,12,24
+2030-06-05,18,25,32,0,0
+2030-06-06,19,26,33,1,60
+2030-06-07,18,23,28,6,12

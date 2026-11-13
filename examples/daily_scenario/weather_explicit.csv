@@ -1,0 +1,12 @@
+# format: masy.daily_weather.v1
+# pet_method: explicit
+# precipitation_threshold_mm: 5.0
+# source: Illustrative synthetic weather with explicit PET
+date,tmean_c,pet_mm_day,precipitation_mm,precipitation_intensity_mm_h
+2030-06-01,25,5.1,0,0
+2030-06-02,26,5.4,2,6
+2030-06-03,27,5.6,5,10
+2030-06-04,24,3.2,12,24
+2030-06-05,25,5.0,0,0
+2030-06-06,26,5.3,1,60
+2030-06-07,23,3.0,6,12

@@ -1,0 +1,17 @@
+# format: masy.daily_scenario.v1
+# scenario_id: example_week
+# weather_file: weather.csv
+# start_date: 2030-06-01
+# end_date: 2030-06-07
+# evaporation_enabled: true
+# transpiration_enabled: true
+# growth_enabled: true
+# growth_interval_days: 7
+# output_interval_days: 1
+# checkpoint_interval_days: 7
+# output_at_event_boundaries: true
+date,event_type,event_file
+2030-06-02,wind,wind/wind_a.yaml
+2030-06-04,wind,wind/wind_b.yaml
+2030-06-04,wind,wind/wind_a.yaml
+2030-06-06,wind,wind/wind_a.yaml
