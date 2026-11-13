@@ -1,5 +1,19 @@
 # MAPLE-SYRUP project instructions
 
+## Wind moisture approximation — 2026-11-12
+
+For the new persistent-water daily wind handoff, the user directs that wind
+treat the soil as dry regardless of actual soil moisture or surface water.
+Do not require physical dryness or add a moisture-dependent entrainment
+threshold correction. Preserve the real water inventories and accounting under
+SYRUP authority; never zero or reset them to obtain dry wind behavior. This is
+an explicit temporary approximation, including wind over wet or ponded cells;
+document its missing moisture suppression. See
+`docs/wind_moisture_approximation.md` for the Phase 2 comparison and boundaries.
+This policy does not implement a new bridge or change old qualified profiles.
+Actual water-event completion, nonoverlapping transport, conserved mobile
+sediment and native state/source/restart validation remain required.
+
 ## Shared scheduler/subsurface program — 2026-11-10
 
 The user authorized the Phase0–3 MAPLE–SYRUP–LEAF program with automatic
@@ -30,7 +44,7 @@ Read `docs/scientific_brief.md`, `docs/architecture.md`, `docs/implementation_pl
 - MAPLE owns shared voxel/active-layer storage, sediment inventory, composition, physical topography and its wind physics. SYRUP owns rainfall/infiltration/hydraulics/wet detachment/transport/deposition and water-event completion. MASY owns schedule, source resolution, narrow adapters, event transitions, aggregate accounting and combined restart.
 - No copied/forked wind or water physics. Reuse actual upstream APIs. If necessary, propose narrow, independently reviewed upstream extensions; do not silently modify upstream trees or files used by active jobs.
 - One bed authority. Pass complete MAPLE bed state and referenced immutable deep storage, including active layer and availability. Never reconstruct a fresh bed from a DEM, surface fractions or original case at transitions. Any storage conversion must be explicit, lossless and validated before mutation.
-- Only one process transports at a time. Rainfall ends before water-event recession ends. Wind begins only after genuine accepted water completion and documented dry accounting. A limit/error is not completion. Wind mobile sediment must likewise be resolved through actual MAPLE behavior or an explicit conserved, scientifically justified transition; never discard it.
+- Only one process transports at a time. Rainfall ends before water-event recession ends. Wind begins only after genuine accepted water completion. Preserve documented dry-reset accounting in legacy profiles; the new persistent-water wind handoff uses the dry-wind approximation above without requiring physical dryness or resetting water. A limit/error is not completion. Wind mobile sediment must likewise be resolved through actual MAPLE behavior or an explicit conserved, scientifically justified transition; never discard it.
 - Validate geometry, masks, boundaries, units, class ordering, density/porosity, dtype/backend, availability policies, storage formats and physical inventories before state exchange. Water and wind availability semantics may differ; the adapter must preserve holdings and use upstream rules instead of resetting availability to 100%.
 - Vegetation belongs to the shared landscape. Preserve the qualified prescribed profile while making room for explicit versioned changes between events, readable by both models and driven positively or negatively by either. Future updates may jointly change vegetation and native SYRUP soil water, with named water-budget exchanges and atomic publication/restart. See `docs/vegetation_information_plan.md`. Do not invent growth, mortality, uptake, ET or soil-water retention physics: ask the user before those decisions. The current native dry-reset profile remains explicit until a new completion policy is specified and qualified. Nutrients, full ecohydrology and direct dry-cell water splash remain deferred.
 - Use conservative evolving-bed SYRUP APIs for coupling. Its default legacy replay is a fixed-composition, unlimited-supply benchmark and is unsuitable as the shared-landscape engine.

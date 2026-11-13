@@ -13,6 +13,13 @@ The whole scenario is checked before starting a native daily lineage. A wind
 later in the file also refuses immediately. The full illustrated scenario can
 be inspected now, but needs the wind and LEAF bridges for physical execution.
 
+The user has now specified the [wind moisture approximation](wind_moisture_approximation.md):
+the planned wind bridge treats soil as dry for wind physics while retaining
+SYRUP's actual soil/surface water. It must not require physical dryness or add
+a moisture-dependent entrainment threshold. This is an explicit known
+limitation. The policy is documented; the current water-only API and historical
+wind guards have not been changed by this decision.
+
 ## Explicit source and case association
 
 There is no implicit upstream selection or installation. The caller supplies a
