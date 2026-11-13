@@ -48,11 +48,15 @@ wind-driven terrain change and persistent soil water:
 
 These decisions address the scientific core of the changed-terrain/retained-soil
 water problem. They do not establish implementation or coupled acceptance.
-At inspection, the current Phase 2 notes still identify two unresolved choices:
-property-refresh timing within/between events, and behavior when represented
-soil is shallower than the configured floating profile. The developer's proposed
-between-event refresh and explicit finite-depth refusal are recommendations,
-not adopted defaults. This MASY note does not choose them.
+The user has since resolved the two choices previously listed as open:
+properties refresh at transport-event handoffs and remain fixed during an
+event; the full MAPLE voxel-grid bottom is fixed, flat and impermeable. Only
+real soil portions store/supply water; partial/zero-soil layers at rock are
+allowed, and open-profile drainage applies only above rock. These selections
+are recorded in `bedrock_refresh_decisions_20261113/user_decisions.json` in the
+same SYRUP task. All current scientific choices are resolved for now; native
+implementation and independent qualification remain in progress.
+
 Keeping retained Green-Ampt history consistent with refreshed hydraulic
 parameters remains a qualification task under the selected retention rule,
 not a newly unanswered question or authority to reset history.
@@ -80,5 +84,9 @@ The current daily API still refuses wind. Existing wind profiles retain their
 previous guards and qualification, including the legacy dry/reset paths; this
 documentation does not remove those checks. The new persistent-water bridge
 must implement the user-approved dry-wind approximation and prove preservation
-of nonzero soil/surface water with wind, terrain updates and restart. That work
+of nonzero soil/surface water with wind, terrain updates and restart. The
+[native wind component](daily_wind_executor.md) now executes individual CSV wind
+occurrences while preserving surface water, with an explicit dry-wind
+configuration view. Its [Phase 2 lifecycle handoff](daily_wind_phase2_handoff.md)
+still needs the actual native operation. That work
 can proceed independently of LEAF's plant-demand/growth connection.

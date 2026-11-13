@@ -11,6 +11,11 @@ qualified Phase 1.5 CPU lifecycle and physical boundary restart. Wind exchange
 with persistent layered water and LEAF transactions remain gated. See the
 [qualification record](docs/daily_scheduler_qualification_20261112.md) for scope
 and verification. Existing commands, schemas and locks retain their meanings.
+The [native wind component](docs/daily_wind_executor.md) now executes individual
+CSV wind occurrences with actual MAPLE physics and preserved surface water.
+See its [qualification record](docs/daily_wind_qualification_20261112.md).
+The [Phase 2 water handoff](docs/daily_wind_phase2_handoff.md) remains the
+dependency for combined daily wind/water execution.
 
 **October 29 status:** the [supplied-case GPU command](docs/user-guide/case-gpu.md)
 passed wind → water → wind → water on the labelled synthetic 8 × 8, one-class,
