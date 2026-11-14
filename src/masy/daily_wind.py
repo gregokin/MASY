@@ -32,6 +32,7 @@ __all__ = ["DailyWindCandidate", "DailyWindError", "DailyWindExecutor", "DailyWi
 
 PROFILE = "masy.daily_native_wind.cpu.v1"
 _HANDOFF_PROFILE = "masy.daily_wind_handoff.cpu.v1"
+_TRIPLET_PROFILE = "masy.daily_triplet_wind.cpu.v1"
 RECEIPT_SCHEMA = "masy.daily_native_wind_receipt.v1"
 # Same explicit qualified source pair as the water connection (MAPLE 9f commit/package, SYRUP N15 CPU package).
 SYRUP_PACKAGE_SHA256 = "82e9c0111b9d883f857fd2f28a21f1d8bd8f13e22d473796e736ca4204f30107"
@@ -175,6 +176,8 @@ def _wrapper_sources(profile: str = PROFILE) -> dict[str, str]:
     names = ("daily_wind.py", "daily_csv.py", "clock.py", "dense_bed.py", "dense_runner.py")
     if profile == _HANDOFF_PROFILE:
         names += ("daily_wind_handoff.py",)
+    elif profile == _TRIPLET_PROFILE:
+        names += ("daily_wind_handoff.py", "daily_triplet_wind.py", "daily_triplet.py")
     elif profile != PROFILE:
         raise _refuse("unsupported_profile", "unknown wind source profile")
     try:
@@ -238,7 +241,9 @@ def _check_limits(limits: Any) -> DailyWindLimits:
 
 # --- source / admission / context ------------------------------------------------------------------------------------
 
-def _source_facts(source: Any, admission: Any) -> dict[str, Any]:
+def _source_facts(source: Any, admission: Any, *, expected_profile: str | None = None,
+                  expected_maple_commit: str = MAPLE_COMMIT,
+                  expected_maple_package: str = MAPLE_PACKAGE_SHA256) -> dict[str, Any]:
     """Recheck genuine admission, CPU capability and the exact shared MAPLE source.
 
     Each explicit public profile additionally checks its own exact SYRUP pin.
@@ -271,10 +276,11 @@ def _source_facts(source: Any, admission: Any) -> dict[str, Any]:
         detail = _detail(exc)
     if detail is not None:
         raise _refuse("native_source", detail)
-    if (facts["profile"] != ncp.PROFILE_NAME or facts["device_runtime_capability"]
-            or facts["maple_commit"] != MAPLE_COMMIT
-            or facts["package_digest"] != MAPLE_PACKAGE_SHA256):
-        raise _refuse("native_source", "the qualified MAPLE 9f CPU source is required; no automatic rebinding")
+    if (facts["profile"] != (ncp.PROFILE_NAME if expected_profile is None else expected_profile)
+            or facts["device_runtime_capability"]
+            or facts["maple_commit"] != expected_maple_commit
+            or facts["package_digest"] != expected_maple_package):
+        raise _refuse("native_source", "the selected qualified MAPLE CPU source is required; no automatic rebinding")
     if (facts["admission_profile"] != facts["profile"] or facts["admission_bundle_id"] != facts["bundle_id"]
             or facts["admission_package_digest"] != facts["package_digest"]
             or facts["admission_syrup_package_digest"] != facts["syrup_package_digest"]):
@@ -296,6 +302,9 @@ def _check_source_for_profile(source: Any, admission: Any, profile: str) -> dict
     if profile == _HANDOFF_PROFILE:
         from masy.daily_wind_handoff import _check_handoff_source
         return _check_handoff_source(source, admission)
+    if profile == _TRIPLET_PROFILE:
+        from masy.daily_triplet_wind import check_source
+        return check_source(source, admission)
     raise _refuse("unsupported_profile", "unknown wind source profile")
 
 
@@ -421,13 +430,15 @@ class DailyWindExecutor:
         """Run ONE complete occurrence from the actual current ``bed`` at physical ``start_s``. Never mutates ``bed``."""
         return _execute(self, bed, occurrence, start_s)
 
-    def execute_finalized(self, bed: Any, occurrence: Any, start_s: float) -> FinalizedDailyWind:
+    def execute_finalized(self, bed: Any, occurrence: Any, start_s: float, *, vegetation: Any = None,
+                          external_reserve_bytes: int = 0) -> FinalizedDailyWind:
         """Run the same checks and return the actual transient MAPLE completion too.
 
         No lifecycle is adopted. Release the completion after staging with the
         owning water API; it retains native wind workspace until released.
         """
-        return _execute(self, bed, occurrence, start_s, with_completion=True)
+        return _execute(self, bed, occurrence, start_s, with_completion=True, vegetation=vegetation,
+                        external_reserve_bytes=external_reserve_bytes)
 
 
 def _plan_blocks(n: SimpleNamespace, record: Any, outer: float, limits: DailyWindLimits) -> list[dict[str, Any]]:
@@ -499,8 +510,11 @@ def _validate_native(n: SimpleNamespace, bed: Any, context: Any, start_s: float)
         raise _refuse("water_mobile_not_empty", "water-borne sediment is present; a dry wind entry needs none")
 
 
-def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float, *, with_completion: bool = False) -> DailyWindCandidate | FinalizedDailyWind:
+def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float, *, with_completion: bool = False,
+             vegetation: Any = None, external_reserve_bytes: int = 0) -> DailyWindCandidate | FinalizedDailyWind:
     limits, context, compiled = self._limits, self._context, self._admission.compiled
+    if type(external_reserve_bytes) is not int or external_reserve_bytes < 0:
+        raise _refuse("limits", "external reserve must be a plain nonnegative integer")
     if type(occurrence) is not WindOccurrence or not occurrence.blocks:
         raise _refuse("occurrence", "a parsed WindOccurrence with at least one block is required")
     detail = None
@@ -517,11 +531,20 @@ def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float,
     self._recheck()
     n = _native()
     np, h = n.np, _bed_helpers()
+    if self.identity()["profile"] == _TRIPLET_PROFILE:
+        from masy.daily_triplet_wind import validate_vegetation
+        validate_vegetation(vegetation, context.geometry)
+    elif vegetation is not None:
+        raise _refuse("vegetation_profile", "per-event vegetation needs the explicit triplet profile")
+    else:
+        vegetation = compiled.vegetation
+    vegetation_sha = _sha(h.canonical(vegetation, "event_vegetation"))
     nv, nc = _validate_bed(n, bed, context, start_s)
     g = context.geometry
     if g.ny * g.nx > limits.max_cells or nv > limits.max_voxels:
         raise _refuse("cell_limit", f"{g.ny * g.nx} cells / {nv} voxels exceed max_cells/max_voxels")
     stage_bytes = h.nbytes(*(getattr(bed, name) for name in _SHARED_FIELDS))
+    vegetation_bytes = h.nbytes(vegetation) if self.identity()["profile"] == _TRIPLET_PROFILE else 0
     if stage_bytes > limits.max_stage_bytes:
         raise _refuse("stage_bytes_cap", f"{stage_bytes} bytes > max_stage_bytes={limits.max_stage_bytes}")
 
@@ -560,7 +583,8 @@ def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float,
     leaves = []
     h.leaves(empty_pool, "mobile", leaves)
     pool_bytes = config.particle_transport.max_active_cohorts * sum(a.dtype.itemsize for _, a in leaves)
-    work_bytes = 4 * stage_bytes + 3 * pool_bytes + 8 * g.ny * g.nx * (nv + 1) * nc + 32 * upper_total
+    work_bytes = (4 * stage_bytes + 3 * pool_bytes + 8 * g.ny * g.nx * (nv + 1) * nc
+                  + 32 * upper_total + vegetation_bytes + external_reserve_bytes)
     if work_bytes > limits.max_work_bytes:
         raise _refuse("work_bytes_cap", "estimated work copies exceed max_work_bytes")
     from maple_syrup.subsurface import default_host_available_bytes
@@ -580,7 +604,7 @@ def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float,
         raise _refuse("stage_mismatch", "staged copy does not reproduce the parent identity")
     scheduler = n.initial_scheduler_state(
         staged.voxel_column, staged.active_layer, pool, staged.ledger, staged.committed_topography,
-        compiled.threshold_modifier_state, time_s=start_s, vegetation=compiled.vegetation,
+        compiled.threshold_modifier_state, time_s=start_s, vegetation=vegetation,
         sediment_availability=staged.sediment_availability, water=staged.water)
     probe = scheduler.physical
     if (n.carries_coupled_trajectory_history(probe, None) or float(probe.time_s).hex() != start_s.hex()
@@ -630,10 +654,12 @@ def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float,
     if stop is not None:
         raise _refuse("finalization_failure", stop, stage="finalize", elapsed_s=_fraction_text(Fraction(t_end) - Fraction(start_s)))
     classes, candidate, checks = _check_final(self, n, final, state, total, bounds, scale, inventory_before, bed,
-                                              record, start_s, t_end, upper_total, nv, nc)
+                                              record, start_s, t_end, upper_total, nv, nc, vegetation=vegetation)
     # Native pure on the parent: verify it, the prescribed fields and the source are unchanged.
     if _bed_digest(bed) != parent_sha or _prescribed_digest(compiled) != prescribed_sha:
         raise _refuse("parent_mutated", "the input bed or prescribed fields changed during native execution")
+    if _sha(h.canonical(vegetation, "event_vegetation")) != vegetation_sha:
+        raise _refuse("vegetation_mutated", "native wind changed the held shared vegetation")
     self._recheck()
     receipt = {
         "schema": RECEIPT_SCHEMA, "profile": self.identity()["profile"], "executor_identity_sha256": self._identity_sha256,
@@ -650,6 +676,7 @@ def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float,
                        "reference": occurrence.reference, "file_sha256": occurrence.sha256,
                        "declared_duration_s": encode_time(occurrence.declared_duration_s)},
         "parent_bed_sha256": parent_sha, "candidate_bed_sha256": _bed_digest(candidate),
+        "event_vegetation_sha256": vegetation_sha,
         "clocks": {"start_s": encode_time(start_s), "end_s": encode_time(t_end),
                    "expected_s": _fraction_text(sum((Fraction(b.duration_s) for b in record.blocks), Fraction(0))),
                    "realized_s": _fraction_text(Fraction(t_end) - Fraction(start_s)),
@@ -705,7 +732,7 @@ def _check_block(self: DailyWindExecutor, n: SimpleNamespace, index: int, block:
 
 def _check_final(self: DailyWindExecutor, n: SimpleNamespace, final: Any, state: Any, total: Any, bounds: list[float],
                  scale: float, inventory_before: Any, parent: Any, record: Any, start_s: float, t_end: float,
-                 upper_total: int, nv: int, nc: int) -> tuple[dict[str, Any], Any, dict[str, Any]]:
+                 upper_total: int, nv: int, nc: int, *, vegetation: Any = None) -> tuple[dict[str, Any], Any, dict[str, Any]]:
     """Finalizer checks and whole-bed + boundary per-class closure, using native tolerance helpers only."""
     np, h, compiled, context = n.np, _bed_helpers(), self._admission.compiled, self._context
     elapsed = _fraction_text(Fraction(t_end) - Fraction(start_s))
@@ -750,7 +777,9 @@ def _check_final(self: DailyWindExecutor, n: SimpleNamespace, final: Any, state:
     bed_change = transport_bed_change + fv["bed_change_by_class_kg"]
     candidate = n.BedState(physical.voxel_column, physical.active_layer, physical.water, physical.ledger,
                            physical.committed_topography, physical.sediment_availability)
-    if (physical.vegetation is not compiled.vegetation or physical.threshold_modifier_state is not compiled.threshold_modifier_state
+    if vegetation is None:
+        vegetation = compiled.vegetation
+    if (physical.vegetation is not vegetation or physical.threshold_modifier_state is not compiled.threshold_modifier_state
             or physical.ledger_reconciliation_baseline is not None):
         raise bad("prescribed_field_replaced", "native result replaced prescribed fields or carries a baseline")
     _validate_native(n, candidate, context, t_end)

@@ -32,7 +32,8 @@ def make_plan(root, *, same_day=False, threshold=5.0, precipitation=0.0):
     return DailyPlan(load_daily_scenario(root / "scenario.csv"))
 
 
-def make_native(root, *, depth=0.0, layers=(0.03, 0.07, 0.10), saturation=0.5):
+def make_native(root, *, depth=0.0, layers=(0.03, 0.07, 0.10), saturation=0.5,
+                profile_name=None, source_digest=None, vegetation_wake=False, fixture_nx=None):
     import numpy as np
     from maple_syrup import native_case_profile as ncp, native_dense_profile as nd
     from maple_syrup import native_floating_soil as nfs
@@ -48,11 +49,23 @@ def make_native(root, *, depth=0.0, layers=(0.03, 0.07, 0.10), saturation=0.5):
 
     bundle = Path(os.environ["MASY_DAILY_NATIVE_BUNDLE"])
     syrup = Path(os.environ["MASY_DAILY_NATIVE_SYRUP"])
-    source = ncp.verify_source_profile(bundle, expected_syrup_digest=mh.SYRUP_PACKAGE_SHA256)
+    kwargs = {} if profile_name is None else {"profile": profile_name}
+    source = ncp.verify_source_profile(bundle, expected_syrup_digest=mh.SYRUP_PACKAGE_SHA256 if source_digest is None else source_digest,
+                                       **kwargs)
     case = Path(root) / "case"
     case.mkdir(parents=True)
     for name in ("case.yaml", "model.yaml", "wind.yaml"):
         shutil.copyfile(syrup / "docs/manuals/examples/native_leaf_calendar_cli/case" / name, case / name)
+    if vegetation_wake:
+        import yaml
+        model = yaml.safe_load((case / "model.yaml").read_text())
+        model["vegetation_wake"] = {"enabled": True}
+        (case / "model.yaml").write_text(yaml.safe_dump(model))
+    if fixture_nx is not None:
+        import yaml
+        geometry_case = yaml.safe_load((case / "case.yaml").read_text())
+        geometry_case["geometry"]["nx"] = fixture_nx
+        (case / "case.yaml").write_text(yaml.safe_dump(geometry_case))
     admission = ncp.admit_package_case(source, case)
     prepared = nd.prepare_native_dense_case(admission, caller_reserve_bytes=1 << 20)
     bed, context = prepared.bed, prepared.context

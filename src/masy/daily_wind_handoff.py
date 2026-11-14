@@ -180,6 +180,12 @@ class WindHandoffExecutor:
         self._binding, self._cursor, self._last_json = None, _Cursor(), None
         self._busy, self._pending, self._pending_start = False, None, None
 
+    def _native(self):
+        return _native()
+
+    def _profile(self):
+        return self._wind.identity()["profile"]
+
     @property
     def lineage(self):
         if self._binding is None:
@@ -201,7 +207,7 @@ class WindHandoffExecutor:
                 "bridge": dataclasses.asdict(self._bridge_limits), "reserve_bytes": self._reserve, "batch_cells": self._batch}
 
     def _digest(self, context_record: dict) -> str:
-        return _sha({"profile": PROFILE, "scenario_sha256": self._plan.scenario.identity_sha256,
+        return _sha({"profile": self._profile(), "scenario_sha256": self._plan.scenario.identity_sha256,
                      "executor_sha256": self._wind.identity_sha256, "context": context_record, "policy": self._policy()})
 
     def _new_binding(self, lineage, boundary, context):
@@ -223,7 +229,7 @@ class WindHandoffExecutor:
         """
         if self._binding is not None or self._busy:
             raise WindHandoffError("state", "start needs a fresh idle wind bridge")
-        _lc, wh = _native()
+        _lc, wh = self._native()
         self._busy = True
         try:
             self._wind._recheck()
@@ -240,7 +246,7 @@ class WindHandoffExecutor:
         return self.lineage.head
 
     def _head(self):
-        lc, _wh = _native()
+        lc, _wh = self._native()
         try:
             kind, head = lc.saveable_head(self.lineage)
         except lc.LifecycleError as exc:
@@ -281,7 +287,7 @@ class WindHandoffExecutor:
             self._cursor, self._last_json = pending.cursor, pending.receipt_json
         self._pending = None
 
-    def execute(self, occurrence: WindOccurrence):
+    def execute(self, occurrence: WindOccurrence, *, vegetation=None, external_reserve_bytes=0):
         """Run and adopt the next parsed wind row, returning the genuine Boundary.
 
         Surface return may make that boundary pending recession. Actual native
@@ -290,25 +296,32 @@ class WindHandoffExecutor:
         """
         if self._busy:
             raise WindHandoffError("state", "another bridge transaction is active")
+        if type(external_reserve_bytes) is not int or external_reserve_bytes < 0:
+            raise WindHandoffError("limits", "external reserve must be a plain nonnegative integer")
+        reserve = self._reserve + external_reserve_bytes
         rows, index = self._plan.scenario.occurrences, self._cursor.next_index
         if type(occurrence) is not WindOccurrence or index >= len(rows) or occurrence != rows[index] or occurrence.index != index:
             raise WindHandoffError("cursor", "only the next wind row of the resolved scenario can execute")
         parent = self._head()
         self._check_day(parent, occurrence)
-        _lc, wh = _native()
+        _lc, wh = self._native()
         self._busy = True
         completed = None
         try:
-            completed = self._wind.execute_finalized(parent.bed, occurrence, float(parent.t_s))
+            if vegetation is None:
+                completed = self._wind.execute_finalized(parent.bed, occurrence, float(parent.t_s))
+            else:
+                completed = self._wind.execute_finalized(parent.bed, occurrence, float(parent.t_s), vegetation=vegetation,
+                                                          external_reserve_bytes=external_reserve_bytes)
             native = wh.stage_wind_handoff(self.lineage, parent, completed.finalization, completed.candidate.state,
                                           context=self._binding.context, occurrence_id=occurrence.occurrence_id,
                                           occurrence_sha256=occurrence.occurrence_sha256, start_s=float(parent.t_s),
                                           limits=self._limits, available_bytes_fn=self._reader,
-                                          reserve_bytes=self._reserve, batch_cells=self._batch)
+                                          reserve_bytes=reserve, batch_cells=self._batch)
             self._wind._recheck()
             wind_receipt = completed.candidate.receipt()
             handoff_receipt = native.receipt()
-            receipt = _bounded({"schema": RECEIPT_SCHEMA, "profile": PROFILE, "run_digest": self.run_digest,
+            receipt = _bounded({"schema": RECEIPT_SCHEMA, "profile": self._profile(), "run_digest": self.run_digest,
                                 "scenario_sha256": self._plan.scenario.identity_sha256, "wind": wind_receipt,
                                 "handoff": handoff_receipt, "next_wind_index": index + 1},
                                self._bridge_limits.max_receipt_bytes, "combined wind receipt")
@@ -330,7 +343,7 @@ class WindHandoffExecutor:
             # and empty mobile pool before publishing the water boundary.
             completed = None
             wh.adopt_wind_handoff(self.lineage, parent, native, available_bytes_fn=self._reader,
-                                 reserve_bytes=self._reserve, before_publish=self._wind._recheck)
+                                 reserve_bytes=reserve, before_publish=self._wind._recheck)
         finally:
             completed = None
             try:

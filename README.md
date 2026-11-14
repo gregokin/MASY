@@ -2,6 +2,16 @@
 
 MAPLE-SYRUP is designed to alternate actual MAPLE wind events and actual SYRUP water events over one evolving MAPLE sediment landscape. Wind physics stays in `~/MAPLE` and water physics stays in `~/SYRUP`. SYRUP's existing `maple_syrup` package name remains unchanged, and the combined wrapper uses `masy`. The wrapper contains no copied transport physics, no re-created sediment bed between events and no simultaneous wind/water transport.
 
+**November 14 wind, water and vegetation growth:** the
+[current triplet Python API](docs/daily_triplet.md) connects MAPLE, SYRUP Phase 2.5
+and LEAF on a shared evolving landscape. The separate
+[four-source runtime](docs/triplet_runtime.md) selects explicitly qualified
+committed refs, seals their code and checks actual imports and LEAF's external
+mapping helper. Use this dense CPU profile for the new growth workflow.
+Scientific case inputs remain explicit; a complete daily case CLI, GPU/windowed
+growth coupling and combined persisted restart have separate qualification
+requirements. Earlier dated workflows below retain their original source locks.
+
 **November 12 daily scheduling:** the new [daily CSV inputs and inspector](docs/daily_scheduler.md)
 put daily weather/PET/rainfall in one weather file and calendar controls/reusable
 wind occurrences in `scenario.csv`. Same-day wind precedes rain; precipitation
