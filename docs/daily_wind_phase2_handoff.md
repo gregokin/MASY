@@ -1,5 +1,10 @@
 # Daily wind to Phase 2 water handoff
 
+The [native wind/water interface](daily_wind_handoff_interface.md) now implements this additional connection on its
+explicit Dense NumPy CPU source profile. See its [qualification](daily_wind_handoff_qualification_20261113.md).
+The requirements and original published-Phase-2 observations below remain the design record; Phase 2 component
+publication alone did not provide this external-wind operation.
+
 SYRUP Phase 2 is now published on main at
 `02388adb70b7f1f22b33b6b3d5f1249e223842e5`. Its soil refresh, event/day bridge
 and native water checkpoints are implemented and qualified at their documented

@@ -10,6 +10,10 @@ moisture reset, sink or coupling), introduce moisture-dependent thresholds, or c
 explicitly disables moisture feedback and selects the existing constant-depth bed-update rule; the authored case remains unchanged.
 `daily_native.py` and its wind guard are untouched; the legacy dry-wind/reset paths and old source locks are unchanged.
 
+The separate [live-water handoff interface](daily_wind_handoff_interface.md) reuses this component under an explicit
+new source profile and lets SYRUP adopt the returned bed/time. `execute_finalized` exposes the transient genuine native
+completion result to that bridge. Ordinary `execute` still returns the scalar-receipt candidate without retaining a wind pool.
+
 ## API
 
 ```python

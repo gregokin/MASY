@@ -47,6 +47,14 @@ class Metadata(unittest.TestCase):
         self.assertEqual(daily_wind.MAPLE_COMMIT, daily_native.MAPLE_COMMIT)
         self.assertEqual(daily_wind.MAPLE_PACKAGE_SHA256, daily_native.MAPLE_PACKAGE_SHA256)
 
+    def test_unknown_profile_is_refused_without_native_work(self):
+        with self.assertRaises(DailyWindError) as ctx:
+            daily_wind._check_source_for_profile(None, None, "unqualified-future-pair")
+        self.assertEqual(ctx.exception.code, "unsupported_profile")
+        with self.assertRaises(DailyWindError) as ctx:
+            daily_wind._wrapper_sources("unqualified-future-pair")
+        self.assertEqual(ctx.exception.code, "unsupported_profile")
+
     def test_limits_are_explicit_plain_positive_ints(self):
         self.assertEqual(DailyWindLimits(**LIMITS).as_record(), LIMITS)
         for name in LIMITS:
@@ -137,6 +145,23 @@ class NativePhysical(unittest.TestCase):
         self.assertEqual(b["clocks"]["start_s"]["hex"], first.end_s.hex())
         self.assertEqual(b["clocks"]["record_origin_s"]["hex"], first.end_s.hex())
         self.assertEqual(b["parent_bed_sha256"], a["candidate_bed_sha256"])
+
+    def test_explicit_native_completion_matches_the_checked_candidate(self):
+        from maple.aeolian.scheduler.finalization import WindEventFinalizationResult
+
+        bed = self.ponded(0.001)
+        before = self.digest(bed)
+        result = self.executor().execute_finalized(bed, occurrence(durations=(2.0,)), 86400.0)
+        self.assertIs(type(result), daily_wind.FinalizedDailyWind)
+        native = result.finalization
+        self.assertIs(type(native), WindEventFinalizationResult)
+        self.assertTrue(native.completed)
+        self.assertTrue(native.water_handoff_ready)
+        self.assertEqual(native.time_s.hex(), result.candidate.end_s.hex())
+        for name in daily_wind._SHARED_FIELDS:
+            self.assertIs(getattr(native.state.physical, name), getattr(result.candidate.state, name))
+        self.assertEqual(self.digest(bed), before)
+        self.assertTrue(result.candidate.receipt()["checks"]["inventory_closure_with_boundary_export"])
 
     def test_dry_wind_policy_overrides_are_explicit_and_case_is_unchanged(self):
         case = Path(self.tmp.name) / "wet_policy_case"

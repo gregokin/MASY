@@ -7,18 +7,21 @@ put daily weather/PET/rainfall in one weather file and calendar controls/reusabl
 wind occurrences in `scenario.csv`. Same-day wind precedes rain; precipitation
 at or below the weather header's 5 mm example threshold attempts native recharge.
 The separate [native daily water API](docs/daily_native_water.md) connects the
-qualified Phase 1.5 CPU lifecycle and physical boundary restart. Wind exchange
-with persistent layered water and LEAF transactions remain gated. See the
+qualified Phase 1.5 CPU lifecycle and physical boundary restart. See the
 [qualification record](docs/daily_scheduler_qualification_20261112.md) for scope
 and verification. Existing commands, schemas and locks retain their meanings.
 The [native wind component](docs/daily_wind_executor.md) now executes individual
 CSV wind occurrences with actual MAPLE physics and preserved surface water.
 See its [qualification record](docs/daily_wind_qualification_20261112.md).
-The [Phase 2 water handoff](docs/daily_wind_phase2_handoff.md) remains the
-dependency for combined daily wind/water execution.
-SYRUP Phase 2 itself is now published; the
-[readiness check](docs/daily_phase2_readiness_20261113.md) identifies the remaining
-external-wind adoption interface and distinguishes it from the completed soil work.
+**November 13 wind/water interface:** the new [live-water wind bridge](docs/daily_wind_handoff_interface.md)
+connects actual CSV wind to SYRUP Phase 2 while retaining current soil water/history,
+ponding and hydraulic routing. Its separate CPU profile includes native reconciliation,
+ordered occurrence accounting and native-checkpoint/cursor binding. Real reduced/full
+rain/day/wind and restart controls are documented in the
+[qualification](docs/daily_wind_handoff_qualification_20261113.md).
+The complete daily CLI/runtime publisher, LEAF bridges and GPU/windowed scheduler
+qualification remain separate. The earlier [readiness check](docs/daily_phase2_readiness_20261113.md)
+records the gap this additional interface addresses; old commands and locks stay unchanged.
 
 **October 29 status:** the [supplied-case GPU command](docs/user-guide/case-gpu.md)
 passed wind → water → wind → water on the labelled synthetic 8 × 8, one-class,

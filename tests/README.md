@@ -89,3 +89,33 @@ metadata-only tests. The separate `native/check_phase0_subsurface.py` passed
 
 
 Current published wrapper milestone `bf46354` passed 307 stdlib checks and 46 native configuration checks, with no skips. MASY-09’s reference pair passed 153 tests plus 61 subtests and 96 separate component checks. That reference retains its original locked runtime; later wrapper commits have separate identities. GPU source-profile tests use bounded immutable Git fixtures. Two provenance/retention tests also inspect the existing local historical source object, task08 source-built metadata receipt and retained CPU lock. These source-only checks run no accelerator or model. Packaging fixtures for a fresh checkout remains collaborator-workflow work.
+
+## Native floating-water wind interface (November 13)
+
+`test_daily_wind_handoff.py` runs two native-free metadata checks in ordinary discovery. Its thirteen native controls require
+explicit `MASY_DAILY_WIND_HANDOFF_NATIVE=1`, the exact qualified MAPLE9f immutable bundle, and the new SYRUP wind-handoff
+source (literal package digest in `masy.daily_wind_handoff`, separate from N15). They run real native CPU wind/rain/day
+operations in temporary local directories. Source selection and provenance are part of the test; a newer source is refused.
+
+From the MASY repository, set the two source paths deliberately, then run with the existing MAPLE interpreter:
+
+```bash
+export MASY_DAILY_NATIVE_BUNDLE=/path/to/qualified/maple9f/materialized-bundle
+export MASY_DAILY_NATIVE_SYRUP=/path/to/qualified/syrup-wind-handoff-source
+export MASY_DAILY_WIND_HANDOFF_NATIVE=1
+CUDA_VISIBLE_DEVICES='' /home/okin/MAPLE/.venv/bin/python -I -B - <<'PY'
+import os, sys, unittest
+from pathlib import Path
+bundle = Path(os.environ['MASY_DAILY_NATIVE_BUNDLE'])
+syrup = Path(os.environ['MASY_DAILY_NATIVE_SYRUP'])
+os.environ['MAPLE_SYRUP_EXPECTED_MAPLE_ROOT'] = str(bundle / 'source')
+sys.path[:0] = [str(bundle / 'editable'), str(bundle / 'source/src'), str(syrup / 'src'), str(Path.cwd() / 'src')]
+suite = unittest.defaultTestLoader.discover('tests', pattern='test_daily_wind_handoff.py')
+raise SystemExit(not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful())
+PY
+```
+
+Run the historical N15 daily/wind controls in a separate interpreter with their original source selection; do not ask one
+interpreter to import both native packages. The [interface guide](../docs/daily_wind_handoff_interface.md) describes the
+caller-owned daily orchestration and native-file/cursor publication contract. The fresh worker proves native restart/day
+continuation without terrain/owner/property genesis; it is not a complete combined runtime-capsule provisioner.

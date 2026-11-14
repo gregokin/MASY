@@ -27,10 +27,11 @@ from typing import Any
 from masy.clock import ClockError, _native_clock, encode_time
 from masy.daily_csv import WindOccurrence
 
-__all__ = ["DailyWindCandidate", "DailyWindError", "DailyWindExecutor", "DailyWindLimits", "MAPLE_COMMIT",
+__all__ = ["DailyWindCandidate", "DailyWindError", "DailyWindExecutor", "DailyWindLimits", "FinalizedDailyWind", "MAPLE_COMMIT",
            "MAPLE_PACKAGE_SHA256", "PROFILE", "RECEIPT_SCHEMA", "SYRUP_PACKAGE_SHA256", "prepare_daily_wind"]
 
 PROFILE = "masy.daily_native_wind.cpu.v1"
+_HANDOFF_PROFILE = "masy.daily_wind_handoff.cpu.v1"
 RECEIPT_SCHEMA = "masy.daily_native_wind_receipt.v1"
 # Same explicit qualified source pair as the water connection (MAPLE 9f commit/package, SYRUP N15 CPU package).
 SYRUP_PACKAGE_SHA256 = "82e9c0111b9d883f857fd2f28a21f1d8bd8f13e22d473796e736ca4204f30107"
@@ -95,6 +96,20 @@ class DailyWindCandidate:
         return json.loads(self.receipt_json)
 
 
+@dataclasses.dataclass(frozen=True)
+class FinalizedDailyWind:
+    """Transient owning-model handoff evidence, returned only on explicit request.
+
+    ``finalization`` is the actual MAPLE result, including its native scheduler
+    and empty pool. Consumers should release it after native handoff staging;
+    it is neither a scalar receipt nor a portable checkpoint. Ordinary execute
+    returns only DailyWindCandidate and does not retain this wind workspace.
+    """
+
+    candidate: DailyWindCandidate
+    finalization: Any = dataclasses.field(repr=False, compare=False)
+
+
 def _native() -> SimpleNamespace:
     """Actual native symbols, imported lazily (same frozen paths as ``dense_runner`` / ``dense_bed``)."""
     import numpy as np
@@ -155,11 +170,16 @@ def _sha(value: Any) -> str:
     return hashlib.sha256(_json(value).encode()).hexdigest()
 
 
-def _wrapper_sources() -> dict[str, str]:
+def _wrapper_sources(profile: str = PROFILE) -> dict[str, str]:
     root = Path(__file__).resolve().parent
+    names = ("daily_wind.py", "daily_csv.py", "clock.py", "dense_bed.py", "dense_runner.py")
+    if profile == _HANDOFF_PROFILE:
+        names += ("daily_wind_handoff.py",)
+    elif profile != PROFILE:
+        raise _refuse("unsupported_profile", "unknown wind source profile")
     try:
         return {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in
-                ("daily_wind.py", "daily_csv.py", "clock.py", "dense_bed.py", "dense_runner.py")}
+                names}
     except OSError as exc:
         raise _refuse("wrapper_source", _detail(exc)) from None
 
@@ -218,8 +238,11 @@ def _check_limits(limits: Any) -> DailyWindLimits:
 
 # --- source / admission / context ------------------------------------------------------------------------------------
 
-def _check_source(source: Any, admission: Any) -> dict[str, Any]:
-    """Fresh native recheck (cold, no cached trust) of the exact qualified pair and its association to the admission."""
+def _source_facts(source: Any, admission: Any) -> dict[str, Any]:
+    """Recheck genuine admission, CPU capability and the exact shared MAPLE source.
+
+    Each explicit public profile additionally checks its own exact SYRUP pin.
+    """
     try:
         from maple_syrup import native_case_profile as ncp
     except ImportError as exc:
@@ -249,14 +272,31 @@ def _check_source(source: Any, admission: Any) -> dict[str, Any]:
     if detail is not None:
         raise _refuse("native_source", detail)
     if (facts["profile"] != ncp.PROFILE_NAME or facts["device_runtime_capability"]
-            or facts["syrup_package_digest"] != SYRUP_PACKAGE_SHA256 or facts["maple_commit"] != MAPLE_COMMIT
+            or facts["maple_commit"] != MAPLE_COMMIT
             or facts["package_digest"] != MAPLE_PACKAGE_SHA256):
-        raise _refuse("native_source", "explicit MAPLE 9f / SYRUP N15 CPU source pair required; no automatic rebinding")
+        raise _refuse("native_source", "the qualified MAPLE 9f CPU source is required; no automatic rebinding")
     if (facts["admission_profile"] != facts["profile"] or facts["admission_bundle_id"] != facts["bundle_id"]
             or facts["admission_package_digest"] != facts["package_digest"]
             or facts["admission_syrup_package_digest"] != facts["syrup_package_digest"]):
         raise _refuse("native_source", "the admission was not produced under this source profile")
     return facts
+
+
+def _check_source(source: Any, admission: Any) -> dict[str, Any]:
+    """The historical public factory remains pinned to the qualified N15 pair."""
+    facts = _source_facts(source, admission)
+    if facts["syrup_package_digest"] != SYRUP_PACKAGE_SHA256:
+        raise _refuse("native_source", "explicit MAPLE 9f / SYRUP N15 CPU source pair required; no automatic rebinding")
+    return facts
+
+
+def _check_source_for_profile(source: Any, admission: Any, profile: str) -> dict[str, Any]:
+    if profile == PROFILE:
+        return _check_source(source, admission)
+    if profile == _HANDOFF_PROFILE:
+        from masy.daily_wind_handoff import _check_handoff_source
+        return _check_handoff_source(source, admission)
+    raise _refuse("unsupported_profile", "unknown wind source profile")
 
 
 def _same(a: Any, b: Any) -> bool:
@@ -321,15 +361,20 @@ def _effective_wind_config(config: Any, context: Any) -> Any:
 
 def prepare_daily_wind(source: Any, admission: Any, context: Any, *, limits: DailyWindLimits) -> "DailyWindExecutor":
     """Validate the explicit source pair, admission, context and limits; return the executor (no bed, no physics)."""
+    return _prepare_daily_wind(source, admission, context, limits=limits, profile=PROFILE)
+
+
+def _prepare_daily_wind(source: Any, admission: Any, context: Any, *, limits: DailyWindLimits, profile: str) -> "DailyWindExecutor":
+    """Shared mechanics behind two explicitly selected, separately qualified profiles."""
     limits = _check_limits(limits)
-    facts = _check_source(source, admission)
+    facts = _check_source_for_profile(source, admission, profile)
     n = _native()
     _check_context(n, admission, context)
     _check_config_controls(admission.compiled.config)
     g = context.geometry
     if g.ny * g.nx > limits.max_cells:
         raise _refuse("cell_limit", f"{g.ny * g.nx} cells > max_cells={limits.max_cells}")
-    identity = {"profile": PROFILE, "source": facts, "latitude_deg": encode_time(float(facts["latitude_deg"])),
+    identity = {"profile": profile, "source": facts, "latitude_deg": encode_time(float(facts["latitude_deg"])),
                 "context": {"mass_resolution_kg": encode_time(float(context.mass_resolution_kg)),
                             "initial_available_fraction": _bed_helpers().array_digest(context.initial_available_fraction),
                             "geometry": _canonical(n.np, context.geometry, "geometry"),
@@ -337,7 +382,7 @@ def prepare_daily_wind(source: Any, admission: Any, context: Any, *, limits: Dai
                             "depth_update_rule": context.depth_update_rule},
                 "prescribed_sha256": _prescribed_digest(admission.compiled),
                 "admitted_config_sha256": _sha(_canonical(n.np, admission.compiled.config, "model_config")),
-                "wrapper_sources": _wrapper_sources()}
+                "wrapper_sources": _wrapper_sources(profile)}
     return DailyWindExecutor(source, admission, context, limits, identity)
 
 
@@ -357,9 +402,10 @@ class DailyWindExecutor:
         return json.loads(self._identity_json)
 
     def _recheck(self) -> None:
-        if _wrapper_sources() != self.identity()["wrapper_sources"]:
+        profile = self.identity()["profile"]
+        if _wrapper_sources(profile) != self.identity()["wrapper_sources"]:
             raise _refuse("wrapper_source_changed", "wrapper sources changed since preparation")
-        if _check_source(self._source, self._admission) != self.identity()["source"]:
+        if _check_source_for_profile(self._source, self._admission, profile) != self.identity()["source"]:
             raise _refuse("native_source", "source/admission association changed since preparation")
         if _prescribed_digest(self._admission.compiled) != self.identity()["prescribed_sha256"]:
             raise _refuse("prescribed_changed", "native prescribed vegetation/threshold fields changed")
@@ -374,6 +420,14 @@ class DailyWindExecutor:
     def execute(self, bed: Any, occurrence: Any, start_s: float) -> DailyWindCandidate:
         """Run ONE complete occurrence from the actual current ``bed`` at physical ``start_s``. Never mutates ``bed``."""
         return _execute(self, bed, occurrence, start_s)
+
+    def execute_finalized(self, bed: Any, occurrence: Any, start_s: float) -> FinalizedDailyWind:
+        """Run the same checks and return the actual transient MAPLE completion too.
+
+        No lifecycle is adopted. Release the completion after staging with the
+        owning water API; it retains native wind workspace until released.
+        """
+        return _execute(self, bed, occurrence, start_s, with_completion=True)
 
 
 def _plan_blocks(n: SimpleNamespace, record: Any, outer: float, limits: DailyWindLimits) -> list[dict[str, Any]]:
@@ -445,7 +499,7 @@ def _validate_native(n: SimpleNamespace, bed: Any, context: Any, start_s: float)
         raise _refuse("water_mobile_not_empty", "water-borne sediment is present; a dry wind entry needs none")
 
 
-def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float) -> DailyWindCandidate:
+def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float, *, with_completion: bool = False) -> DailyWindCandidate | FinalizedDailyWind:
     limits, context, compiled = self._limits, self._context, self._admission.compiled
     if type(occurrence) is not WindOccurrence or not occurrence.blocks:
         raise _refuse("occurrence", "a parsed WindOccurrence with at least one block is required")
@@ -582,7 +636,7 @@ def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float)
         raise _refuse("parent_mutated", "the input bed or prescribed fields changed during native execution")
     self._recheck()
     receipt = {
-        "schema": RECEIPT_SCHEMA, "profile": PROFILE, "executor_identity_sha256": self._identity_sha256,
+        "schema": RECEIPT_SCHEMA, "profile": self.identity()["profile"], "executor_identity_sha256": self._identity_sha256,
         "executor_identity": self.identity(), "limits": limits.as_record(),
         "config_sha256": _sha(_canonical(np, config, "config")),
         "wind_policy": {"soil_moisture_feedback_enabled": False,
@@ -608,7 +662,8 @@ def _execute(self: DailyWindExecutor, bed: Any, occurrence: Any, start_s: float)
     text = _json(receipt)
     if len(text.encode()) > limits.max_receipt_bytes:
         raise _refuse("receipt_bytes_cap", f"receipt {len(text.encode())} bytes > max_receipt_bytes")
-    return DailyWindCandidate(candidate, t_end, text)
+    out = DailyWindCandidate(candidate, t_end, text)
+    return FinalizedDailyWind(out, final) if with_completion else out
 
 
 def _check_block(self: DailyWindExecutor, n: SimpleNamespace, index: int, block: Any, result: Any,

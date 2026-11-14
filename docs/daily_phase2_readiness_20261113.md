@@ -1,5 +1,10 @@
 # Published Phase 2 and the daily wind handoff
 
+This is the earlier published-source audit. The additional
+[native wind/water interface](daily_wind_handoff_interface.md) now addresses the specific adoption gap described below;
+its [separate qualification](daily_wind_handoff_qualification_20261113.md) records the new sources and checks. This audit's
+Phase 2 source169 evidence is retained unchanged and is not a qualification of the added module.
+
 SYRUP Phase 2 is complete and published at its bounded native API scope. MASY
 verified that both `origin/main` and `origin/feature/subsurface-evolving-soil`
 point to `02388adb70b7f1f22b33b6b3d5f1249e223842e5`. The source implementation
