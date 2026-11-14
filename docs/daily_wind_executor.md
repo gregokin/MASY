@@ -89,7 +89,8 @@ digest and prescribed digest), occurrence id/hash/file hash, parent and candidat
 
 ## Pending (external dependency)
 
-The real SYRUP Phase 2 lifecycle / changed-bed handoff is being developed independently. Until it exists, a candidate from this
+SYRUP Phase 2 is published, but its public lifecycle has no external-wind bed-adoption operation; see the
+[published-source check](daily_phase2_readiness_20261113.md). Until that integration operation exists, a candidate from this
 component cannot be adopted into a native lifecycle state, and there is no combined wind-water daily run. Connecting them is an
 external dependency, not a scientific-choice question; this module provides no stand-in.
 See [the native Phase 2 handoff requirements](daily_wind_phase2_handoff.md) for state, clock, accounting and restart acceptance.

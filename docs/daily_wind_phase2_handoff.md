@@ -1,16 +1,23 @@
 # Daily wind to Phase 2 water handoff
 
-The user has resolved all current Phase 2 scientific choices. SYRUP's current
+SYRUP Phase 2 is now published on main at
+`02388adb70b7f1f22b33b6b3d5f1249e223842e5`. Its soil refresh, event/day bridge
+and native water checkpoints are implemented and qualified at their documented
+scope. The remaining external-wind adoption described here is an additional
+integration interface; see the
+[published-source readiness check](daily_phase2_readiness_20261113.md).
+
+The user has resolved the Phase 2 scientific choices. SYRUP's
 `bedrock_refresh_decisions_20261113/user_decisions.json` and
-`phase2_completion_architecture.md` record the selected rules and remaining
-implementation slices. No new scientific answer is requested here.
+historical `phase2_completion_architecture.md` record the selected rules and
+original implementation slices. No new scientific answer is requested here.
 
 MASY's wind component executes actual MAPLE wind from a parsed CSV occurrence
 and returns a staged current bed, actual physical end time and accounting.
-The current N15 water lifecycle exposes no public operation to adopt this
-wind-altered bed/time while preserving its layered lineage. Its factory-only
-boundary states cannot be edited or retimed by MASY. The Phase 2 changed-bed
-lifecycle/checkpoint operation is the remaining dependency for a runnable
+Neither the historical N15 lifecycle nor the published Phase 2 lifecycle exposes
+a public operation to adopt this wind-altered bed/time into a live water lineage.
+Their factory-only boundary states cannot be edited or retimed by MASY. The
+external-wind lifecycle operation is the remaining dependency for a runnable
 coupled daily loop. This page specifies the MASY-facing requirements; it does
 not claim a function with these arguments already exists or dictate the owning
 developer's API name.
@@ -26,8 +33,10 @@ completion must be checked. The original landscape is never reinitialized.
 The native operation returns a genuine updated lifecycle operator/state plus
 an accounted handoff receipt. It preserves the daily run digest, nominal day
 ordinal, water budget anchors, accepted history and request counters. The
-actual clock advances across wind without running a soil/E/T/growth interval
-for that duration. Any genuinely required water recession adds its actual time
+combined physical clock counts wind without running a soil/E/T/growth interval
+for that duration. Keep an exact reversible mapping to native elapsed values;
+any native clock transition must come from the owning API and remain consistent
+with shared-bed commit timestamps. Any genuinely required water recession adds its actual time
 and must finish before a later process starts. No fake positive timestep or
 manual rewriting of a minted lifecycle state is permitted.
 

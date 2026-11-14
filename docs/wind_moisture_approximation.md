@@ -29,7 +29,7 @@ actual physical elapsed time and the nominal daily occurrence cursor.
 
 ## What the latest Phase 2 decisions resolve
 
-The SYRUP developer's current Phase 2 design provides the core rules for
+The selected Phase 2 treatment provides the core rules for
 wind-driven terrain change and persistent soil water:
 
 - Fixed-thickness layers follow the current surface. Pure geometry/property
@@ -54,27 +54,30 @@ event; the full MAPLE voxel-grid bottom is fixed, flat and impermeable. Only
 real soil portions store/supply water; partial/zero-soil layers at rock are
 allowed, and open-profile drainage applies only above rock. These selections
 are recorded in `bedrock_refresh_decisions_20261113/user_decisions.json` in the
-same SYRUP task. All current scientific choices are resolved for now; native
-implementation and independent qualification remain in progress.
+same SYRUP task. The native Phase 2 implementation is now independently
+qualified and published on main at
+`02388adb70b7f1f22b33b6b3d5f1249e223842e5`. The remaining external-wind adoption
+interface is described in the [readiness check](daily_phase2_readiness_20261113.md).
 
-Keeping retained Green-Ampt history consistent with refreshed hydraulic
-parameters remains a qualification task under the selected retention rule,
-not a newly unanswered question or authority to reset history.
+The native release qualifies retained Green-Ampt history through its property
+refresh operations. Preservation through the complete wind/water scheduler
+still needs qualification; it is not authority to reset history.
 
-The checked design is SYRUP's
+The original design provenance is SYRUP's
 `agent_handoffs/tasks/phase2_evolving_soil_20261112/syrup_candidate/docs/subsurface_hydrology/phase2_floating_profile_design.md`,
 with the `floating_profile_decisions_20261113/user_decisions.json` and
 `floating_capacity_decision_20261113/user_decisions.json` receipts in the same
 task. Receipt timestamps are November 13 UTC. Exact inspected bytes/hashes are
 retained in MASY's `agent_handoffs/tasks/wind_dry_approximation_20261112/`.
-This is the current development design, not a claim about the older published
-Phase 1.5 package or the live SYRUP checkout.
+Those records describe the design reviewed at that time. Current publication
+and source checks are in the [Phase 2 readiness record](daily_phase2_readiness_20261113.md);
+the older Phase 1.5 package retains its original scope.
 
 ## Integration still required
 
-Once the Phase 2 operations are implemented and qualified, MASY must connect
-actual MAPLE wind execution to that native transaction on the same evolving
-bed, preserving water, clocks, ledgers and occurrence identity. Hydraulic
+Phase 2 is published. The remaining native external-wind adoption operation
+must connect actual MAPLE wind execution to the live water lineage on the same
+evolving bed, preserving water, clocks, ledgers and occurrence identity. Hydraulic
 properties and routing follow their owning update rules; routing continues to
 use the native configured net-elevation trigger, rather than rerouting simply
 because an event boundary was crossed. Boundary publication and restart must
