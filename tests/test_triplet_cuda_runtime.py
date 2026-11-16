@@ -201,6 +201,48 @@ class CudaTripletSourceTests(unittest.TestCase):
             with self.assertRaises(tl.TripletLockError):
                 ctx_obj.record_device_runtime(bad)
 
+    def test_provider_lazy_module_is_inspected_without_execution(self):
+        import importlib.util
+        site = self.root / "lazy-site"
+        pkg = site / "cupy"
+        pkg.mkdir(parents=True)
+        path = pkg / "lazy.py"
+        path.write_text("raise AssertionError('census executed lazy module')\n")
+        spec = importlib.util.spec_from_file_location("cupy.lazy", path)
+        loader = importlib.util.LazyLoader(spec.loader)
+        spec.loader = loader
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        result = tcr.device_runtime_census({"cupy.lazy": module}, provider_root=str(site))
+        self.assertEqual(result["cupy.lazy"]["sha256"], tl.digest(path.read_bytes()))
+        self.assertIs(type(module), importlib.util._LazyModule)
+
+    def test_fft_config_alias_requires_exact_authenticated_owner_singleton(self):
+        site = self.root / "alias-site"
+        pkg = site / "cupy/fft"
+        pkg.mkdir(parents=True)
+        path = pkg / "_config.py"
+        path.write_text("# labelled synthetic provider metadata only\n")
+        owner = ModuleType("cupy.fft._config")
+        owner.__file__ = str(path)
+        owner.__spec__ = importlib.machinery.ModuleSpec(owner.__name__, loader=None, origin=str(path))
+        cls = type("_FFTConfig", (), {"__module__": "cupy.fft._config"})
+        owner._FFTConfig = cls
+        owner.config = cls()
+        modules = {"cupy.fft._config": owner, "cupy.fft.config": owner.config}
+        result = tcr.device_runtime_census(modules, provider_root=str(site))
+        self.assertEqual(result["cupy.fft.config"]["sha256"], tl.digest(path.read_bytes()))
+        for alias in (object(), cls()):
+            with self.assertRaises(tl.TripletLockError):
+                tcr.device_runtime_census({**modules, "cupy.fft.config": alias}, provider_root=str(site))
+        path = pkg / "bad.pyc"
+        path.write_bytes(b"unqualified bytecode")
+        bad = ModuleType("cupy.fft.bad")
+        bad.__file__ = str(path)
+        bad.__spec__ = importlib.machinery.ModuleSpec(bad.__name__, loader=None, origin=str(path))
+        with self.assertRaises(tl.TripletLockError):
+            tcr.device_runtime_census({"cupy.fft.bad": bad}, provider_root=str(site))
+
     def test_cold_bootstrap_refuses_before_any_masy_import(self):
         sealed = self.root / "sealed/source"
         (sealed / "src/masy").mkdir(parents=True)

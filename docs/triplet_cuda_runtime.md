@@ -49,3 +49,10 @@ modules by origin/size. The run supervisor must additionally record the actual
 compiled environment. Root's qualification inventories hashes of loaded shared
 libraries and the run-owned CUDA kernel cache, plus CuPy/NumPy/Python and CUDA
 runtime/driver versions. A source lock is separate from that run evidence.
+
+CUDA verification defers LEAF's mapping-helper execution until after source
+authentication; its bytes and namespace are already sealed. The provider census
+recognizes genuine stdlib lazy modules without executing them, and CuPy14's FFT
+config only as its authenticated owner's exact singleton. Source reads retain
+the source-file cap; compiled provider files have a separate128MiB metadata
+cap. Sourceless bytecode and unrecognized aliases refuse.

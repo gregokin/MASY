@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import importlib.util
+from importlib.machinery import EXTENSION_SUFFIXES
 import json
 import os
 from pathlib import Path
@@ -174,9 +176,10 @@ def _hash(p, st, cap):
 def device_runtime_census(modules, *, provider_root=None, limits=None):
     """Record loaded device-provider module origins; authenticity is origin, not a measurement.
 
-    Every ``cupy``/``cupyx``/``cupy_backends`` entry must be a plain module whose
+    Every ``cupy``/``cupyx``/``cupy_backends`` entry must be an owning module (including stdlib lazy modules) whose
     origin is its own file inside the selected interpreter's site-packages
-    family tree, with a consistent spec and package path. Python sources are
+    family tree, with a consistent spec and package path. CuPy14 FFT config is
+    admitted only as the exact canonical singleton of its authenticated owner. Python sources are
     hashed; compiled extension origins are recorded by path and size only
     (``hashed`` false), so Root's compiled inventory stays the identity
     authority for binaries. No device, context or array is touched.
@@ -190,16 +193,22 @@ def device_runtime_census(modules, *, provider_root=None, limits=None):
     tl._need(root.is_absolute() and str(root) == os.path.normpath(str(root)), "backend", "canonical provider root required")
     cap = (tl.DEFAULT_LIMITS if limits is None else tl._limits(limits))["max_file_bytes"]
     tl._need(len(modules) <= 100000, "module_limit", "loaded module census")
-    found = {}
-    for name, module in modules.items():
+    found, aliases = {}, []
+    module_types = (ModuleType, importlib.util._LazyModule)
+    for name, module in list(modules.items()):
         if type(name) is not str:
             raise tl.TripletLockError("module_origin", "plain module names required")
         family = name.partition(".")[0]
         if family not in DEVICE_FAMILIES or module is None:
             continue
         tl._need(len(found) < MAX_DEVICE_MODULES, "module_limit", "device provider module census")
-        tl._need(type(module) is ModuleType, "backend", name + ": device provider entry is not a plain module")
-        namespace = vars(module)
+        if name == "cupy.fft.config":
+            aliases.append((name, module))
+            continue
+        tl._need(type(module) in module_types, "backend", name + ": device provider entry is not an owning module")
+        # Bypass stdlib LazyModule.__getattribute__: census must not execute
+        # optional modules or create arrays just to inspect their namespace.
+        namespace = ModuleType.__getattribute__(module, "__dict__")
         origin, spec = namespace.get("__file__"), namespace.get("__spec__")
         tl._need(type(origin) is str and spec is not None and spec.name == name and spec.origin == origin, "backend",
                  name + ": inconsistent device provider origin")
@@ -211,12 +220,25 @@ def device_runtime_census(modules, *, provider_root=None, limits=None):
         else:
             tl._need(p.parent == root.joinpath(*parts[:-1]) and p.name.partition(".")[0] == parts[-1], "backend",
                      name + ": device provider module layout differs")
+        tl._need(p.suffix == ".py" or any(p.name.endswith(x) for x in EXTENSION_SUFFIXES), "backend",
+                 name + ": only source or native extension origins are admitted; no sourceless bytecode")
         st = _origin(origin, cap if p.suffix == ".py" else MAX_EXTENSION_BYTES)
         if p.suffix == ".py":
             n, sha = _hash(p, st, cap)
             found[name] = {"path": origin, "size": n, "sha256": sha, "kind": "source", "hashed": True}
         else:
             found[name] = {"path": origin, "size": st.st_size, "sha256": None, "kind": "extension", "hashed": False}
+    for name, alias in aliases:
+        owner = modules.get("cupy.fft._config")
+        tl._need(type(owner) in module_types and "cupy.fft._config" in found, "backend",
+                 name + ": canonical FFT config owner is absent")
+        ns = ModuleType.__getattribute__(owner, "__dict__")
+        cls = ns.get("_FFTConfig")
+        tl._need(type(cls) is type and cls.__module__ == "cupy.fft._config" and cls.__name__ == "_FFTConfig"
+                 and type(alias) is cls and alias is ns.get("config"), "backend",
+                 name + ": not the genuine owner's FFT config singleton")
+        tl._need(len(found) < MAX_DEVICE_MODULES, "module_limit", "device provider alias census")
+        found[name] = {**found["cupy.fft._config"], "kind": "config_alias", "owner": "cupy.fft._config"}
     return found
 
 
