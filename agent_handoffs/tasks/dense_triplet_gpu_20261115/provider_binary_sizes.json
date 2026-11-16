@@ -1,0 +1,38 @@
+{
+  "max_bytes": 78893800,
+  "largest": [
+    [
+      78893800,
+      "/home/okin/MAPLE/.venv-cupy/lib/python3.12/site-packages/cupy/cuda/thrust.cpython-312-x86_64-linux-gnu.so"
+    ],
+    [
+      47944760,
+      "/home/okin/MAPLE/.venv-cupy/lib/python3.12/site-packages/cupy/cuda/cub.cpython-312-x86_64-linux-gnu.so"
+    ],
+    [
+      13331496,
+      "/home/okin/MAPLE/.venv-cupy/lib/python3.12/site-packages/cupy/random/_generator_api.cpython-312-x86_64-linux-gnu.so"
+    ],
+    [
+      8943024,
+      "/home/okin/MAPLE/.venv-cupy/lib/python3.12/site-packages/cupy_backends/cuda/libs/cusolver.cpython-312-x86_64-linux-gnu.so"
+    ],
+    [
+      8100824,
+      "/home/okin/MAPLE/.venv-cupy/lib/python3.12/site-packages/cupy_backends/cuda/libs/cusparse.cpython-312-x86_64-linux-gnu.so"
+    ],
+    [
+      6236200,
+      "/home/okin/MAPLE/.venv-cupy/lib/python3.12/site-packages/cupy/_core/core.cpython-312-x86_64-linux-gnu.so"
+    ],
+    [
+      5182704,
+      "/home/okin/MAPLE/.venv-cupy/lib/python3.12/site-packages/cupyx/_cutensor.cpython-312-x86_64-linux-gnu.so"
+    ],
+    [
+      4725280,
+      "/home/okin/MAPLE/.venv-cupy/lib/python3.12/site-packages/cupy/cuda/memory.cpython-312-x86_64-linux-gnu.so"
+    ]
+  ],
+  "n_extensions": 65
+}

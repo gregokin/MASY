@@ -1,0 +1,2697 @@
+{
+  "utc": "2026-11-16T01:33:31.623677+00:00",
+  "scope": "/home/okin/MASY/agent_handoffs/tasks/dense_triplet_gpu_20261115/native_review",
+  "files": {
+    "maple/__init__.py": {
+      "sha256": "d38906e1df4a338c49184b00e8a676a224097c371e5a56eff2c057651002b0a6",
+      "bytes": 226
+    },
+    "maple/aeolian/__init__.py": {
+      "sha256": "03a2bf14b95f8842b9ca05c1c575d55d057429bfb3aa184c9bfd0a4c4c5f6a85",
+      "bytes": 689
+    },
+    "maple/aeolian/cohorts/__init__.py": {
+      "sha256": "44586e56bca945146a0b6dd173ad24db911119807f70d5f5a46b57c959c69af4",
+      "bytes": 73
+    },
+    "maple/aeolian/cohorts/calendar_migration.py": {
+      "sha256": "ba21fd00dfaa764d3fe358a37fbd94540539c7cb9bab0a5db3c36498d0d19a37",
+      "bytes": 32306
+    },
+    "maple/aeolian/cohorts/calendar_routing.py": {
+      "sha256": "60825f4aecaa71b393db9145f65145dfef290a03c65395d75eea6681ae2dde24",
+      "bytes": 54874
+    },
+    "maple/aeolian/cohorts/calendar_seed.py": {
+      "sha256": "0a3fb12f9d9de34647fe88f91d3028cd7bc6368ecea0756020ac202419875a9c",
+      "bytes": 9993
+    },
+    "maple/aeolian/cohorts/capacity.py": {
+      "sha256": "3ceb6fbec8f65dac8987a1d88a28a52c6e79f340e5e537e36ff0c90e5e7aae41",
+      "bytes": 97069
+    },
+    "maple/aeolian/cohorts/dispatch.py": {
+      "sha256": "802243722cba00524deb556461a7cfa3db445f21368cbc49ce92d63c77da67df",
+      "bytes": 56033
+    },
+    "maple/aeolian/cohorts/memory_budget.py": {
+      "sha256": "8f5aeee919ab41ca795d1a787b3e8d6f3adf185130e5132071e5d1eaef91a8c8",
+      "bytes": 116970
+    },
+    "maple/aeolian/cohorts/routing.py": {
+      "sha256": "d3f10f0532dd54348c0bb5b2f3eb56e4f27e4774f4da471c8eb8ef89d7fdd011",
+      "bytes": 61180
+    },
+    "maple/aeolian/cohorts/seed_realization.py": {
+      "sha256": "3eddbc2b8adf47c8bfddca57429fa4182836a15c9de0e2b23bfeb175e016cba4",
+      "bytes": 8971
+    },
+    "maple/aeolian/detachment/__init__.py": {
+      "sha256": "3d52de67498dc8f5a777a3fa29893923ed7acf5e6aa68ade357ea43a57e7c59e",
+      "bytes": 261
+    },
+    "maple/aeolian/detachment/aerodynamic.py": {
+      "sha256": "3e7aca431a2edcb8ab25872f062e3878401416d9ba990a5bb4ee611e62aa6787",
+      "bytes": 10765
+    },
+    "maple/aeolian/detachment/apply.py": {
+      "sha256": "03bc13f7db7e35c498b12599ce2f426abfb23489bbdc849245662624927730df",
+      "bytes": 7826
+    },
+    "maple/aeolian/detachment/prescribed.py": {
+      "sha256": "8faf19e7a482efcaa538c9c093efb9ab8c5a11c8504a5cf8e299e2089e73990f",
+      "bytes": 7294
+    },
+    "maple/aeolian/detachment/reduced.py": {
+      "sha256": "8a3a8769e57a0d72c99a827374b3113a612d9bebb6a4169c80aef8892c0144e0",
+      "bytes": 33177
+    },
+    "maple/aeolian/detachment/threshold.py": {
+      "sha256": "0d5a68788b81b0873e630371d6c6d6ff6bd553e6fa39ff26247ac54bc672b4c9",
+      "bytes": 37552
+    },
+    "maple/aeolian/directional_sampling.py": {
+      "sha256": "41c2511faf68f70221a82ce46d32a3c98507d9cd4bfea9f0474b509437ac8032",
+      "bytes": 16320
+    },
+    "maple/aeolian/external_shear/__init__.py": {
+      "sha256": "59278ff1b075d7526074ca462ca7726faf93a2cb2e794ce5b9410c574974fd2e",
+      "bytes": 1162
+    },
+    "maple/aeolian/external_shear/apply.py": {
+      "sha256": "0ab68a66209a4bab6cb906c10009b23bd8ae7387c97158c69b132b0f938b4bc6",
+      "bytes": 15522
+    },
+    "maple/aeolian/feedback/__init__.py": {
+      "sha256": "a3a9093c580a64704ec9d822c84882ba3670e4daf621d002cec55960ecbd3889",
+      "bytes": 1028
+    },
+    "maple/aeolian/feedback/equilibrium.py": {
+      "sha256": "adbc73feb87d5bef026f53d89dcdeb7a5db1fc69705699185d49678df5b6f445",
+      "bytes": 80521
+    },
+    "maple/aeolian/feedback/interval_overlap.py": {
+      "sha256": "21d30975ca478beccd4441ebdaf2d2d10809bfe449a706d170acba2a81257bbe",
+      "bytes": 12016
+    },
+    "maple/aeolian/feedback/momentum.py": {
+      "sha256": "3e405c98263dde7eae71e8fec2e67d61743a4ade8df53f311a1e460c6fe15b0e",
+      "bytes": 86809
+    },
+    "maple/aeolian/feedback/same_step_solver.py": {
+      "sha256": "dbe0ddbca73dcbfcfb52c943193aecbeced1af2bb4153fb1cae93f7c0f3a11e6",
+      "bytes": 14979
+    },
+    "maple/aeolian/feedback/stopping.py": {
+      "sha256": "fd65cc759ff7ad512d59215c3a1089de731db5894f91ce73c57d40c9fdd0af26",
+      "bytes": 12481
+    },
+    "maple/aeolian/feedback/trajectory.py": {
+      "sha256": "d3398e7e2c19eaae309ffcf3c0693cdedabe521e756f4fae6ade92b5ad293379",
+      "bytes": 15693
+    },
+    "maple/aeolian/feedback/transient.py": {
+      "sha256": "86f92fe3ac40379bd1fed8f5f14fd6b59ed7a1b6f67bcc75cc953151ebdec792",
+      "bytes": 13152
+    },
+    "maple/aeolian/feedback/validation.py": {
+      "sha256": "b66ef98a9fea1e35737d7628460b7b11696f7da929a9c5533ef2721364b4bbe2",
+      "bytes": 40509
+    },
+    "maple/aeolian/feedback/warm_start.py": {
+      "sha256": "d2754a69c4f78d832274b509ada1a79e1d0dc63de4a3bac0bc99f7e57a2c4f53",
+      "bytes": 20320
+    },
+    "maple/aeolian/feedback/wind.py": {
+      "sha256": "2042f791b3c1e67b266a5f08afd151df1e4197df9e82adf47f6bf0838397b449",
+      "bytes": 22156
+    },
+    "maple/aeolian/flux/__init__.py": {
+      "sha256": "1746c47c514e06c099b31e348c7bd335a1d388c76f1c63f37dfcd6e056daa497",
+      "bytes": 130
+    },
+    "maple/aeolian/flux/boundary_inflow.py": {
+      "sha256": "d65bd2b0d8ab29db400d164556b92ad330cceb89f18842a4faa7541527d938b1",
+      "bytes": 8435
+    },
+    "maple/aeolian/flux/deposition.py": {
+      "sha256": "f1fbd3e111f7e1cd9ab31d7043fa3cfb552e7b0676fbe26e5eed28f7f56ab23e",
+      "bytes": 24132
+    },
+    "maple/aeolian/flux/face_flux.py": {
+      "sha256": "3af68be47feb023f8943b3033e617bf8746d8c658e3c3cd0229fb598fb65ca92",
+      "bytes": 40739
+    },
+    "maple/aeolian/flux/routing_envelope.py": {
+      "sha256": "1441f733694ab72ec016a0c2c8f6dd095b041b96b763c06fbd794af93048734a",
+      "bytes": 4233
+    },
+    "maple/aeolian/flux/same_step.py": {
+      "sha256": "4edd3b05b8c1c44d7283aa7550506f8eb65e0aad702f6ca55d0ddb450a75cee5",
+      "bytes": 15616
+    },
+    "maple/aeolian/flux/step.py": {
+      "sha256": "9f4546508ae593407a566b00770d9967100cbb61ea4ba79989d510a9d0f140cd",
+      "bytes": 201677
+    },
+    "maple/aeolian/flux/validation.py": {
+      "sha256": "3e13c57c22411c30dcc7727f31c6e1bbc0b5cc2355f7953807e3aa2927b5d9b3",
+      "bytes": 47267
+    },
+    "maple/aeolian/flux/windowed_step.py": {
+      "sha256": "1ff1b08365dc0d283eecba1c0abd184453865cde0e1546b49e5036d4bb1fffe0",
+      "bytes": 46439
+    },
+    "maple/aeolian/flux/windowed_step_admission.py": {
+      "sha256": "b7c29cfb39d5f57b0ad1c79075de3b2eb3e7e91d8eb18b1783d83d74ed9d502a",
+      "bytes": 169294
+    },
+    "maple/aeolian/flux/windowed_step_device.py": {
+      "sha256": "acfc2810d23285e4e932e29a6b9dd3cf041f77f552cd9dff912ac972938f1fed",
+      "bytes": 101878
+    },
+    "maple/aeolian/flux/windowed_step_evidence.py": {
+      "sha256": "7cacb0b87bbfcf4c70961cf111483167e7309c76f11514a57aa1905495fbd8da",
+      "bytes": 20832
+    },
+    "maple/aeolian/impacts/__init__.py": {
+      "sha256": "55cbcdd16b98fa6f5528d613a1067d734cb4fe26bd8a31f2a5edcd9c4dcd770e",
+      "bytes": 704
+    },
+    "maple/aeolian/impacts/aggregation.py": {
+      "sha256": "6fb5cdd365a28bf7f78debfbd041fa7579af0d9a70bb853df6bd76fe198c9134",
+      "bytes": 21580
+    },
+    "maple/aeolian/impacts/calendar_launch_bins.py": {
+      "sha256": "6191a2ee72f96993191adf8d52b1ccea0ca15236a9368b0e74fe0221c92ae444",
+      "bytes": 8584
+    },
+    "maple/aeolian/impacts/comsalt_rebound.py": {
+      "sha256": "d30082b443dbb39ca218a607e184e2c1987a69f8def4d212ab07003febd4a712",
+      "bytes": 50047
+    },
+    "maple/aeolian/impacts/ejecta_angle.py": {
+      "sha256": "fe7c2ed83aa91f7007381661becc50aee405911ea6051c68326c2fc9b1833ddc",
+      "bytes": 15738
+    },
+    "maple/aeolian/impacts/ejecta_launch.py": {
+      "sha256": "e92fc873a0036c835c9011133f6242a4b54d4abc5af07b0bb8faa69e0f91c110",
+      "bytes": 12003
+    },
+    "maple/aeolian/impacts/ejecta_speed.py": {
+      "sha256": "2413025918eb5d98a58a5a4464edba024151502bb0826d5c5a58654754d93d15",
+      "bytes": 32026
+    },
+    "maple/aeolian/impacts/launch_bins.py": {
+      "sha256": "1ad3147852045e1d53fcb4b52b098ec1d532947045513869ad837d1d957b229c",
+      "bytes": 66056
+    },
+    "maple/aeolian/impacts/rebound.py": {
+      "sha256": "5c7fd258e2ec9c8777f7d5d992b6c5b5b1e3371e02b8f0bece955cbc55921b4f",
+      "bytes": 16212
+    },
+    "maple/aeolian/impacts/remap.py": {
+      "sha256": "439bc76ade30158dde3d9b38fe87c8ba9a743f7dd1b223a2896c614b02f9a787",
+      "bytes": 22039
+    },
+    "maple/aeolian/impacts/response.py": {
+      "sha256": "6034fe2ddefcb68dca260e9cacc2ddf94dcd5cb77781e37f08dfffbd65749da8",
+      "bytes": 53312
+    },
+    "maple/aeolian/impacts/splash.py": {
+      "sha256": "8f7b7004b555fef5a4764e5b1fe5862f4f866e71c0bbe51ec17750ad8f51017e",
+      "bytes": 26764
+    },
+    "maple/aeolian/impacts/validation.py": {
+      "sha256": "1883e4513bcd2d2c863b84b485da9598c39e709410558b7eb58970026477ce20",
+      "bytes": 23184
+    },
+    "maple/aeolian/launch_direction.py": {
+      "sha256": "22bc2417b1bc7aa1bb1564756e1a20d17aa21dadcd12f257f20df9b6aec0fcf5",
+      "bytes": 30285
+    },
+    "maple/aeolian/regional_slope/__init__.py": {
+      "sha256": "045a9a20e8d66d48870b4468629510c21cb4ab297ea73a6bc6fa9bdef0ea69d1",
+      "bytes": 331
+    },
+    "maple/aeolian/regional_slope/escarpment.py": {
+      "sha256": "a3b834845965e74c9905d749d75b009abea6c3f0d33ab64a7582745253678c55",
+      "bytes": 39167
+    },
+    "maple/aeolian/regional_slope/frozen_diagnostics.py": {
+      "sha256": "94016efea761b2dc12481ec80a8800cc3a7d65d6732214b6d893a42cbd814367",
+      "bytes": 12250
+    },
+    "maple/aeolian/regional_slope/log_profile.py": {
+      "sha256": "5bed5513586236cf433dbca4905e6693e9740726413931a0b05ee056326b35bf",
+      "bytes": 11321
+    },
+    "maple/aeolian/regional_slope/padded_residual.py": {
+      "sha256": "a22640bac5c5a6b4f1617c08ae5992afab53c2be8e4d647718a0a2f8d22fe9d7",
+      "bytes": 54025
+    },
+    "maple/aeolian/regional_slope/padded_residual_diagnostics.py": {
+      "sha256": "36468d98be0db43ea1771add286622fcfd8033fc8a1c2dfc77079ddd4e1654f5",
+      "bytes": 16151
+    },
+    "maple/aeolian/regional_slope/plane_relative_separation.py": {
+      "sha256": "5a6c29038043ba9a6801fe48692fd11be79d8e995778a406e0a3c1367447cf91",
+      "bytes": 30456
+    },
+    "maple/aeolian/regional_slope/plane_relative_separation_diagnostics.py": {
+      "sha256": "28e246ad129ad3ca582f3e4de324d08a94ba311cfcd2e5fb019cc0b2c133ff70",
+      "bytes": 21698
+    },
+    "maple/aeolian/regional_slope/runtime_admission.py": {
+      "sha256": "b665569a95e52c8cb7e4a07b7384c4ec474fe35d743a77ec3a2b194dbbb63c49",
+      "bytes": 34043
+    },
+    "maple/aeolian/regional_slope/runtime_modifier.py": {
+      "sha256": "50a9136443e249de6e911e1d1d78987d031ff97fd755c3fac8525d9ecf5a082d",
+      "bytes": 49142
+    },
+    "maple/aeolian/regional_slope/status.py": {
+      "sha256": "7a1661c72a7f198e08e936297486bf03ef786f532987a6261c7fa6c54656a12e",
+      "bytes": 7892
+    },
+    "maple/aeolian/regional_slope/world_frame_separation.py": {
+      "sha256": "3cc3c22347e6d08c242c412c4304e83177bbd4729a97cbab6217568619db95dd",
+      "bytes": 18328
+    },
+    "maple/aeolian/regional_slope/world_frame_separation_diagnostics.py": {
+      "sha256": "6fd7e7207f2feb4a8047542203a4f549b280fc438148a4a60658e23474c30447",
+      "bytes": 17729
+    },
+    "maple/aeolian/scheduler/__init__.py": {
+      "sha256": "847470fa33f05306731b6cd732927b2283aa8ad294dff702865e81ea9bcc8548",
+      "bytes": 2702
+    },
+    "maple/aeolian/scheduler/accounting.py": {
+      "sha256": "ed56fa36b4b6dbd3d7fd11aac52328cd56e82ffa6214a601d16f69518fac8fa7",
+      "bytes": 125355
+    },
+    "maple/aeolian/scheduler/accuracy_selection.py": {
+      "sha256": "eae1b7c7fb49eb52e3befb99426c0325696802cabbfeb2583a85d5a0be75049a",
+      "bytes": 14928
+    },
+    "maple/aeolian/scheduler/accuracy_timestep.py": {
+      "sha256": "1e616689c28c8e81521b055ff73f737c55649652e0ba389c1f4a2efec95b9d23",
+      "bytes": 14935
+    },
+    "maple/aeolian/scheduler/active_layer_composition_cache.py": {
+      "sha256": "549bd54ca7139a51c67ffb188686df44ccea90dae3698dadd9f18f7cc65ea872",
+      "bytes": 58670
+    },
+    "maple/aeolian/scheduler/baseline.py": {
+      "sha256": "9d247127fefbe4fc1f4597d49107dab79bd98372bb69e825ca2eda1076df990e",
+      "bytes": 47132
+    },
+    "maple/aeolian/scheduler/baseline_continuation.py": {
+      "sha256": "3fccb5009a109ada8d4145b455af12f13a5ab740da5a91375c54636fb2420a7e",
+      "bytes": 57127
+    },
+    "maple/aeolian/scheduler/baseline_continuation_codec.py": {
+      "sha256": "f8e993e552e5677462b5e537f76f38b187ea3d49eeef41d73e5b6748f873e00b",
+      "bytes": 34973
+    },
+    "maple/aeolian/scheduler/block.py": {
+      "sha256": "cd694b02caa1cf8b4b21df983909d937785596daae9b3c988b1939a4881ab156",
+      "bytes": 40428
+    },
+    "maple/aeolian/scheduler/cadence_envelope.py": {
+      "sha256": "157f3d020c87ac8d33bd767d1f9a0e8fc2a2b99dd4f635154aeff011587d2f48",
+      "bytes": 18627
+    },
+    "maple/aeolian/scheduler/calendar_construction.py": {
+      "sha256": "f28190743449bea4c65874c3139c7d68877e60aac83995eb0666d6c8cf772169",
+      "bytes": 29576
+    },
+    "maple/aeolian/scheduler/commit.py": {
+      "sha256": "cc72172f741beb36f381fc48eb601dc9f2165571552ef80701bf939d9bc00caf",
+      "bytes": 41541
+    },
+    "maple/aeolian/scheduler/coupled.py": {
+      "sha256": "da804f8ee651d3d94cf405b23b3de3b359303c25d214ef98bbaa08b1d38b4cf4",
+      "bytes": 123524
+    },
+    "maple/aeolian/scheduler/dormancy.py": {
+      "sha256": "4479148f09106e173f47366062f9956026de388b0a101b984b291d4d9e90ec6a",
+      "bytes": 60822
+    },
+    "maple/aeolian/scheduler/finalization.py": {
+      "sha256": "0730de11c1666d5bd7e900b1cd824887ee849e023c3eaae80223cd164ee2e048",
+      "bytes": 70579
+    },
+    "maple/aeolian/scheduler/flight_support.py": {
+      "sha256": "c4398cee020e7d000651e538f3474afe40213786f4d4013c8d9cdc16866219bc",
+      "bytes": 29096
+    },
+    "maple/aeolian/scheduler/fluvial.py": {
+      "sha256": "8f197037990c2960fc819dbc875d43ae642dee66cbb5bde501624ea1d697553e",
+      "bytes": 12548
+    },
+    "maple/aeolian/scheduler/invalidation.py": {
+      "sha256": "630d6ef919c73d0d28e01ecb72af5822d10d5f73daa3a66db16fb66815cc1033",
+      "bytes": 7080
+    },
+    "maple/aeolian/scheduler/physical_checkpoint.py": {
+      "sha256": "886e69569c628f7e16fdff87941ba0633b59b79c292a6b24c071cf5a8c71c9bb",
+      "bytes": 57503
+    },
+    "maple/aeolian/scheduler/record.py": {
+      "sha256": "dbd6ec267e20004a5346ffdd868fdc406c0df85ff548a548978d3450e86b7b8a",
+      "bytes": 15178
+    },
+    "maple/aeolian/scheduler/regional_slope_wind_cache.py": {
+      "sha256": "cda9a65d5f7b9ec690739b0634ba874f9193adf7ea9d803140e05776aa482add",
+      "bytes": 38876
+    },
+    "maple/aeolian/scheduler/restart_accuracy.py": {
+      "sha256": "1dc8ed12ab0b478645a82db3cde325947f2e4970766633ebbd750394ee3c035a",
+      "bytes": 8493
+    },
+    "maple/aeolian/scheduler/slice_trace.py": {
+      "sha256": "d46ba0506e6b628ef56b66943d4ee2a7e645cc7b57c1a60fe643ce1b240003af",
+      "bytes": 14598
+    },
+    "maple/aeolian/scheduler/snapshot.py": {
+      "sha256": "d1caf000927dec6209b1156344fc5558bd526ca08b33ca4871c2f412f3643e6e",
+      "bytes": 83733
+    },
+    "maple/aeolian/scheduler/state.py": {
+      "sha256": "51379abfec4cce6fd2f84f819118132789f8281281cba0c060d29e25728e8d71",
+      "bytes": 73028
+    },
+    "maple/aeolian/scheduler/state_validation.py": {
+      "sha256": "ea2b5be194efb818995d01aa3494f0a02198ac3e70773838ad78fcb367f92de4",
+      "bytes": 68813
+    },
+    "maple/aeolian/scheduler/stationary_continuation.py": {
+      "sha256": "7b757a322dc220cd39fd446dc10993e0b160cba5632a0b984c579209af31c35f",
+      "bytes": 89124
+    },
+    "maple/aeolian/scheduler/topographic_wind_cache.py": {
+      "sha256": "7af486a9d6f70996c9d716a63cce999c4777950f53524a973cb331e69fa45e81",
+      "bytes": 70364
+    },
+    "maple/aeolian/scheduler/validation.py": {
+      "sha256": "0a91fb83ef68ad4a14816fa4c74a4eb2007bc61d7636e60abd42b5bef62ee007",
+      "bytes": 48529
+    },
+    "maple/aeolian/scheduler/vegetation_cache.py": {
+      "sha256": "9f1ef6a0100a5bfa29753376a5b538f783a40d0bb142678182dd5281870c0117",
+      "bytes": 18265
+    },
+    "maple/aeolian/scheduler/wind_change.py": {
+      "sha256": "82976383f81987b7a431b06e23aa592b5c6ac13edde05ba9aaf57861234c0e64",
+      "bytes": 3391
+    },
+    "maple/aeolian/scheduler/wind_modifiers.py": {
+      "sha256": "88c7b825c268a868c59b6075fb4fc2de25e8ad5ff85c5e8731ce6b01c740f800",
+      "bytes": 11141
+    },
+    "maple/aeolian/scheduler/window_admission.py": {
+      "sha256": "6923907cc0d7772412f9b4838c91a3411029043cfe9308900f7d957e249bf4fa",
+      "bytes": 26533
+    },
+    "maple/aeolian/scheduler/window_evidence.py": {
+      "sha256": "f9654e30d886a3bc06c2386c0c96b2b3bcae4ce10f49c0c660966abd00e5d5bc",
+      "bytes": 61343
+    },
+    "maple/aeolian/scheduler/windowed_baseline.py": {
+      "sha256": "e809e45a7f9a7c1c3df7ed63e6400cb979799e4166f9e40a5087ef1f5026759b",
+      "bytes": 55601
+    },
+    "maple/aeolian/scheduler/windowed_device.py": {
+      "sha256": "3ff277088f9d888e6cb4c3bb8ce673d049f42f2cb6112005af49ee418ec0a133",
+      "bytes": 115117
+    },
+    "maple/aeolian/scheduler/windowed_finalization.py": {
+      "sha256": "82a688e8c2b61ecc8a22ecfbb89653ba35bf011ec7da8b64167076e648eff43c",
+      "bytes": 24239
+    },
+    "maple/aeolian/scheduler/windowed_record.py": {
+      "sha256": "15cd819d38297c9dd8d643d681d592d6cf5ac32836d6df1ca2d7ac42d82c8a53",
+      "bytes": 88118
+    },
+    "maple/aeolian/topographic_wind/__init__.py": {
+      "sha256": "0b9a019faed0564f912d5790cefbb3740578f76bdb70a58a47425af93966e131",
+      "bytes": 3764
+    },
+    "maple/aeolian/topographic_wind/apply.py": {
+      "sha256": "4819de685a31c3ccf41e6bca043832ca2d3f9ab6a03936418afbd90870c3df5c",
+      "bytes": 22624
+    },
+    "maple/aeolian/topographic_wind/continuation.py": {
+      "sha256": "7bc423b24ea86ce0f707a39c578f42fbc93af465b694d48fab812a12dc5d529d",
+      "bytes": 25883
+    },
+    "maple/aeolian/topographic_wind/diagnostics.py": {
+      "sha256": "6c67d717926a795a93a43c8b85f5164b56c10cdb5aa00a8811d05d5b1ab39178",
+      "bytes": 27367
+    },
+    "maple/aeolian/topographic_wind/separation.py": {
+      "sha256": "36704a1cc42154b09de2ba5e20d2c6cea060e8555e15770b7bafe4f437c01903",
+      "bytes": 297793
+    },
+    "maple/aeolian/topographic_wind/separation_frame.py": {
+      "sha256": "484f2b3dda9862654b0f60515e0b8504ae848e00ef86a3bc605868bfed49da7f",
+      "bytes": 12372
+    },
+    "maple/aeolian/topographic_wind/transfer.py": {
+      "sha256": "1723d4c61e6aef5c992f2e7f9cbf1f86896c7e584ebea4ef8535bc950e8db7c0",
+      "bytes": 64085
+    },
+    "maple/aeolian/trajectories/__init__.py": {
+      "sha256": "75beb25ef21db870ad33d45f03015105724259341f96ab1826c07366f4307211",
+      "bytes": 188
+    },
+    "maple/aeolian/trajectories/drag.py": {
+      "sha256": "96ed5a79c00b162d7ac5653d55f89add5ac4a9d4c6fb317bfd002e1cb04c3801",
+      "bytes": 45708
+    },
+    "maple/aeolian/trajectories/live_wind_advance.py": {
+      "sha256": "0e8faa6c2b2d852e17aab66d0c7cbbcabe5de041f4fbfe3213b846558482ce2c",
+      "bytes": 15728
+    },
+    "maple/aeolian/trajectories/quantile_bins.py": {
+      "sha256": "f4b0d97f4cfd1c1454552630aa1e314b54573a7a6e64ab4195fc092080058264",
+      "bytes": 12938
+    },
+    "maple/aeolian/vegetation/__init__.py": {
+      "sha256": "dea42324fb6c4ed8cc7c0dd89c99d92788f6a870e836fda29a97f1678524fe98",
+      "bytes": 4254
+    },
+    "maple/aeolian/vegetation/apply.py": {
+      "sha256": "a84f3b1b6592dc87c8595d37041e79cf37e7ee58dd6d222ec593c3427bed0b98",
+      "bytes": 18416
+    },
+    "maple/aeolian/vegetation/diagnostics.py": {
+      "sha256": "d1553ce3ca93c93dbe37b4b237a47ab358a83a1c4cd5d1a49374608496daeff9",
+      "bytes": 11083
+    },
+    "maple/aeolian/vegetation/geometry.py": {
+      "sha256": "fdaa06c993ecd9c385a0b5a56a81c71e35f7218fd268e3d396f3859fbf801364",
+      "bytes": 11220
+    },
+    "maple/aeolian/vegetation/validation.py": {
+      "sha256": "ed39bc1b22545ed0c3bcf2d4e46fe6fbcb2174a53ec58bf5b1acec78726d2f4b",
+      "bytes": 16789
+    },
+    "maple/aeolian/vegetation/wake.py": {
+      "sha256": "160a66cb0da26a9c12556173870166d35a6f056520e4b1f413afc49f6e794d87",
+      "bytes": 11812
+    },
+    "maple/aeolian/vegetation/windward.py": {
+      "sha256": "42932d9c5ad6f7903af5b41d2530900358190593fde0e0b998a1b6136f0914ef",
+      "bytes": 10184
+    },
+    "maple/case_tools/__init__.py": {
+      "sha256": "6b913ebc2586440b41d8e0baa4516ce869041b485d7418bdc014adc82a20c9d1",
+      "bytes": 3899
+    },
+    "maple/case_tools/analyzers/__init__.py": {
+      "sha256": "ef0d9a6b208fcb83a0dd8a3c8bf169db0e244e69369b497bbb344a5ffa8affbd",
+      "bytes": 2120
+    },
+    "maple/case_tools/analyzers/conservation.py": {
+      "sha256": "373ffcdfc09c5f7ddfb13a745f1ad2ed45885653aceca107b2b30844d612be5e",
+      "bytes": 2954
+    },
+    "maple/case_tools/analyzers/emergent.py": {
+      "sha256": "bf85969b284af8e77f3734f3f9a746e6d9903dd9592e2f63300f44fd692167f2",
+      "bytes": 70350
+    },
+    "maple/case_tools/analyzers/fitting.py": {
+      "sha256": "8900e528a0464021e1d87867d45473293618d9ef3a8c14baba113c65319cfb08",
+      "bytes": 36695
+    },
+    "maple/case_tools/analyzers/flux_profiles.py": {
+      "sha256": "0ffc55ae88ad262cd55a6bb1a271602b437da812010e54ccbbc1a2b43ac74e0e",
+      "bytes": 13577
+    },
+    "maple/case_tools/analyzers/geometry.py": {
+      "sha256": "343f18e255bded9d71e7df55a0b56c2ae7b1fae213a714569af30c49012ef930",
+      "bytes": 4888
+    },
+    "maple/case_tools/analyzers/mode_comparison.py": {
+      "sha256": "ecae98b355946cd159e511b5ff2dd39eb4d97192a0b5a61480346f8b655b56fb",
+      "bytes": 14633
+    },
+    "maple/case_tools/analyzers/results.py": {
+      "sha256": "bf0d4bc3762faf90d8fb717cc25f60ca758162c22c8abe5e9638e43e74484fbf",
+      "bytes": 16874
+    },
+    "maple/case_tools/analyzers/splash_yield.py": {
+      "sha256": "288e25ee5ccc500605d2f15e9f50b988c10bc81fa8182d3f5641425382e01bbb",
+      "bytes": 16471
+    },
+    "maple/case_tools/analyzers/threshold_sweep.py": {
+      "sha256": "1d1806f9b6e5949083034f9a51ba04e175f9d53aae3d4a4f5e2088c1aedabb04",
+      "bytes": 21867
+    },
+    "maple/case_tools/compilers/__init__.py": {
+      "sha256": "a2a9f277808ec19bcf402a21e46fd3adab82666eaaf507d0957c239eacf87c83",
+      "bytes": 473
+    },
+    "maple/case_tools/compilers/case_compiler.py": {
+      "sha256": "1096b291e9da32ee2ac30409bb484e8cd23e76b0e33680df5839bd4a25e32481",
+      "bytes": 182729
+    },
+    "maple/case_tools/compilers/voxel_allocation_preflight.py": {
+      "sha256": "2d76402265555760ff62e9bb764346d02c79b04203333807f87c5e850184ace5",
+      "bytes": 8319
+    },
+    "maple/case_tools/generators/__init__.py": {
+      "sha256": "03a3c20e6d5ba9167eabe41881e930df1a4623bb639bc843075168f834777b39",
+      "bytes": 324
+    },
+    "maple/case_tools/generators/analytic_surfaces.py": {
+      "sha256": "d6962b52451310fc9228b3a0c86695b442065ed2a3c37fab96ecdfe7caade93d",
+      "bytes": 6869
+    },
+    "maple/case_tools/generators/availability.py": {
+      "sha256": "8b2506acc86c22e747bbdd8ced06fa086dc0d4c19d824d96af8aa72ea46173cd",
+      "bytes": 4312
+    },
+    "maple/case_tools/generators/coordinates.py": {
+      "sha256": "e7128bb94ec5018218b045a28c7da810bc27d81fe3124d586112463d471f243c",
+      "bytes": 1615
+    },
+    "maple/case_tools/generators/dune.py": {
+      "sha256": "da8bd534a6e23df13601ad6e1b9c75a0c72a196180cff0c4863d9cf9d1d0b483",
+      "bytes": 5703
+    },
+    "maple/case_tools/generators/dune_forms.py": {
+      "sha256": "ae0507e0f62ceda5523eb9781643d54b54fd34f3d1b309fe3a58af8d24442229",
+      "bytes": 14180
+    },
+    "maple/case_tools/generators/fields.py": {
+      "sha256": "0c49f0d25fde18d66e2b49a8bc04bdbfa4076b202b937faf0f7d25b4d40530b9",
+      "bytes": 11514
+    },
+    "maple/case_tools/generators/fixed_base.py": {
+      "sha256": "f58113da35fa46ee0194632a5b9045ce09ccb54cf74178cd6a5a88cd80b5856c",
+      "bytes": 30332
+    },
+    "maple/case_tools/generators/fractal_field.py": {
+      "sha256": "c2f482528dfc70583871c15ace19f1fdf48e0244be822beba95d97d3a4d5f065",
+      "bytes": 5222
+    },
+    "maple/case_tools/generators/grain_mixture.py": {
+      "sha256": "f397d3a18daa96d7e1e66e07c23bc6b92af5bd3f76d530f8c86eb821f1692610",
+      "bytes": 5717
+    },
+    "maple/case_tools/generators/mobile_seed.py": {
+      "sha256": "6d6ccceeb8d37044713810117d96f56f74c1b29fc0a06d5ed34b2772a022ec55",
+      "bytes": 12553
+    },
+    "maple/case_tools/generators/point_processes.py": {
+      "sha256": "d0185dbf1f45875a54357270cf3c89125b8494bf45e5737a3fa630a43f5fb4d0",
+      "bytes": 7074
+    },
+    "maple/case_tools/generators/random_field.py": {
+      "sha256": "a87dda5a3b17da91ba0a91c7efd35ed12095e5d399be49ca1af588dbaf377c80",
+      "bytes": 7699
+    },
+    "maple/case_tools/generators/regional_plane.py": {
+      "sha256": "8bd13edb8cc11475b211b197ad49d5f29cca961e54479529afac7c898baf8956",
+      "bytes": 17833
+    },
+    "maple/case_tools/generators/seeds.py": {
+      "sha256": "160009795f1f2931ee0865a409766296cd97e8a7f29f638df74083c2cd64582f",
+      "bytes": 3611
+    },
+    "maple/case_tools/generators/stratigraphy.py": {
+      "sha256": "69b18ae9442935d212e5879b654ba82f1f8575da6970db055278b52c6d0d9e80",
+      "bytes": 18416
+    },
+    "maple/case_tools/generators/synthetic_bases.py": {
+      "sha256": "c0a7bb477b4a8e2b6f6d2866f40ef40b776a439f85f1ceaaac7508ca27f607e0",
+      "bytes": 8220
+    },
+    "maple/case_tools/generators/threshold_modifiers.py": {
+      "sha256": "7e74635c10ea2c2d0c65c6125953b0e9fee7faa46db7b1ab49298335b8c80cef",
+      "bytes": 6115
+    },
+    "maple/case_tools/generators/topography.py": {
+      "sha256": "0eec3ca59760556eb7323bc7394ffc72e895ee37d12ff837000f3f0ee2eeb3d6",
+      "bytes": 18819
+    },
+    "maple/case_tools/generators/vegetation.py": {
+      "sha256": "b636885aa9eb4485e6ae2bbb48a328e6d85e6650ec9925c9d880d802cc1fc4b2",
+      "bytes": 18291
+    },
+    "maple/case_tools/importers/__init__.py": {
+      "sha256": "bf9b92871f3ce46b52fec5fa97464eda9da05412c290d30e548b96cbf590fdc9",
+      "bytes": 2324
+    },
+    "maple/case_tools/importers/field.py": {
+      "sha256": "7469e38563f221c841f0b14dd830f1455b45a8acc0b93f99814f708e121cedb8",
+      "bytes": 7946
+    },
+    "maple/case_tools/importers/forcing.py": {
+      "sha256": "2dd60005f3eb99369ad6833767d71990eeeb3fb9bbd6ecc31c063b1a61ae4bbe",
+      "bytes": 12493
+    },
+    "maple/case_tools/importers/leaf_vegetation.py": {
+      "sha256": "0941f7322bc256db9eeeb04d3b2478d3a22b748c0ed2ff93c7c2edc68a4aee3f",
+      "bytes": 67545
+    },
+    "maple/case_tools/importers/raster_types.py": {
+      "sha256": "06d3d97aaa8ac6a59d9d8a09ea28bb280955571a435812ed5458603d421f3c0c",
+      "bytes": 6801
+    },
+    "maple/case_tools/importers/readers.py": {
+      "sha256": "4cf74976ccf44fddd08553a1942f672f6251ea5424b9c9132f7e7c0221df11a7",
+      "bytes": 34883
+    },
+    "maple/case_tools/importers/resolve.py": {
+      "sha256": "06426723bda97bae56c4c99e9de3897dfa370b44fcf8fc31ef2c787f93d67859",
+      "bytes": 13646
+    },
+    "maple/case_tools/importers/resource_census.py": {
+      "sha256": "9d31f4a85664934aa892eff3cebe6f55f4e22664a0af0f401e4a02583d10ba3e",
+      "bytes": 25029
+    },
+    "maple/case_tools/importers/sediment.py": {
+      "sha256": "94dfbadfd854d14bdb22e259e414460972abae9b2dc01737a7da681e09c39b5b",
+      "bytes": 24061
+    },
+    "maple/case_tools/importers/vegetation.py": {
+      "sha256": "3aa0b1afd815ae2ee114740464ac94a7c13bc001dd7caec47667d1f35f419166",
+      "bytes": 15802
+    },
+    "maple/case_tools/observation_operators/__init__.py": {
+      "sha256": "36e14e004a5af770cfe054e336e1d0c03c0fcbbbf4870113c9ab0dbdc76fc0f3",
+      "bytes": 1713
+    },
+    "maple/case_tools/observation_operators/support.py": {
+      "sha256": "cb8383f8b9a3c039a7aada5313f84a2e176187f86a3faead4cc935b6e09fff12",
+      "bytes": 26607
+    },
+    "maple/case_tools/provenance.py": {
+      "sha256": "b6a3b7af0f7fe9ca0dd72bef8c03d522ac5d080d9b0828bdd69dbf23c78de84d",
+      "bytes": 55565
+    },
+    "maple/case_tools/regression/__init__.py": {
+      "sha256": "8860838216ce97908d187c1c5caaa9bc8a39069a80da135f165924b3a8adc8c7",
+      "bytes": 1107
+    },
+    "maple/case_tools/regression/reference_cases.py": {
+      "sha256": "305bec8b259633a90137eea9b9529927d4ac79caf4b2489b3f40f4517613d6ef",
+      "bytes": 2969
+    },
+    "maple/case_tools/report.py": {
+      "sha256": "6b5eedee559fb15bb9d8936c8a7cfd78f88e199afeb1e06126c8b2eb07145f84",
+      "bytes": 13471
+    },
+    "maple/case_tools/scenarios/__init__.py": {
+      "sha256": "e382e2ac3d361a09b510f0f2138358052e62a134841d7640085277db39f249f9",
+      "bytes": 1667
+    },
+    "maple/case_tools/scenarios/definition.py": {
+      "sha256": "1f2ab91b5a098931577d1ab28c8c8cb0a1b4a216b857694ada2cc881700e7d9a",
+      "bytes": 3439
+    },
+    "maple/case_tools/scenarios/diagnostic_runs.py": {
+      "sha256": "deac881b5998b38b3bb9d27f170cd2b620232c4f683b7f78891bc7b0ebd29780",
+      "bytes": 34544
+    },
+    "maple/case_tools/scenarios/diagnostics.py": {
+      "sha256": "674e4664d0ddc8b8042bbbfba383dc622674f1aa9504dc706f37c4749ec36409",
+      "bytes": 34345
+    },
+    "maple/case_tools/scenarios/runner.py": {
+      "sha256": "c8de6d5f000eb79e160142bdc8596d0e21c19272ffcb24acf23b51d4d8ac078c",
+      "bytes": 1511
+    },
+    "maple/case_tools/sweeps/__init__.py": {
+      "sha256": "458f9674f9ad495a12a050d488134ac93cbb00b554a66da89a47e44e86120ce2",
+      "bytes": 738
+    },
+    "maple/case_tools/sweeps/run.py": {
+      "sha256": "5c48d0ca77326ec85ac00747441d014f70c0762973198c20a213e3ed70af52e8",
+      "bytes": 32576
+    },
+    "maple/case_tools/sweeps/spec.py": {
+      "sha256": "61e79b261070bb2251882f6a26e6bf2a5518f4f5545741f3223991dd2b28fcad",
+      "bytes": 13114
+    },
+    "maple/case_tools/transforms/__init__.py": {
+      "sha256": "37390e8feff6a5f293327eecd8e14643b25f59bbd00ce9786885f8214ea610ee",
+      "bytes": 1814
+    },
+    "maple/case_tools/transforms/combine.py": {
+      "sha256": "0bb3d909734b59e7a2e023197598c8ba4710e2c4563c9ffa0da8bf1f37f00ae9",
+      "bytes": 2935
+    },
+    "maple/case_tools/transforms/empirical.py": {
+      "sha256": "a59608f29bda182d332d8f0eea313b52c47de1d8ba738e36fc13ff2300d452a8",
+      "bytes": 64162
+    },
+    "maple/case_tools/transforms/log.py": {
+      "sha256": "45bdf15736cce004fb3bfd8eaa98401c3c26456188626b8bc9df8a595883bd19",
+      "bytes": 7097
+    },
+    "maple/case_tools/validators/__init__.py": {
+      "sha256": "0816ec7804b309b6bac51b31ac0f7a472369725a8488fc9b83963cfcbcc7f300",
+      "bytes": 330
+    },
+    "maple/case_tools/validators/compiled_case.py": {
+      "sha256": "cf9bdedb30a311f5b98265a50cb7abddf0c82698018f845d3fadcd1fc709f9fb",
+      "bytes": 44421
+    },
+    "maple/case_tools/validators/imported_case.py": {
+      "sha256": "6c3cd36f9420c5da06d0bd5bbefe6e0d9a3020d04b6ec55900643a58c34f1086",
+      "bytes": 11547
+    },
+    "maple/cli.py": {
+      "sha256": "26b0e495d392b5fc3f16578c8e73315261c8e3000e0f5d2069d4de47bc860fd0",
+      "bytes": 1164
+    },
+    "maple/config.py": {
+      "sha256": "3c8477925f8ab2ec710fc8d4434a298516f83327c134bfa46d9bb5ca1d59aabe",
+      "bytes": 1503
+    },
+    "maple/core/__init__.py": {
+      "sha256": "8fbf67082d2dfa651ede095338abb9eb9b840fb8ac3c3698755de44e3acf0e88",
+      "bytes": 84
+    },
+    "maple/core/backend/__init__.py": {
+      "sha256": "541bbae44a1656a7dbc138cf72bbce229bd668cbd6afdc7972ee992be0e5ccf4",
+      "bytes": 3949
+    },
+    "maple/core/backend/arrays.py": {
+      "sha256": "475a210ced97c01ab5e7d5f661886e858f3e65f8c20d11503d7675bb1e8ca26e",
+      "bytes": 19975
+    },
+    "maple/core/backend/cell_reductions.py": {
+      "sha256": "f7816374c1848274b43be41a3d090745d1b75e268303b18c40b0bc1fbfb5d65c",
+      "bytes": 6487
+    },
+    "maple/core/backend/deferred_checks.py": {
+      "sha256": "6f64a03776a4856d668f72d9f94e168f62fdd18055080344099f09dcfa843c7d",
+      "bytes": 4481
+    },
+    "maple/core/backend/depth_class_reductions.py": {
+      "sha256": "d3b5bc7754b1d8fe8563309441b725ccbc231747381f2d839e2a154b54396520",
+      "bytes": 63489
+    },
+    "maple/core/backend/leaves.py": {
+      "sha256": "9ff0b743bcfad53daf8ab45480e43b1fd7dba14885322c093affa57dab0ff623",
+      "bytes": 8103
+    },
+    "maple/core/backend/namespace.py": {
+      "sha256": "9420904454d5d203e2e115d7051012c01a1639c69b90402b79c490301d38c787",
+      "bytes": 10657
+    },
+    "maple/core/backend/numpy_pairwise_order.py": {
+      "sha256": "a52ad515b1076309e67468a00e4ae6ae0d5bf193d6b23f786ecf4ae26b0927e4",
+      "bytes": 4446
+    },
+    "maple/core/backend/prefix_cell_reductions.py": {
+      "sha256": "80a0c943e5456cff530a438685adf1340d29736a974718c471c2439fe8bed00b",
+      "bytes": 68616
+    },
+    "maple/core/backend/reductions.py": {
+      "sha256": "16892f0c779768b4d21610fc5163132fac55c58357eeaef933bfaf961a880218",
+      "bytes": 5621
+    },
+    "maple/core/backend/scatter.py": {
+      "sha256": "a8590c4e4c5d6e53b168ca2ff7bb3b18c27ea94901a2adf571e16fbee7e9615a",
+      "bytes": 40239
+    },
+    "maple/core/backend/selection.py": {
+      "sha256": "af2e3b01ec50a1ef52f6fb1eac5043ce0b0c259c68872e0058355f407694cb98",
+      "bytes": 16633
+    },
+    "maple/core/backend/transforms.py": {
+      "sha256": "8ce2cf5cd61f196bc1e38de4f0dcc059075bbede626ddf51015c8321e570e76c",
+      "bytes": 9048
+    },
+    "maple/core/backend/windowed_domain_reductions.py": {
+      "sha256": "c87794c6e32c6a92d57c395451a267560a0653c87a78daca74887b5f28069619",
+      "bytes": 39659
+    },
+    "maple/core/boundaries/__init__.py": {
+      "sha256": "b7b45cb5be9a18fa84a7bd60f86965f347bd495cff2daec2bc16d7b73c24d6d7",
+      "bytes": 2961
+    },
+    "maple/core/closure.py": {
+      "sha256": "5d448db02500cfa32bd1f79c078c97d420d52d83d0264f559ad206278f931baf",
+      "bytes": 10288
+    },
+    "maple/core/optimization_switches.py": {
+      "sha256": "22943033eb2d913b8edb7f3a5340128d84119f233de4fa87ab703ab483aea6d1",
+      "bytes": 5065
+    },
+    "maple/core/parameters/__init__.py": {
+      "sha256": "dc58091ec5ff3bde152afb83c17fca00a99e226f25778a3efedb22ed66df4626",
+      "bytes": 79501
+    },
+    "maple/core/parameters/aeolian_process_mode.py": {
+      "sha256": "339b50202cf31f01369d1113938b1fc45205ca0755ce8b1d23526ffa9031001e",
+      "bytes": 4964
+    },
+    "maple/core/parameters/aerodynamic_detachment.py": {
+      "sha256": "8a79a6e1f2e267343f4301b5555f9879a0e6ab013b23eb10ce6801eb585c1ec1",
+      "bytes": 4502
+    },
+    "maple/core/parameters/avalanching.py": {
+      "sha256": "992e92353039983e5dd892a39a532afaa3478928c29ce84828f79a8a2a209dc2",
+      "bytes": 9962
+    },
+    "maple/core/parameters/case_import.py": {
+      "sha256": "0d8a039ef5ef79210d38dd9cc4b4f424a5b881393a2e1c3179e79045e3c50ff1",
+      "bytes": 73090
+    },
+    "maple/core/parameters/case_initialization.py": {
+      "sha256": "59cb40c2f93ff726d3c9d26d3fbfa4d976b7769c97d4c876cf0f2834bffed1af",
+      "bytes": 153189
+    },
+    "maple/core/parameters/detachment_source.py": {
+      "sha256": "89f160e9e951bcdc060457e2dc53bd400764e1bac8942a346eb3a9f082e571d9",
+      "bytes": 2826
+    },
+    "maple/core/parameters/dormancy.py": {
+      "sha256": "497d9850452ad4303bf2bed9f0f9fa432fb1ba627e4e9cc24fa6b90c6772f5fa",
+      "bytes": 2137
+    },
+    "maple/core/parameters/execution.py": {
+      "sha256": "509e411cfe22d7c9a470ee96ec3850f52b01e671e0882a32322d81858118047a",
+      "bytes": 5547
+    },
+    "maple/core/parameters/fixed_base.py": {
+      "sha256": "463acb03a721692c4003b9bf04c14b5413320f3288c4e3688665a88c63d7ba34",
+      "bytes": 18095
+    },
+    "maple/core/parameters/flow_separation.py": {
+      "sha256": "025e18721070edefdac338f5bb83e649bcd0da485868c47c2b23c2d91fb33e5e",
+      "bytes": 41471
+    },
+    "maple/core/parameters/fluid_threshold.py": {
+      "sha256": "aff1120ac986161377e48b39a03e9e54bc94d6d97775afacf88ce6d705500d6c",
+      "bytes": 11305
+    },
+    "maple/core/parameters/geometry.py": {
+      "sha256": "5c3ae0143c682a19755ca740b772b506f6f527ff5bca916b7819080e14f4b348",
+      "bytes": 8547
+    },
+    "maple/core/parameters/grain_classes.py": {
+      "sha256": "f8b4642cbcfe3220f9d28a17ceb986fb13d7ad801690f3d3e9ee2522e0e506e8",
+      "bytes": 7250
+    },
+    "maple/core/parameters/impact_rebound_splash.py": {
+      "sha256": "0956a32eed776206a1f342f6c2e881373b6c83b683e5ca5972ee4de782bed9f7",
+      "bytes": 76514
+    },
+    "maple/core/parameters/leaf_vegetation.py": {
+      "sha256": "1b44d4301780dcc84ba0bd84d6f3074b382b12580996ad03cfb18bd893bf031a",
+      "bytes": 13388
+    },
+    "maple/core/parameters/location.py": {
+      "sha256": "6e92747ea3c634e3eb43116ed9747cfc51fc0e40c38bbf5ccc38983fa943cd2e",
+      "bytes": 7508
+    },
+    "maple/core/parameters/numerics.py": {
+      "sha256": "131d7914f7884085cc1c6323d409d99c26b1d42e65cf064d6a7020c9b8e9b3e6",
+      "bytes": 7995
+    },
+    "maple/core/parameters/outputs_and_diagnostics.py": {
+      "sha256": "09496828da949558898c379efcc78b88a825a152faf6dd7ba7465b250240c537",
+      "bytes": 22310
+    },
+    "maple/core/parameters/particle_transport.py": {
+      "sha256": "3d8310bdbec086a84e1629a69873fdc9fc8b0202eae0dc62a635a7583f86d521",
+      "bytes": 17821
+    },
+    "maple/core/parameters/physical_window_admission.py": {
+      "sha256": "e35ed04c3c3fca96f2f791c03dd9ceee577cb3304fbc89baadddc7bb7aac946a",
+      "bytes": 5774
+    },
+    "maple/core/parameters/polygon_geometry.py": {
+      "sha256": "e59150c673e191ef683a98c595cbfa59d8519223e8e80c3f863f3c649194de7e",
+      "bytes": 17723
+    },
+    "maple/core/parameters/prescribed_detachment.py": {
+      "sha256": "65c5df3657bd5f8688ad41f30380df641b955e9f133dc3fd0b96fd8259edbc52",
+      "bytes": 14943
+    },
+    "maple/core/parameters/prescribed_external_shear.py": {
+      "sha256": "93e204d778bf62be19c2d67a27d4fdd4e7c8f209acc53180e651835da767433f",
+      "bytes": 10243
+    },
+    "maple/core/parameters/process_scheduler.py": {
+      "sha256": "41e0bcb37ed3a79d8e5e99497acdb98ae12867050ff82381d7c980ba0b92545a",
+      "bytes": 8367
+    },
+    "maple/core/parameters/reduced_detachment.py": {
+      "sha256": "6db75ade09cfc1a87a5559a0118eb16ffa19e2a9184e2dee85b775058c526478",
+      "bytes": 35499
+    },
+    "maple/core/parameters/regional_slope.py": {
+      "sha256": "176bb4cc8206855de06bb531d7951310650ac1e8a5adde1aab06d3d49ce6bbbd",
+      "bytes": 27586
+    },
+    "maple/core/parameters/restart_qualification.py": {
+      "sha256": "eb78bdb3d666594f441b8c1f1d812e043f305e11554560a3e162f3705c4f8a97",
+      "bytes": 6726
+    },
+    "maple/core/parameters/scalar_fields.py": {
+      "sha256": "c7357de1e9b9d70e7283397fa9abd500445f0879d4dc635230155922a0e3efb1",
+      "bytes": 28211
+    },
+    "maple/core/parameters/stationary_continuation.py": {
+      "sha256": "bcdec4cc887606b9a637450f7616fef642f88c66b1f99497706c8ed0572ec960",
+      "bytes": 15471
+    },
+    "maple/core/parameters/surface_creep.py": {
+      "sha256": "da2ba702c929e164bc1197f957f0b225f2edd87deafc346f21b279718bb1db7f",
+      "bytes": 25312
+    },
+    "maple/core/parameters/time_and_forcing.py": {
+      "sha256": "f5e03a2a23444eb76a7ed4323bbfa3edcf8db3580084fb3e04c9f51be2d9c5d8",
+      "bytes": 1988
+    },
+    "maple/core/parameters/topographic_commit.py": {
+      "sha256": "23312bbf468adfa53f40f0e5f383e5435566b783ceb946b410a53d4e3ee9064d",
+      "bytes": 9874
+    },
+    "maple/core/parameters/topographic_wind.py": {
+      "sha256": "07a6e148ac369b891e9e4351b0d19af89f82018cab7dd9c8b7057f6cac91ebf9",
+      "bytes": 14222
+    },
+    "maple/core/parameters/transport_accuracy.py": {
+      "sha256": "9d7f9c1f3487fc3a385c2d8feeb97ea54a6cc6a50df8b03ac94cec70c52de000",
+      "bytes": 15367
+    },
+    "maple/core/parameters/vegetation_wake.py": {
+      "sha256": "f4ebbe31320e99b704b4a26ca2619a063bb4dc68225d0a3c0f4cc1362531696b",
+      "bytes": 21186
+    },
+    "maple/core/parameters/voxel_growth.py": {
+      "sha256": "19ee75a697495185d0d1182deb9578a88fd0682d8f8004d19309de449a2c438c",
+      "bytes": 5002
+    },
+    "maple/core/parameters/water_coupling.py": {
+      "sha256": "c785a7e043cb767784aa40661217d50b90f1f0d2f1c08cbf615ae2b5465c404e",
+      "bytes": 31911
+    },
+    "maple/core/parameters/wind_forcing.py": {
+      "sha256": "37f156a15052756976c6dd3206edcba7518a827aa1cc3dcb1b99a331e8c8f5dd",
+      "bytes": 13438
+    },
+    "maple/core/parameters/wind_grain_feedback.py": {
+      "sha256": "b3be5b2efd15415fba4afdc069034de3f8da46ab02ae120951b573b546c5226c",
+      "bytes": 41355
+    },
+    "maple/core/parameters/wind_record_extension.py": {
+      "sha256": "1df10387855951cc9792b2a0ab16cdb965fbb81947f68c91a79d63abfe71f8ca",
+      "bytes": 15054
+    },
+    "maple/core/profiling.py": {
+      "sha256": "b68720bf5e235454c501dd99663106e67cc4dae8cf1a4fe261e17d58e7ddb4a3",
+      "bytes": 15116
+    },
+    "maple/core/regional_slope_geometry.py": {
+      "sha256": "5b473b37d0c31d1c7e4f866b06ffa4d78dad1b06dfb7330df3cb5b566544e747",
+      "bytes": 9029
+    },
+    "maple/core/types/__init__.py": {
+      "sha256": "c63b5c0ca21a72225a92d8ef9f0cdf192a07e9d992a4764f40150c729022d453",
+      "bytes": 2384
+    },
+    "maple/core/types/active_layer.py": {
+      "sha256": "07b1a81d54a7f6117ccb3ce26bee9bb9e43cd41ea571f405e5c2f0249c260522",
+      "bytes": 4102
+    },
+    "maple/core/types/cohort.py": {
+      "sha256": "ba68b4d88cd920a67452bd92f7faf68137d696c47b35e4cf9d6ed84b7ec1e278",
+      "bytes": 13962
+    },
+    "maple/core/types/cohort_calendar.py": {
+      "sha256": "8330b98ac4df1d4e3361669ee8adc284957722be88f1ab1720c130add767ab35",
+      "bytes": 19809
+    },
+    "maple/core/types/fixed_base.py": {
+      "sha256": "b7a7c675bc0bc5cbd3045b5f9c038bdc5ac35798e6372e0ad4f418159b921b7e",
+      "bytes": 17978
+    },
+    "maple/core/types/impact.py": {
+      "sha256": "28e5ab0fd1076b34b9e35d684356138af880b237205758d54ae44619bfb57c46",
+      "bytes": 2305
+    },
+    "maple/core/types/ledger_reconciliation.py": {
+      "sha256": "5a309aff3d8f77c47e0bb6ac79ef9bd17d1216bbef907ef98626344035c1d202",
+      "bytes": 17373
+    },
+    "maple/core/types/regional_wind.py": {
+      "sha256": "228d04814288ad4d4079840da919ac4e09cc53a51e79dde63bd6c20f9dc4c73f",
+      "bytes": 5126
+    },
+    "maple/core/types/sediment_availability.py": {
+      "sha256": "c9b713265809c0d1df9db58ee1ebc8f12ac27c4874edc190c609be19f9d067a3",
+      "bytes": 6885
+    },
+    "maple/core/types/sediment_ledger.py": {
+      "sha256": "4e4bd1d2ca8f126ac3224d3233366af8c3d5dee5afeb4b85fd883e3cc8725003",
+      "bytes": 56532
+    },
+    "maple/core/types/surface.py": {
+      "sha256": "9739411b081f496631ebc5eb46ad5dcefec3a6dd4fa49e24cba1b15265620d49",
+      "bytes": 2363
+    },
+    "maple/core/types/threshold_modifiers.py": {
+      "sha256": "13989d899fa1be450f371be17cbf8f7231897d62ac74cccbbd18dc54ca057cd2",
+      "bytes": 5980
+    },
+    "maple/core/types/topographic_commit.py": {
+      "sha256": "1d2ddc4ca0f1b3c39abf855f97862f73dd451ee6a562f2a0280a69de40b52cb1",
+      "bytes": 20369
+    },
+    "maple/core/types/vegetation.py": {
+      "sha256": "b92ea5ae6890c3094686441e348ef40357c50ebcf1e5aee0f75bd86924f0943e",
+      "bytes": 32726
+    },
+    "maple/core/types/voxel.py": {
+      "sha256": "571ddb4d913e3db35eafedab2a70c2f1f8342f002b80252911e15eb339c804f4",
+      "bytes": 17598
+    },
+    "maple/core/types/water.py": {
+      "sha256": "a75d9a9db30b066358447be619924a8286e3330602a0d863d412bd1123dafe87",
+      "bytes": 7314
+    },
+    "maple/core/types/wind.py": {
+      "sha256": "4d1a0215eca766ee5d36765b077ec60bd731534152335248fed7dc4033a576c6",
+      "bytes": 3764
+    },
+    "maple/core/units/__init__.py": {
+      "sha256": "6164e4c1a3cb322c59d65b928dec5ffd2f2db4fdfed0cac05f53f5a5c5176b41",
+      "bytes": 4857
+    },
+    "maple/core/yaml_safe.py": {
+      "sha256": "c3cd43d6f768737672ac51b132cc18e667474bbd5f6d8fa05282851cbbee5e3f",
+      "bytes": 1321
+    },
+    "maple/coupling/__init__.py": {
+      "sha256": "8c8fb04bf2be41acc5a21a6b348b03a76cfebdbf10ac7884fc82b3da5e87f01b",
+      "bytes": 384
+    },
+    "maple/coupling/sediment_ledger/__init__.py": {
+      "sha256": "27efea02d24ccc61268cc6325b562de14001b6eca6f0065ccdc04f1141766d19",
+      "bytes": 2446
+    },
+    "maple/coupling/sediment_ledger/accumulate.py": {
+      "sha256": "a1d99fdbdeeae07c486fc8be398398763d13aa2f73348e2a37d2ec38ccbf484b",
+      "bytes": 74961
+    },
+    "maple/coupling/sediment_ledger/diagnostics.py": {
+      "sha256": "2f69f1c53cc61075b172c6e026c770460330a6f12102d9db828009d5efa51e59",
+      "bytes": 29317
+    },
+    "maple/coupling/sediment_ledger/equivalence.py": {
+      "sha256": "06cde14b7d643ecbd97918f3a498761a2357ccc66aa8047fe5c32942d22a22cb",
+      "bytes": 23508
+    },
+    "maple/coupling/sediment_ledger/validation.py": {
+      "sha256": "454fcd372fe59f14cad10350f23315686569e43ef534909505c41b38c09aabf9",
+      "bytes": 24657
+    },
+    "maple/coupling/water_event.py": {
+      "sha256": "0cfaf6cee45e1cfecddeb944583d1291a4c581bd1e875000b15cd9a4cc7bf6cb",
+      "bytes": 5521
+    },
+    "maple/experiment/__init__.py": {
+      "sha256": "cc94e0e455a0060562c3697f268c3a3d2a7f00ece7b997ea1aedef1af3477efb",
+      "bytes": 2908
+    },
+    "maple/experiment/_perf.py": {
+      "sha256": "710cc245efe53c94e5c52e4de09f1605fce5a9022c582eb6da5526d4498b0f11",
+      "bytes": 9087
+    },
+    "maple/experiment/_subprocess_wait.py": {
+      "sha256": "829022dad4f7d1bb83a9752f5952bb50324d6b929263e6746ee524ee2151fb45",
+      "bytes": 7010
+    },
+    "maple/experiment/apply_calibration.py": {
+      "sha256": "5e5affe1d58a596170f19acf3def2505ac972112fc4550cd98fc2ff2e2860db3",
+      "bytes": 89206
+    },
+    "maple/experiment/benchmark.py": {
+      "sha256": "908cfbb379910ce2bc14f4feba4cdb1f454b31b30a5d6dc8c6d10fedd30c43eb",
+      "bytes": 27301
+    },
+    "maple/experiment/calibrate_detachment.py": {
+      "sha256": "51bc0df602ecb5926faf5a420d91afc6e66e5c7fc0963650b67938d8559a6fda",
+      "bytes": 177125
+    },
+    "maple/experiment/calibration_case.py": {
+      "sha256": "b7e2f553fec27e36c090c3c992f9fc1a42525934aeb2de43c4dbfd83ab75ac16",
+      "bytes": 119468
+    },
+    "maple/experiment/calibration_preset.py": {
+      "sha256": "1558f8422f68233faa7f557aa727a91ae2036f491afc1f0b0ec23f17f3b3ec88",
+      "bytes": 31606
+    },
+    "maple/experiment/cli.py": {
+      "sha256": "f3778e135ecbd19965a109fcc6f5907155e52db10249ce169860fec8dab8cd75",
+      "bytes": 94043
+    },
+    "maple/experiment/identity.py": {
+      "sha256": "1d5c10b03ad3de1a196fdef10de01f7d81b5666d3a5306ad31c73dee04eb7603",
+      "bytes": 8654
+    },
+    "maple/experiment/manifest.py": {
+      "sha256": "64cb4a9f0040ad99464fa548bf799a0ede0b6ad67d779d80424785561bc263c4",
+      "bytes": 49193
+    },
+    "maple/experiment/measurement.py": {
+      "sha256": "30206fbfabceaab9ab1d23b5c8f07f2a771a44489d9208d41c34bc0ad2a3ae14",
+      "bytes": 13337
+    },
+    "maple/experiment/orchestrator.py": {
+      "sha256": "bf944e439a36f576f2f943d8c8c0b5340dd6a99799fa815cd6d7bedb3c96ce14",
+      "bytes": 239673
+    },
+    "maple/experiment/phase22a_probe.py": {
+      "sha256": "213cb968b3d1677dc246b1d8c26a63d6d9a823ecb18ae3b2c4b1ab69c23e7831",
+      "bytes": 17652
+    },
+    "maple/experiment/phase22a_qsat_wind.py": {
+      "sha256": "ba916df2112674f9e33111e0d05ef27509c8b53e92a75fca8b17482b6c1cd9ca",
+      "bytes": 47496
+    },
+    "maple/experiment/provenance_report.py": {
+      "sha256": "fa2c7834a2c08281c5e0a6f1067c38b2f2779ee588789fd5509d355a2e4c1657",
+      "bytes": 9770
+    },
+    "maple/experiment/publish.py": {
+      "sha256": "c86c1f5a85258abc44a7b53ec800664923825ca1f050ea13abcd8a3229c4340e",
+      "bytes": 9442
+    },
+    "maple/experiment/scheduler_adapter.py": {
+      "sha256": "956b2cd4d7c8dd40d6e22242bf730c3be3bf935d0ca3924a901ee43b7914d6bd",
+      "bytes": 10346
+    },
+    "maple/experiment/schema.py": {
+      "sha256": "45d13920931b30c89eb9bd709fc2d77105e78a8a99233c58e3f50086e1ef1aa5",
+      "bytes": 45998
+    },
+    "maple/experiment/stage_a.py": {
+      "sha256": "9574f70249457acc73e8b309a64087913712168075f2247ddbfcb1b29f38886f",
+      "bytes": 22304
+    },
+    "maple/experiment/stage_a_benchmarks.py": {
+      "sha256": "42cc31a9caa9cf3846b8ce305c7716d1d37aafaffd15b3f8d4c9d48ce86f06db",
+      "bytes": 23703
+    },
+    "maple/experiment/stage_b_compare.py": {
+      "sha256": "8c6f4158cb2fd27f627383c0b46aca622a9c8fa4a76be7c61922810ed0a4197c",
+      "bytes": 316801
+    },
+    "maple/experiment/stage_b_run.py": {
+      "sha256": "8b28f5f4e4cd23428ef38fcea0fc30709f1fde1323c00130eb7534aa843f5075",
+      "bytes": 8445
+    },
+    "maple/experiment/stage_b_scenarios.py": {
+      "sha256": "82beef54d7f21645e9f5d42adf15db868da045df14fba2657b0567d3b1a13ad0",
+      "bytes": 19791
+    },
+    "maple/experiment/stage_b_verification.py": {
+      "sha256": "8203a9567cb396fb71f248c823ffba87d66f2c507138133b963a421475919888",
+      "bytes": 117026
+    },
+    "maple/experiment/wind_record_extension.py": {
+      "sha256": "ec8f0ea7933a8984330a68b9ac2a71ff125b9369137c5157df906d3ee89ccf41",
+      "bytes": 19541
+    },
+    "maple/io/__init__.py": {
+      "sha256": "6309659be6f27ef21ebd5216230f21303598340686f052afeae0b494b66a8d4e",
+      "bytes": 1209
+    },
+    "maple/io/outputs/__init__.py": {
+      "sha256": "0e5fe3a21460bcb0b98f8eeff94147cc9ba781f5e37f6c089e436af6319fea15",
+      "bytes": 845
+    },
+    "maple/io/outputs/_atomic_publish.py": {
+      "sha256": "35d9c83c8d77caed66de65d80f0e31f6f2d4dc66b206a4897970c83b23198aa9",
+      "bytes": 8028
+    },
+    "maple/io/outputs/_optional_deps.py": {
+      "sha256": "e640588e21ad400350a2e7966571a8af133adeff4b6398b9c62242ff815c7838",
+      "bytes": 3906
+    },
+    "maple/io/outputs/_rollback_utils.py": {
+      "sha256": "f67f6dc46d512c985b033f18c6dd1eb000f2fffa6a07a3ba5e2aec4feaa53a0f",
+      "bytes": 2080
+    },
+    "maple/io/outputs/conservation.py": {
+      "sha256": "1eb77fcc762c4b9b1326642e3e47fc9ee76f488e8c63f36968d47ee5d46bea7a",
+      "bytes": 14182
+    },
+    "maple/io/outputs/diagnostics_writer.py": {
+      "sha256": "93732bdd5c15f73c6c7964cf3735381fd5337be66690e096990a455f3cfa40e8",
+      "bytes": 19881
+    },
+    "maple/io/outputs/exact_validation.py": {
+      "sha256": "4f0282e06b28772747e706f10efa7e899a34771a022c9f427ffa364f88e9db93",
+      "bytes": 29224
+    },
+    "maple/io/outputs/history_recorder.py": {
+      "sha256": "39b53226c1cff6cce519e8e3c494a7d3c209e5edf4f5c68dd8329e7888d768a8",
+      "bytes": 57907
+    },
+    "maple/io/outputs/phase5_lifecycle.py": {
+      "sha256": "a62360755333938d68af997cf93bb151e1f64dc8c0c99ef7d2199a85226ae84c",
+      "bytes": 47423
+    },
+    "maple/io/outputs/reconstruction.py": {
+      "sha256": "1b400d4d61ddfc7ebe9307192ab0791556a09b4a749fd825f7fde8125cd8717b",
+      "bytes": 19455
+    },
+    "maple/io/outputs/snapshot.py": {
+      "sha256": "3aac89488174051f12c3af6af7d4074f60d61631e5bbc10e6ea32ded3c9ea231",
+      "bytes": 103175
+    },
+    "maple/io/outputs/spatial_diagnostics_writer.py": {
+      "sha256": "ee66b0fabe0d5a335875bcd778784690f7f102cc049bb853baa1022baf77e134",
+      "bytes": 67491
+    },
+    "maple/io/outputs/validation.py": {
+      "sha256": "a85c8fd198b602fc7b6d5369c3af8b145c722ec95acb1ed838a5f1a7b11c8994",
+      "bytes": 3607
+    },
+    "maple/io/outputs/visualization_schema.py": {
+      "sha256": "29b7a354018faef0199205a3ff668aa27d4c6e01db18f2a20369aca311a882b2",
+      "bytes": 35317
+    },
+    "maple/io/outputs/visualization_writer.py": {
+      "sha256": "a734e86a53038bc57122410473159c1eebe2ccc1dc126bf517255acd767bbed8",
+      "bytes": 56002
+    },
+    "maple/io/outputs/voxel_delta_log.py": {
+      "sha256": "574fe4a510b55b48a201cedbfb0910579b7ed3f519cfb4e0dc2b4482c608b98a",
+      "bytes": 41853
+    },
+    "maple/surface/__init__.py": {
+      "sha256": "1fbec9e81b3d8494782f50dbabb715fd39656d6d16eb2719964bbad3c1eeb7a8",
+      "bytes": 396
+    },
+    "maple/surface/active_layer/__init__.py": {
+      "sha256": "49e55b83104648f618a7b41a0855429995e998be89b57d1b1580d71131a0734f",
+      "bytes": 2658
+    },
+    "maple/surface/active_layer/_request.py": {
+      "sha256": "c787afa235cbfce3c4af7118f2a32dbfb0ae06f40a08cb3daadc76d60b77934e",
+      "bytes": 2993
+    },
+    "maple/surface/active_layer/bed_exchange.py": {
+      "sha256": "172b1e3c539d21addda89b7b73eecba50e924aec3557668b7259930a9aa76390",
+      "bytes": 42080
+    },
+    "maple/surface/active_layer/bed_exchange_device.py": {
+      "sha256": "5f49d26c67ebb152a4fa5edb37519e6949f247e884c06246921a0dab28e2e702",
+      "bytes": 38955
+    },
+    "maple/surface/active_layer/capacity.py": {
+      "sha256": "f06c5e0b8a850044f8f2eeb957d4a99e68cf4d9cfc4a70b0d5288e88a476b62a",
+      "bytes": 2618
+    },
+    "maple/surface/active_layer/composition.py": {
+      "sha256": "14db2fd7baef042ed316b1a8838d95ad2538e925986816d6856348b38ecb8539",
+      "bytes": 9936
+    },
+    "maple/surface/active_layer/diagnostics.py": {
+      "sha256": "6b2d1b9e8d5add21c0e4f9a6a6443d85d779a3fd2a78faf7ba3658d5293ea9c1",
+      "bytes": 11022
+    },
+    "maple/surface/active_layer/exchange.py": {
+      "sha256": "2d58cdcdcbb67bf9f45d1e652a8f09b29b230edad3c812554ce243cfeb01ea07",
+      "bytes": 40162
+    },
+    "maple/surface/active_layer/initialization.py": {
+      "sha256": "2c30213cb3284e7f9c4607c9322a6f00ab1a55cb117abae5b40b3dbf211dcbbf",
+      "bytes": 9373
+    },
+    "maple/surface/active_layer/validation.py": {
+      "sha256": "099322293ceb6fa755599f0f0574cd3bf66f8518c10ea1a61744f251f9904a5e",
+      "bytes": 16391
+    },
+    "maple/surface/active_layer/windowed_exchange.py": {
+      "sha256": "89cd8ce3d155af50bc0ef6ba0280728d3dc8bacac8a537756f04983185a0d5f3",
+      "bytes": 10283
+    },
+    "maple/surface/active_layer/windowed_partition.py": {
+      "sha256": "7cad7f995abccfab09d32040de9eea8744970d46dbff2372550facd87da35f02",
+      "bytes": 7163
+    },
+    "maple/surface/active_layer/windowed_session.py": {
+      "sha256": "66673a42a8f4046d39416f46c9fed3171e91f3b3476e1c0ce090dfa53ad65fac",
+      "bytes": 18136
+    },
+    "maple/surface/availability/__init__.py": {
+      "sha256": "4939ca554c78ce1f7288e6aedbd544d19c433f1fff5fc40d6ec3cd9b589269b9",
+      "bytes": 936
+    },
+    "maple/surface/availability/exchange.py": {
+      "sha256": "6c1d9e4be664f7ba601e6097fbbfb28c5e706e74be4640eec4378cc9df62ff1f",
+      "bytes": 26979
+    },
+    "maple/surface/availability/validation.py": {
+      "sha256": "157591c9a730251fa0ce8877b23ef4b0875d59e6356d2c62a4e75ddc6a80d81b",
+      "bytes": 9077
+    },
+    "maple/surface/avalanche/__init__.py": {
+      "sha256": "3c2af70b64f5efedc29af3b16d19785c3667835d59aa667cb70bb60896b448e6",
+      "bytes": 445
+    },
+    "maple/surface/avalanche/callback.py": {
+      "sha256": "c4cdb3c3e77e26f8c06da15cf7f5596805e9fec5ee906582c008f2638b5ac66f",
+      "bytes": 13788
+    },
+    "maple/surface/avalanche/slope.py": {
+      "sha256": "9b72e1fd3ab5c74832b4851441e89cbac69e8a94677e9f7552dc4cb768d5dfba",
+      "bytes": 14787
+    },
+    "maple/surface/avalanche/solver.py": {
+      "sha256": "68348f4a6806d58f6b736b73db8b55199dee56316121e53a63a97144789e3771",
+      "bytes": 31811
+    },
+    "maple/surface/avalanche/transfer.py": {
+      "sha256": "892e4c166dfc771cdbe3c859720f389073ea1a53f6386b03bd29b3128f63e8d9",
+      "bytes": 40300
+    },
+    "maple/surface/avalanche/validation.py": {
+      "sha256": "ebf14dbd43879ea4d0923af249b3bbc9c490981fe133d6d86a3bb65131c0cd6c",
+      "bytes": 20006
+    },
+    "maple/surface/avalanche/windowed.py": {
+      "sha256": "e0007b61a6a30ec3b93182e780d9998e74ca2141fd5b3d5a894347f3fcf34d93",
+      "bytes": 30499
+    },
+    "maple/surface/avalanche/windowed_device.py": {
+      "sha256": "bd028cf9e2b79252680baf0fecb93f0fde6d1a71efbf98df96d9726494739be5",
+      "bytes": 65857
+    },
+    "maple/surface/avalanche/windowed_device_publication.py": {
+      "sha256": "dd6b6a107d2ca7d9528fc682347ddca14dc93fffd68e265295b88e21bce284bd",
+      "bytes": 33234
+    },
+    "maple/surface/avalanche/windowed_publication.py": {
+      "sha256": "c53cc54edee6691113166664529122068a29edf3f336e93b2f7d10ae81cdb943",
+      "bytes": 64681
+    },
+    "maple/surface/avalanche/windowed_solver.py": {
+      "sha256": "80d74bfe698ca24df9ccfbc1ec2cb4dc3142ce8266e1131cd64cb467c5e4d200",
+      "bytes": 39894
+    },
+    "maple/surface/avalanche/windowed_validation.py": {
+      "sha256": "00c6b2a7859092b0a3f2feee9b413f57426082edc7776e2050e028e139e899f0",
+      "bytes": 30272
+    },
+    "maple/surface/bed_access.py": {
+      "sha256": "e06a98613091626379b1ad9519f33a9b9a141c51d45f031d4e0e1fad270e74cf",
+      "bytes": 7637
+    },
+    "maple/surface/creep/__init__.py": {
+      "sha256": "f7a04b573536f9a41a4aa736fd22a8658e795e4afad7b5eb4d8a4c1ec75a4aba",
+      "bytes": 1468
+    },
+    "maple/surface/creep/apply.py": {
+      "sha256": "bd5a0e7c5adb2e89aa445ee338d9b8998fb445987acddfd86641b553616e148a",
+      "bytes": 21837
+    },
+    "maple/surface/creep/continuation.py": {
+      "sha256": "cab127aa353663f3ad3960a36207c547982ab6ce31196e759f2ab1e7b5e673fb",
+      "bytes": 8691
+    },
+    "maple/surface/creep/law.py": {
+      "sha256": "488a2c049a93cfa3f63b5e5aa9374e4004a2d6665ca04d39a95d43360a8a60d1",
+      "bytes": 22237
+    },
+    "maple/surface/topographic_commit/__init__.py": {
+      "sha256": "a7b3cbe24e1871c374e8929ea2f17030f1fca9305adc4a229a1695df9247f9e6",
+      "bytes": 2245
+    },
+    "maple/surface/topographic_commit/accounting_reconciliation.py": {
+      "sha256": "889185241a3789d7845ae80e5b7639eaa75282cd95d47a68533bb3e57676077b",
+      "bytes": 15406
+    },
+    "maple/surface/topographic_commit/closed_windowed_commit.py": {
+      "sha256": "68b6d4dc3ac8a1fd320f00a4ef124d82396aab5a0e42493f8d290d24a7a000c1",
+      "bytes": 284579
+    },
+    "maple/surface/topographic_commit/commit.py": {
+      "sha256": "10fe33994e8f64767ea9db2e6cd2161b537c6709504a2b41ee7759ee31f1524d",
+      "bytes": 103469
+    },
+    "maple/surface/topographic_commit/height.py": {
+      "sha256": "c499e6367bbca14ea6fc541fb8a92c584e828125d083b54df8daa2f8ea903634",
+      "bytes": 37078
+    },
+    "maple/surface/topographic_commit/initialization.py": {
+      "sha256": "1c367dba6517fbe70b5a42c6080fc571eb84fad0e96474bab3a46f638a73e6d4",
+      "bytes": 8041
+    },
+    "maple/surface/topographic_commit/triggers.py": {
+      "sha256": "01992a25c505e56e51fedcfc3aec93a2b2f7c08880fee62193e42e6cb5449c94",
+      "bytes": 15804
+    },
+    "maple/surface/topographic_commit/windowed_commit.py": {
+      "sha256": "a1f7c0ac1039459e2706d1d162a16386c961f39497e9e350acb643d4567bbf6b",
+      "bytes": 80063
+    },
+    "maple/surface/topographic_commit/windowed_device.py": {
+      "sha256": "d4166b8e597a62276f242fe0333d357a874a522669258a93af8bf1eedf2e540d",
+      "bytes": 56979
+    },
+    "maple/surface/voxels/__init__.py": {
+      "sha256": "d869865ad93fd173656ddc1df9ababe683bbfa63b1d52e669a2b27b8d77d498f",
+      "bytes": 1558
+    },
+    "maple/surface/voxels/_numerics.py": {
+      "sha256": "b1635932f23bfa6ff8c74aa52c072f796b448bd7a6454fab1e68a95ee2e40682",
+      "bytes": 22952
+    },
+    "maple/surface/voxels/_small_owner_envelopes.py": {
+      "sha256": "aa63d9ef19f898e187357bccff3e7c998e72762c046d9162b83854f27ac8f3aa",
+      "bytes": 1267
+    },
+    "maple/surface/voxels/capacity.py": {
+      "sha256": "f889af7030308862072dd36a9814c0bbac4bd477afbb5430c8e511e1383e73dc",
+      "bytes": 1150
+    },
+    "maple/surface/voxels/deep_store.py": {
+      "sha256": "b03d1503fd20331432de9e225e604e8049d6b71a69d992aff59e739b5d5b3a5a",
+      "bytes": 132861
+    },
+    "maple/surface/voxels/diagnostics.py": {
+      "sha256": "4a349a960147a4c8e6cc36f9c35be00805016f5293d8dbd0b1cb7947e621b5d6",
+      "bytes": 30685
+    },
+    "maple/surface/voxels/growth.py": {
+      "sha256": "c0d3dd69e69fd12b3eb988edcf286e0a7faed966759b9424f04e2388cf5c9160",
+      "bytes": 12506
+    },
+    "maple/surface/voxels/serialization.py": {
+      "sha256": "1a3c37f6c9d105b0d9d99acb6affca3fcebf62946bd5ace6e1b02c77d81d8b09",
+      "bytes": 1750
+    },
+    "maple/surface/voxels/transfer.py": {
+      "sha256": "6612bfa385b9ca04c768c34197536fdfd42a0ea086b585d9764c297faea77f23",
+      "bytes": 68735
+    },
+    "maple/surface/voxels/windowed_admission.py": {
+      "sha256": "d2c87b863f0c62aa8809c790c36e24273f193bc78478bc3ccd59b05f55b26bc1",
+      "bytes": 59686
+    },
+    "maple/surface/voxels/windowed_delta.py": {
+      "sha256": "b21eda0988b27066976590e01f6c344f042e8c1f9088aa2e0628f7b863e89e68",
+      "bytes": 25024
+    },
+    "maple/surface/voxels/windowed_depth_class.py": {
+      "sha256": "ce3906f9127afc848a49deb9d570b5fc756d446bb7b1084044fc1dfc09cf0313",
+      "bytes": 44979
+    },
+    "maple/surface/voxels/windowed_device_partition.py": {
+      "sha256": "6aaed5ebe8e0d754a56187d3383d5b1e8452cf8e21693ef3781a74ae0d8eae25",
+      "bytes": 41435
+    },
+    "maple/surface/voxels/windowed_endpoints.py": {
+      "sha256": "c0d7867ba2c5d44582a2058a22cfc2dd105acd6dac3e09caefc40c7fe31b9fee",
+      "bytes": 31582
+    },
+    "maple/surface/voxels/windowed_evidence.py": {
+      "sha256": "22dd2125968f5cd908fa357e31c69eb9a3efd5d008b72b908efea610605c0c50",
+      "bytes": 33104
+    },
+    "maple/surface/voxels/windowed_inventory.py": {
+      "sha256": "4041c2df2f8a906702b1ff994559399bcd78584c7bbbed7c738ac2e2665052e1",
+      "bytes": 48760
+    },
+    "maple/surface/voxels/windowed_metadata_numba.py": {
+      "sha256": "34a61589a2f79dd6cc2ce079d9ce45f4a4d4315df8e16a011507972d5e2840dc",
+      "bytes": 1826
+    },
+    "maple/surface/voxels/windowed_native_validation.py": {
+      "sha256": "a13cb8618c99beed274bc47b6671d3c1fc954e4a103cdeb74ea5e63a5f59873e",
+      "bytes": 118673
+    },
+    "maple/surface/voxels/windowed_pending.py": {
+      "sha256": "106bb99d1fc8936e496b22acb1a331a6f5ca76e1c204755c6363776702b09b3c",
+      "bytes": 6828
+    },
+    "maple/surface/voxels/windowed_prefix.py": {
+      "sha256": "8c3465b7433f824e37e5cfba519d9f2eff78d8371db66ec8ccb6e9bdfb0133ff",
+      "bytes": 15001
+    },
+    "maple/surface/voxels/windowed_publication_check.py": {
+      "sha256": "342c6b159c550e958a020fb2e71fcdd345752e7d12dbccdb8a3bb7fcc63d82d9",
+      "bytes": 32992
+    },
+    "maple/surface/voxels/windowed_snapshot.py": {
+      "sha256": "fb15be4b468be2e01e448637225e233f41ef0bf7c10c36b87b6bad029ee5b34f",
+      "bytes": 12106
+    },
+    "maple/surface/voxels/windowed_transfer.py": {
+      "sha256": "947f4c477713c3af6c699c91dc6a058ce664d0933f576c1e63ce3e9bd671ccae",
+      "bytes": 42403
+    },
+    "maple/visualization/__init__.py": {
+      "sha256": "23531df377a31f325d2e7ad4d29873faabcd1c0ef2401d8de5e09e87e068a92f",
+      "bytes": 924
+    },
+    "maple/visualization/app.py": {
+      "sha256": "0dcbacffd600409af9bdafe71097113c90aa3349680098bbf3af5de0ca0e6849",
+      "bytes": 26161
+    },
+    "maple/visualization/cell_inspector.py": {
+      "sha256": "60ddf1564d65fdbad4f2e306f74f1cd4fb5ea773f6c96f16616057b575fdb928",
+      "bytes": 3414
+    },
+    "maple/visualization/cli.py": {
+      "sha256": "aecf7f59277c591be07222c85f05a2b552b33a87f3a4e495dfee1ab62775ce8c",
+      "bytes": 5588
+    },
+    "maple/visualization/comparison.py": {
+      "sha256": "817cd3d0f8e16a03bd1cfbe4530f0953802486a746e273ffeb5a13367157f772",
+      "bytes": 12120
+    },
+    "maple/visualization/conservation.py": {
+      "sha256": "1639989be4597f7fa56072c30e449ba9ae664411042915aad27106206626625e",
+      "bytes": 6186
+    },
+    "maple/visualization/domain_animation.py": {
+      "sha256": "729ac6fd856e1d62ba061d091001517945783d82f225a057c3352d7f781032d1",
+      "bytes": 20684
+    },
+    "maple/visualization/domain_maps.py": {
+      "sha256": "9a0fe912649dfcd2a265662596f2f55887b10003621e4c92647c24daf1e92eb6",
+      "bytes": 10401
+    },
+    "maple/visualization/explorer_controller.py": {
+      "sha256": "dfe5015ff9501aef9ac222200b356c394d87aaa414e6510e54007b9d36fddce3",
+      "bytes": 14929
+    },
+    "maple/visualization/open_history.py": {
+      "sha256": "af1924136b58af749903ed162c42431e55f92612463170dc78353690e737e4d3",
+      "bytes": 27268
+    },
+    "maple/visualization/reports.py": {
+      "sha256": "127762ef2ecbd0be71c587d1eaabfa9711a9b2d7217ecb9f9cd25bc57ae6d331",
+      "bytes": 4904
+    },
+    "maple/visualization/topographic_wind_maps.py": {
+      "sha256": "42dae479e976d8837d6aa8d86a14db64e406f4ef5b3b2006c86c5e0b9ce7ba28",
+      "bytes": 11907
+    },
+    "maple/visualization/transects.py": {
+      "sha256": "8f06ef5aee28e407a6f1c8032fc0d2fca9cd46695a7f54d47cdf8b8d77d34be7",
+      "bytes": 3380
+    },
+    "maple/visualization/vegetation_maps.py": {
+      "sha256": "dbab20fc40e4cb764ca173970dc2831dfb94741e00c02a2dc69fcb5570571657",
+      "bytes": 3944
+    },
+    "maple/water/__init__.py": {
+      "sha256": "e97e721766dd641a20559a6f69b616f2186a1c6ff5363cec72881b2e4f53182c",
+      "bytes": 2652
+    },
+    "maple/water/commit_callback.py": {
+      "sha256": "c080ce76bc551e7d831eef20c8a80bf3648932fd72038793965d468268050dd1",
+      "bytes": 8656
+    },
+    "maple/water/depth.py": {
+      "sha256": "cc32ad019d76a92dd2fba14d5072921eb489b83550ee187deff008cdd4bb2f97",
+      "bytes": 7122
+    },
+    "maple/water/interfaces.py": {
+      "sha256": "06cecc59b6642b5507f61a36d4f708e080e116a2c5a3577bfe01c2da2cdcc932",
+      "bytes": 11329
+    },
+    "maple/water/mahleran_compat.py": {
+      "sha256": "a420e4fd674f9c6758ba1b5ef2cb9c40e190e91ae3ffed88d4c3d648077245c3",
+      "bytes": 22900
+    },
+    "maple/water/prescribed.py": {
+      "sha256": "3259cb49026a7db96586062a517a871e6bd638af7587ea23188b09edc284a88a",
+      "bytes": 7755
+    },
+    "maple/water/step.py": {
+      "sha256": "766bedc884e2b17b1f5fc56bf9e5ae33ae6b8e5c536347f85776e392e1a600cb",
+      "bytes": 18555
+    },
+    "maple/water/validation.py": {
+      "sha256": "fbf26412043d05e2e635b06eabe9fdbc1f34eaeb3276bf4c808e2da9f949aea8",
+      "bytes": 22112
+    },
+    "maple/water/windowed_commit_callback.py": {
+      "sha256": "cd4dd2a4a52e947972ca7842eb2c19506389c506f412f7ec276909c0545b9ca4",
+      "bytes": 2846
+    },
+    "maple/water/windowed_step.py": {
+      "sha256": "f4e26427c6fdd1af3958ba287680e48e229d778785645babe7d728648a7adac5",
+      "bytes": 33340
+    },
+    "maple/water/windowed_transaction.py": {
+      "sha256": "7ddc72a5e58cada4655a0900e31e04ed461b3f5d58401b89680fdc0087f05c01",
+      "bytes": 23149
+    },
+    "masy/__init__.py": {
+      "sha256": "2cfdf467e9ecf6dbb04d205a56af2c2289ed82d136abc5b14690c903370f2522",
+      "bytes": 540
+    },
+    "masy/backend.py": {
+      "sha256": "03357c36dde65e7a8b3557c3f66749ec4c8a00f5d8696b40475f54f2403273eb",
+      "bytes": 13520
+    },
+    "masy/calendar.py": {
+      "sha256": "c73adcdbc1550a0c082bcd56212686f790049aebf79006a94d6f89c3d6a62bdc",
+      "bytes": 11610
+    },
+    "masy/case_cli.py": {
+      "sha256": "7ec8e5b360e28112a0d0c230e98225a88a99f14b5248d3dfcd7787a585171e48",
+      "bytes": 23398
+    },
+    "masy/case_device_c64.py": {
+      "sha256": "83381310422bace5d1c49c04c8275d5a4c92a2390890837e3437fe20c45667c2",
+      "bytes": 65866
+    },
+    "masy/case_gpu_cli.py": {
+      "sha256": "7907c6e38d23b2731e9f66e25ba74fec7ee073f0c7d17d28a47f96e49ebd95c9",
+      "bytes": 34810
+    },
+    "masy/case_gpu_worker.py": {
+      "sha256": "07b0f4b4b20da8ea3c09c0071675fb1017c1c134fa8ac551060ba85ca585349f",
+      "bytes": 55670
+    },
+    "masy/case_runner.py": {
+      "sha256": "2c32d59b92a831280d7aac8a41772cb6999338683a2daba38a27b00871e2d755",
+      "bytes": 32609
+    },
+    "masy/case_schedule.py": {
+      "sha256": "46791c7d34f2ce556e7f9c5c8520de6fef74b7d949e3be2abb28905605686446",
+      "bytes": 14346
+    },
+    "masy/case_water.py": {
+      "sha256": "d761f87a226253d516acc8ce1c9ed482b3e0f86769b9dbc31f6ca7ca727f1aca",
+      "bytes": 22424
+    },
+    "masy/case_windowed.py": {
+      "sha256": "df280de5c0ddbbefe7bca42e3e4413354eeb79caf8a33001f2103bf4d880b6e6",
+      "bytes": 67071
+    },
+    "masy/case_worker.py": {
+      "sha256": "40baf66c27662d36bbe1b6e6fc1a1f9ecc424bf2878586eaa5b66407481710a9",
+      "bytes": 46513
+    },
+    "masy/case_workflow.py": {
+      "sha256": "be44e561cdd83973bc9be4d05cac2c8ea8d739758dcdd01fd2142340e94e0f6e",
+      "bytes": 25189
+    },
+    "masy/cli.py": {
+      "sha256": "27a434a1f027560a2b4c79dd8e7533c758da502530200c9234a63401c782701e",
+      "bytes": 10312
+    },
+    "masy/clock.py": {
+      "sha256": "ddfe0c23d25b54ac5e1995761b93c6821df6d533845f8484b7b17dfdd9129d43",
+      "bytes": 15519
+    },
+    "masy/config.py": {
+      "sha256": "adec589fc3ed7ad4cf880888e8678b00a940fcc11d579750fb6cdad7c2b751d9",
+      "bytes": 11354
+    },
+    "masy/contracts.py": {
+      "sha256": "f68281ef8979708da4be20d42ce79540bb56c3991449befae63b9635dbfa02cb",
+      "bytes": 21580
+    },
+    "masy/coordinator.py": {
+      "sha256": "338e31e5f478225428f6410ca689a9cd3baf43b9631f1425936407ab4469d009",
+      "bytes": 39063
+    },
+    "masy/daily_cli.py": {
+      "sha256": "509b66fbd613c7f024a2a71e70e4f401e42b55a45f0f1186ddbd8d7879ae1f18",
+      "bytes": 5776
+    },
+    "masy/daily_csv.py": {
+      "sha256": "7d4bc1a515ea35827280666f7adbba07be4f0d5bd432723b7ebe9f9900b247ec",
+      "bytes": 30587
+    },
+    "masy/daily_native.py": {
+      "sha256": "e010000545b67aa27077b7c8a2c1100eda0c61df965e7cf91ba3a560a29ea423",
+      "bytes": 20668
+    },
+    "masy/daily_schedule.py": {
+      "sha256": "bbf26a16ae77c9ccbd813800104108d090016c8acc170efb24952319be3dfb75",
+      "bytes": 9865
+    },
+    "masy/daily_triplet.py": {
+      "sha256": "3182c5d6bb4adb47c9871a94d861f122a1804faf1325836a943fa91783e63458",
+      "bytes": 25127
+    },
+    "masy/daily_triplet_cuda.py": {
+      "sha256": "f2a83be2a17c3230324d3e955a5560744cdc76bccba82b4237a1e60671cfd0a6",
+      "bytes": 27574
+    },
+    "masy/daily_triplet_wind.py": {
+      "sha256": "76c66cfe759b810d9811acdf5dd5315bc110fdb0cc3d53ca16a9e8d674fe60c6",
+      "bytes": 6924
+    },
+    "masy/daily_wind.py": {
+      "sha256": "ebd4c8f8db9d71852cf2c5ed1d9e4ae62977f0414e777cb6dedf9bbc0b73446c",
+      "bytes": 49350
+    },
+    "masy/daily_wind_cuda.py": {
+      "sha256": "a271c1c44448e51f74ad082c545b6c6fe14702365aa4f5de60c817541e27d2be",
+      "bytes": 18839
+    },
+    "masy/daily_wind_handoff.py": {
+      "sha256": "f606c30d0c45f863f1ca9bb0de1648a01a8eb58dd4cbd2b1b3fa24c90058cfef",
+      "bytes": 26999
+    },
+    "masy/dense_active_checkpoint.py": {
+      "sha256": "1bcd4a41948e431966dc4cfa394e2f63bf5f5afd8cdb2edfaf684c6fbbe93164",
+      "bytes": 57814
+    },
+    "masy/dense_active_water_store.py": {
+      "sha256": "c7cefd60492a2146c0644bb62fee67458a7efe8e33e425693875fb8f43cce80b",
+      "bytes": 283882
+    },
+    "masy/dense_active_wind_checkpoint.py": {
+      "sha256": "9abb61abe2e0e69ab8a8184242fffd4ebf66329fe1ffe6c9eef70c6f447ecc89",
+      "bytes": 38381
+    },
+    "masy/dense_bed.py": {
+      "sha256": "1435b4d2dc2c301dbc47a349cc8ddade7b5e5cb48bee53226900845714fcefce",
+      "bytes": 64304
+    },
+    "masy/dense_boundary_store.py": {
+      "sha256": "ce892ad1074ddd668d7b3c22548f667a21fdda30b7c769589cffbbd8c7c459ef",
+      "bytes": 208387
+    },
+    "masy/dense_checkpoint.py": {
+      "sha256": "8022264a44de7072a63af91c0d98a930c678bad7d75c8338a6489c4e40188487",
+      "bytes": 47565
+    },
+    "masy/dense_device_bed.py": {
+      "sha256": "639862018b4ae84b1554b09154439d68ae477fa36a59b7cccd53f016afc00206",
+      "bytes": 36412
+    },
+    "masy/dense_device_checkpoint.py": {
+      "sha256": "a22c8e1aec9544f184b47e8f3ae1287d5ea93c3e0aff3d1d7cd80db738a4309f",
+      "bytes": 26374
+    },
+    "masy/dense_device_production.py": {
+      "sha256": "a8328381deb2c4bbac85d00ba4dcd1588bfdfebf62ca97b78640d6ffe0221512",
+      "bytes": 42532
+    },
+    "masy/dense_device_resources.py": {
+      "sha256": "67498b7ff93db03d8be1cce8ddb5ac5bec7dcfe0f364f6295c74f5b899b078ce",
+      "bytes": 30177
+    },
+    "masy/dense_device_restore.py": {
+      "sha256": "f77dba5023846fd5950a8751e6596bea933716619bcd09c2c103528ee3c96279",
+      "bytes": 63130
+    },
+    "masy/dense_device_runner.py": {
+      "sha256": "dfcd942f0e2366627e039b6e21dc3a1239ee11166bc9d7fbecda1a9e9a8ddc83",
+      "bytes": 99434
+    },
+    "masy/dense_original_inputs.py": {
+      "sha256": "2f8cb1ece65d8125da1608e92ff3e2b2380cc68499a8abc416356df6272e78f0",
+      "bytes": 134265
+    },
+    "masy/dense_production.py": {
+      "sha256": "bc2ed41ad8697344b8bf91e02167b80a3602b4004bdb06159fda814c90410fdd",
+      "bytes": 17516
+    },
+    "masy/dense_runner.py": {
+      "sha256": "b493c6e6c89f2742e8e54d30f9e3b3d500785611455546813a65d5b819c9c443",
+      "bytes": 105397
+    },
+    "masy/dense_runner_checkpoint.py": {
+      "sha256": "11806cc75fc0a43567d738b3296038b19a5ec6e5319bf1a6e1fb9d2b1afec79e",
+      "bytes": 216996
+    },
+    "masy/dense_schedule.py": {
+      "sha256": "8efff6757f19b63819afeb07379594876dd608697cc632d7a58bed2fcdc5c876",
+      "bytes": 20266
+    },
+    "masy/dense_water_pause.py": {
+      "sha256": "b69c6c6ab91c07b984f8a91c44740aca8c2a417a37c15a2cfaea2c3dcc334049",
+      "bytes": 42281
+    },
+    "masy/dense_wind_pause.py": {
+      "sha256": "5887e7d9af437d7c51e3d52a3865cf340b3a6fa5695d646a9826c23f135db75d",
+      "bytes": 31711
+    },
+    "masy/dense_wind_profile.py": {
+      "sha256": "9c6d35e32fababfc4483623b78ae62148bc068deb4489a9bbdc91f14ea12fbbc",
+      "bytes": 55859
+    },
+    "masy/event_files.py": {
+      "sha256": "e3857e8706cae50461799ed464d6aa28b349ead08591155b69b4b8c11686d928",
+      "bytes": 15841
+    },
+    "masy/gpu_contract.py": {
+      "sha256": "4ccd8fd62e8b171cf978a68b7c8cb56200b8a48616c90c8c186817a7fd4222ab",
+      "bytes": 6882
+    },
+    "masy/gpu_runtime.py": {
+      "sha256": "15429371e59bdbc97c5304f4665985fefed458c1a43a7b21283af595a86c6718",
+      "bytes": 42273
+    },
+    "masy/gpu_runtime_worker.py": {
+      "sha256": "3267f2784692a769edcd8b13ef60bf6fe26a02a0d1a5140d4d1882b10818c133",
+      "bytes": 27113
+    },
+    "masy/importcheck.py": {
+      "sha256": "74619fa0867b8bf4648c5f8ab4abafeb832af0a4ad02416a54c3a9fb866b3172",
+      "bytes": 12624
+    },
+    "masy/landscape_vegetation.py": {
+      "sha256": "a4b00480ed61ea6b2d608934b22cc4d1488181c1b8e94914b9a2b384f1f12102",
+      "bytes": 92389
+    },
+    "masy/pet.py": {
+      "sha256": "050fe4f5e70e939a145e9d6b4724014ad4b544321ecb2c46dc3677f32bc0fb28",
+      "bytes": 6634
+    },
+    "masy/report.py": {
+      "sha256": "2395c6f33fd9c2336cd5e181eb03bdfb61604f6d9faf71b74b47c0bb4feec032",
+      "bytes": 5680
+    },
+    "masy/runtime.py": {
+      "sha256": "3eecfd189d096a0fe8f14247096ff4445a0d82620caa61d65184477ae24ed570",
+      "bytes": 131539
+    },
+    "masy/runtime_worker.py": {
+      "sha256": "3a8838e71bcc0ff33d1162c1b4c9573636f0d6f71135cb4c3e7592cac7cd57a1",
+      "bytes": 72288
+    },
+    "masy/scenario.py": {
+      "sha256": "049faf1959b772e54234874e370e8b7aac7cf86a59cdf8ff37c8b92367dad422",
+      "bytes": 14327
+    },
+    "masy/scenario_io.py": {
+      "sha256": "152b673f13148a74c25c819fc530759788e30ea7f24aa30689f37ea207def585",
+      "bytes": 15245
+    },
+    "masy/sourceobs.py": {
+      "sha256": "359930fb5796af90dd780646eec583e1cc40e53694fa47daa338e71e2a42a172",
+      "bytes": 26882
+    },
+    "masy/triplet_cuda_runtime.py": {
+      "sha256": "a78e26d4adede32289be15172bad7e3ca9c345a3b7d52a135d0ea2062952d12c",
+      "bytes": 17712
+    },
+    "masy/triplet_lock.py": {
+      "sha256": "39b8a62dad63c6d2c3914524aacf51d400eb1efe330cdae7260aef2fa38cecf9",
+      "bytes": 37537
+    },
+    "masy/triplet_runtime.py": {
+      "sha256": "4667c1a0116787d6764ca1193392ccf654a6bcb727734f92536bc7ced65a72f0",
+      "bytes": 18293
+    },
+    "masy/weather.py": {
+      "sha256": "e9c814a19569015201b1e177c00ee48e9f1eb1c16c1de655a99b67a8a29d5a80",
+      "bytes": 27580
+    },
+    "masy/windowed_bed.py": {
+      "sha256": "e48a8ea495dad2a4534c6d56e788ed12480d3ef4003ca9be09093e2ea3bedcf5",
+      "bytes": 46860
+    },
+    "masy/windowed_device_bed.py": {
+      "sha256": "91dd9cd9098faf76282cd03ba2c0a632f1e2e9d36e3350c708e50f4a56634bea",
+      "bytes": 22829
+    },
+    "masy/windowed_device_c64_bed.py": {
+      "sha256": "14275317df321d0b8be063d6e7173c25d633a5e9ae24d563592986e8aafc5051",
+      "bytes": 36619
+    },
+    "masy/windowed_device_c64_checkpoint.py": {
+      "sha256": "939dc70f5c43c3aeccb2142c19b3bc578babe435fb3fbf6578c745425dcbabe7",
+      "bytes": 128453
+    },
+    "masy/windowed_device_c64_runner.py": {
+      "sha256": "9939084385ab0fcfb16cad9a6024aaf690abf95b2ff8c912d76e76861b6b6a3a",
+      "bytes": 61980
+    },
+    "masy/windowed_device_checkpoint.py": {
+      "sha256": "263b253b4bc8896ce2f9907958eb7c0009d3abbfb312480e45b0049ec326d907",
+      "bytes": 102107
+    },
+    "masy/windowed_device_runner.py": {
+      "sha256": "28c794357d3923fdbf5ff0ec951df314a32b16036328007aa27daa3748ae7084",
+      "bytes": 51623
+    },
+    "masy/windowed_process.py": {
+      "sha256": "e0341ca8db85981dcaba6c46a017d66874c3838ebffb00c4d96668f2a2ab0d2d",
+      "bytes": 11864
+    },
+    "masy/windowed_runner.py": {
+      "sha256": "13c07627a8d3d072b4955a8da6f89f3accfa9bbb2e18219b2391bb871463f7b0",
+      "bytes": 87074
+    },
+    "syrup/__init__.py": {
+      "sha256": "039be50eaa7bd7e21c5cb5a88a604dc2041c9fe60f723af4b63f7dca1366adbc",
+      "bytes": 524
+    },
+    "syrup/backend_correspondence.py": {
+      "sha256": "62399babb731014a512f75e9ec4fc25c3ce32724a76e5ce3f32d727c4cd764ef",
+      "bytes": 30397
+    },
+    "syrup/benchmark_experiment.py": {
+      "sha256": "37c9bce3e47fe4b82b505d6c337163d466317f748c1dcf073b80024242848020",
+      "bytes": 62970
+    },
+    "syrup/case_import.py": {
+      "sha256": "21a87b9380296bd88b122a2ecb59f12d307bc43f39b279b2e25d0cdcaeaec056",
+      "bytes": 95930
+    },
+    "syrup/characteristic_cuda_csr.py": {
+      "sha256": "ffa1f88b0c8f6a585ef288f223f3a603a9b45b35d88d16bad9c71c0b6178f734",
+      "bytes": 91361
+    },
+    "syrup/characteristic_numba.py": {
+      "sha256": "07eaac65ec4d8f01737ffcee36ef4deeaa6a064dd7f77dd7445009553ade4852",
+      "bytes": 9412
+    },
+    "syrup/characteristic_numba_csr.py": {
+      "sha256": "030ae1b3d1096a16de54723c11e70d687579b26450def15488d1555c2f1069de",
+      "bytes": 21005
+    },
+    "syrup/characteristic_sparse.py": {
+      "sha256": "5c331e589bfe5646deafca56847ec7e7f4748d656fce55cf22de7d3a3f0bcc17",
+      "bytes": 73368
+    },
+    "syrup/characteristic_transport.py": {
+      "sha256": "9767d797c4fe792b907a66c4a17c34aae82d98f862ee2de2b7bd450bd4847416",
+      "bytes": 36031
+    },
+    "syrup/chastre_case.py": {
+      "sha256": "d85af5685927e24cff6a1e55fd21568224b4340313d47f81a36af9818e23bcbd",
+      "bytes": 75069
+    },
+    "syrup/checkpoint.py": {
+      "sha256": "0db811cc2d59c5719240b3f3ffecd1092f21156c581d17e48905663814fa705c",
+      "bytes": 116245
+    },
+    "syrup/checkpoint_capability.py": {
+      "sha256": "36dc5d6a07245fca4badbadd0d754f2a250e688c2cc8b0b30d3a8c37c55ccbd6",
+      "bytes": 9328
+    },
+    "syrup/column_experiment.py": {
+      "sha256": "a533573442f5e8beb7451b11265e05b7823160fa3063aa670fcd9fef59e50dd9",
+      "bytes": 27584
+    },
+    "syrup/compact_soil_profile.py": {
+      "sha256": "cbc6d91424a62127e39e930fdb6d3767a85775ff5b3114495fab61cf0c548712",
+      "bytes": 34112
+    },
+    "syrup/complete_event.py": {
+      "sha256": "a9c8c65df031e22e175cd6a7ba501ddb96308914ee458396e3a55ca9b73aa727",
+      "bytes": 32106
+    },
+    "syrup/conservation.py": {
+      "sha256": "1072cdade368a76290c8a41162dfeb7a5b60ffaf970a7ede4707635bb3cf1bb1",
+      "bytes": 1904
+    },
+    "syrup/daily_moisture_output.py": {
+      "sha256": "aa8a2c69162c18211d325926d7df986ef6b37b1e9de2046f5c5fc3b05533b33b",
+      "bytes": 7845
+    },
+    "syrup/daily_water.py": {
+      "sha256": "a9de2fde094968f43c9875a61c354eda10b0fe3ff44e261aefed87b8697b7b37",
+      "bytes": 35452
+    },
+    "syrup/dense_cuda_source.py": {
+      "sha256": "45b9fa9443e1bb3b10a87f4dd14b12ce8ea08c30cd261f24e6e98189686e8a9b",
+      "bytes": 17705
+    },
+    "syrup/dependency.py": {
+      "sha256": "6a4ed5d5c484c135589b75cb15a3504d832d3ef788d92e21d1e0195c64e5d518",
+      "bytes": 14515
+    },
+    "syrup/dependency_bundle.py": {
+      "sha256": "ae013c930697aa07251d008563d56f7795506f4b68a3b7df2ec6221d7f9f731c",
+      "bytes": 56158
+    },
+    "syrup/event_backend.py": {
+      "sha256": "481bed15181c576bc958cf06a43343fa9494099b2080e6e6735b746dee291a68",
+      "bytes": 11784
+    },
+    "syrup/event_experiment.py": {
+      "sha256": "eb859aa48b6cc8ddfa90f42f6d9f44c9639a282fafa136c18d8741d43e42274c",
+      "bytes": 43127
+    },
+    "syrup/experimental_cuda.py": {
+      "sha256": "7cb3c0824ee39bced8054876b65bf90b4598d032bcfee1fa8d94baad589d1eb2",
+      "bytes": 82398
+    },
+    "syrup/experimental_experiment.py": {
+      "sha256": "1bf10543fda47032e7554bea3a90c3d077027363bd17973ac19255da5b81bae4",
+      "bytes": 37646
+    },
+    "syrup/experimental_hydrology.py": {
+      "sha256": "43a771696f32fb3e98531ecbf0ec323bae4a20670a51162d2cbb86bbad44ef0d",
+      "bytes": 72210
+    },
+    "syrup/experimental_numba.py": {
+      "sha256": "a4bb5065192f852e441cf5f79d707b6196934165d90c9fb44fe74ed29231e599",
+      "bytes": 51829
+    },
+    "syrup/experimental_storm.py": {
+      "sha256": "b278e83cd4264cb2b5ddd146e4c132145b3316c669568f55ec2b064ea9f87b92",
+      "bytes": 19277
+    },
+    "syrup/floating_checkpoint.py": {
+      "sha256": "a72b969fff013e63b3b13a542f9330d87d587f8a9dab06d7390ff65e0b07d09f",
+      "bytes": 73213
+    },
+    "syrup/floating_checkpoint_cuda.py": {
+      "sha256": "aeb51aeecc0c6a3d074b73f16c193302b0a139a331333973905d1dc1186d709e",
+      "bytes": 64847
+    },
+    "syrup/floating_completion.py": {
+      "sha256": "ad913fcd5c7020891a5d6f2f012373cc990a60cc3c09a3c6d45eee588a88cb8d",
+      "bytes": 8530
+    },
+    "syrup/floating_context_checkpoint.py": {
+      "sha256": "6df07c9aa04a156ffaa47d6bd7c11ba7a3c44a34f210c47cba335cb932185916",
+      "bytes": 26243
+    },
+    "syrup/floating_context_checkpoint_cuda.py": {
+      "sha256": "0ce855b56f93c7c3e5373263e251976939a186e2d8062e3fd4978e52cdd8bbdd",
+      "bytes": 38884
+    },
+    "syrup/floating_continued_checkpoint.py": {
+      "sha256": "b00e8b2240dca0ced3dc6791ced0c41b767d8bedf532ee8fb25936089c3cc475",
+      "bytes": 29621
+    },
+    "syrup/floating_continued_checkpoint_cuda.py": {
+      "sha256": "c12261ab4731a1b3b82ca757e133d4d997bfe08aa7aea4e662f8fda5626aa9cc",
+      "bytes": 5745
+    },
+    "syrup/floating_daily.py": {
+      "sha256": "2a07bb7f9e8673d45ed72923bd39012db658fb5986933a84a801609873fbb885",
+      "bytes": 62418
+    },
+    "syrup/floating_daily_cuda.py": {
+      "sha256": "748cad795dddebeacd96e5b2fb745f157518ec25f3d80774d902d673a7251bc9",
+      "bytes": 6159
+    },
+    "syrup/floating_daily_output.py": {
+      "sha256": "519277ca9df3817f19161cab3acb78f83cec2417cf6dfaeee2e6b9c4701db839",
+      "bytes": 17272
+    },
+    "syrup/floating_daily_output_vegetation.py": {
+      "sha256": "d59cd097e2f3be87c7ec67706f14c9c1031ed60bdb8053409b8da0062059295c",
+      "bytes": 21182
+    },
+    "syrup/floating_evaporation.py": {
+      "sha256": "c879415f2b1913cc5da16b414fc2ffc8b661720e19e97d923c5823f5aeca2bd6",
+      "bytes": 12611
+    },
+    "syrup/floating_event_daily_bridge.py": {
+      "sha256": "86c344b5e8661a5a69fbd121ff6fdb0cf752c9ed4880a92457669d67d7e93c0d",
+      "bytes": 32522
+    },
+    "syrup/floating_event_daily_bridge_cuda.py": {
+      "sha256": "148d60ba933851f1d3ff7956382681341eb1732208057115249d850f3590f9c2",
+      "bytes": 17169
+    },
+    "syrup/floating_event_lifecycle.py": {
+      "sha256": "1922941c60ce3ad7da99a83a94ca1502f50176495b5408fef518998d9aea731a",
+      "bytes": 62702
+    },
+    "syrup/floating_event_lifecycle_cuda.py": {
+      "sha256": "5df3fac4c55038fc04e6bcdf8ca15ac3642a448d7c284039a454c812f81edfb8",
+      "bytes": 17704
+    },
+    "syrup/floating_event_refresh.py": {
+      "sha256": "654dda5973269140a4fb3def2ad8066e59c7818d363659683030b852b2762f6e",
+      "bytes": 12999
+    },
+    "syrup/floating_event_refresh_cuda.py": {
+      "sha256": "26e00bd30798e2ec5204c8059441d379b9dfba2e586f4e2283f605fbe4132efc",
+      "bytes": 21524
+    },
+    "syrup/floating_held_context.py": {
+      "sha256": "b129fa173ecb919c250c5b22f392ced3995588e1408d42e8d440ffdd69b7db63",
+      "bytes": 61227
+    },
+    "syrup/floating_held_context_cuda.py": {
+      "sha256": "e233dee0243908769980875f909a67088ad8693adfdcdefc93fcd54c41f01c5e",
+      "bytes": 20266
+    },
+    "syrup/floating_held_context_vegetation.py": {
+      "sha256": "9a79deb581c0b3957cf2965de54cc72db10ef31d75ff1e3893473f65bce43dc9",
+      "bytes": 40586
+    },
+    "syrup/floating_held_context_vegetation_cuda.py": {
+      "sha256": "22de93e7d7353cf7df0226323234e3fe16d1488dcb9c71d302898a5e51b558a4",
+      "bytes": 17231
+    },
+    "syrup/floating_lifecycle_checkpoint.py": {
+      "sha256": "398d82cf8caeb45de8881db3fb7e4691a438070d6bcf01fa3f6e9ba595356256",
+      "bytes": 34350
+    },
+    "syrup/floating_lifecycle_checkpoint_cuda.py": {
+      "sha256": "dc093464c994e7a0d2d0416f24a26ab1799bec19b99cf2229867adeef10c8d98",
+      "bytes": 38812
+    },
+    "syrup/floating_lifecycle_checkpoint_vegetation.py": {
+      "sha256": "e1266859f6c069dc76b49441851217aebee344db0ed3677eeb5c484c8ebfed26",
+      "bytes": 42491
+    },
+    "syrup/floating_lifecycle_checkpoint_vegetation_cuda.py": {
+      "sha256": "f3f14b490318acb7632b949a0cb0c9247115620fd68fc6041743af344fdcd641",
+      "bytes": 43075
+    },
+    "syrup/floating_matrix_infiltration.py": {
+      "sha256": "7c0b45c18fc4b99181778be90044d6ea6269e4bde8cc3c540e78aa9cc73f8536",
+      "bytes": 39106
+    },
+    "syrup/floating_matrix_infiltration_cuda.py": {
+      "sha256": "97e62e6c108b1e4e058eb7bbeb43835abdb31d2caa4227b1bb869e565a69f215",
+      "bytes": 12548
+    },
+    "syrup/floating_moisture_frame.py": {
+      "sha256": "ba1ef652c37571da4bfc3a323f32dbed97b848b096fbf9dd7c5a9dc42b2f32b9",
+      "bytes": 39467
+    },
+    "syrup/floating_moisture_frame_vegetation.py": {
+      "sha256": "be7f600f6b4c51499b62afcbe23d8effcfa581e05e495bfaf2f6d4cc9ec40a0e",
+      "bytes": 28725
+    },
+    "syrup/floating_pond.py": {
+      "sha256": "bdb4576c14a908e5fea88f7112a85a88cfdd6b78c1d445bf920a020cd8248036",
+      "bytes": 55525
+    },
+    "syrup/floating_pond_cuda.py": {
+      "sha256": "42cb22e7c5d1af4f297260c68e2dcc8747936a4d3bf63657be016109b37cf9fc",
+      "bytes": 22856
+    },
+    "syrup/floating_preferential_infiltration.py": {
+      "sha256": "21d2bedaf15ff69d5a84a3b1968292a8f2b5d50653cf920616a38e5823ec7448",
+      "bytes": 32312
+    },
+    "syrup/floating_preferential_infiltration_cuda.py": {
+      "sha256": "4d4b0c5fa2963da5bbb0c2ef1fd99ec34cd51fd99cc0fef36e5051f4e7d79fbe",
+      "bytes": 12268
+    },
+    "syrup/floating_resume.py": {
+      "sha256": "0be0986ffb843aa1a5af7245a322d074fda08a03b8843f9c116ed8caecc67af0",
+      "bytes": 34581
+    },
+    "syrup/floating_resume_cuda.py": {
+      "sha256": "a4674a1dbe744693782b042415b7c4c4ad716c99f621cbadc99f62ef2b454523",
+      "bytes": 14457
+    },
+    "syrup/floating_soil_layers.py": {
+      "sha256": "e44af57738d8acaba77848b489766f56dfc7df5d583c7abe1e6e7afd4f69450a",
+      "bytes": 88827
+    },
+    "syrup/floating_soil_layers_cuda.py": {
+      "sha256": "4108c3da73c82209f07c73f04e5a3606748a72c467492b244e54dc995df0fd49",
+      "bytes": 25241
+    },
+    "syrup/floating_soil_layers_numba.py": {
+      "sha256": "a4b7cde6ffc70242d4d52c8259b1ba2f37ecba387997fe26a33f290b0471b593",
+      "bytes": 4028
+    },
+    "syrup/floating_transpiration.py": {
+      "sha256": "6ca2fb23103d31dbac22b49eed18d551043672f0f7c348919aca6660baa8ec3c",
+      "bytes": 22635
+    },
+    "syrup/floating_transpiration_cuda.py": {
+      "sha256": "7cc3f6a0bde5c102acdf365d943ca65a9499640df0a9d4de44c8f1748e65ff7f",
+      "bytes": 10714
+    },
+    "syrup/floating_wind_handoff.py": {
+      "sha256": "15194445f89919f3706f361980a56aac31f2ba1c460d5caaa2c557fa97c09c33",
+      "bytes": 71759
+    },
+    "syrup/floating_wind_handoff_cuda.py": {
+      "sha256": "846286f0d4c2c46cfe5922aeb7c5e2f6254bb76e88273e235574e9d2b1eca234",
+      "bytes": 31512
+    },
+    "syrup/floating_wind_handoff_vegetated.py": {
+      "sha256": "8248f8a46accd501a37ec25c444f84be0307088d92156dfeb0f5ad62d7d1b9fb",
+      "bytes": 32688
+    },
+    "syrup/hydrology_cuda.py": {
+      "sha256": "d91dba00b1ee8d5cbcbe789086b91ecd4ab648c1f2d8d75eedefe91cb3f7ff50",
+      "bytes": 76765
+    },
+    "syrup/hydrology_numba.py": {
+      "sha256": "9a1fe59c4096942a5668aa028a9752fd2ee13dd9e04fdf896bb6c16d96e216cd",
+      "bytes": 51983
+    },
+    "syrup/infiltration.py": {
+      "sha256": "c935b119e17d30cc176bcd339686b4f454ae8d742fa3946c2ae26f198efae570",
+      "bytes": 17662
+    },
+    "syrup/initial_reimport.py": {
+      "sha256": "85de4302d20efaf1ead12383d615493fb898eb234358fc992185c76c8054f380",
+      "bytes": 32621
+    },
+    "syrup/interevent_entry.py": {
+      "sha256": "c217f9c9389e4f1cf1d319f66efcc2483ac861ffc4b03474b5e83b3b5d10ed33",
+      "bytes": 4802
+    },
+    "syrup/interevent_interval.py": {
+      "sha256": "4e044b100a6322f0dc08b00c95cc8a9f4811f7050620b7e42b24cdd88b53a8a1",
+      "bytes": 30671
+    },
+    "syrup/interevent_transpiration.py": {
+      "sha256": "dcee259e6c53ed312981c6286e97d1e7bd2db773492397ca5991c4ab67158b03",
+      "bytes": 107820
+    },
+    "syrup/interevent_water.py": {
+      "sha256": "b95248b8a1e98ac70efd857c617cee7d19e4b536b1a5fbe41b17843f9a6d6a95",
+      "bytes": 112433
+    },
+    "syrup/layered_case.py": {
+      "sha256": "47581bb6b4e332f20cecf8918aef1d42f138970b5d151a70bb7addd35e34efd3",
+      "bytes": 69556
+    },
+    "syrup/layered_case_cuda.py": {
+      "sha256": "46d56e2ef7168f26bd8547f39db4b58af6d3cbd77cd0e7bdad0d6fdcdad5a67e",
+      "bytes": 39512
+    },
+    "syrup/layered_checkpoint.py": {
+      "sha256": "4f4336d98f40febb56e15bcdb5a4c06e2e1dc1187c330d08b79849c4c0d72d51",
+      "bytes": 148675
+    },
+    "syrup/layered_event.py": {
+      "sha256": "4b69ed237156634352dadb53229b2742364312b710a807aee984ce105a2a2d0c",
+      "bytes": 27422
+    },
+    "syrup/layered_storm.py": {
+      "sha256": "bd125b743e58c588619a86ee952934deccea360ef3af215ae2b230af60d73c78",
+      "bytes": 79090
+    },
+    "syrup/legacy_case.py": {
+      "sha256": "93983153ae9d147ab7315d1c334835b80780d4db9b1ec1c1950e2ba3d78872c5",
+      "bytes": 18521
+    },
+    "syrup/legacy_driver.py": {
+      "sha256": "e81ec8c7e8ffaad6e19a853ccd56ac11e3720305f6db319b5d7442d15d42006b",
+      "bytes": 41890
+    },
+    "syrup/legacy_experiment.py": {
+      "sha256": "d914ad3f9c9c824b781e320e9c964d973286628d6b1219a2e4e999bb817babf1",
+      "bytes": 24585
+    },
+    "syrup/legacy_gpu_driver.py": {
+      "sha256": "a1b589f5cfcd10bf5e13d522dfb3466912368e79887c3213c06394dfbcf6d58f",
+      "bytes": 35142
+    },
+    "syrup/legacy_native.py": {
+      "sha256": "837a3224ffb718a16fddb6deabc19494794256a9d50187ad2839be58d5f2c1c6",
+      "bytes": 20097
+    },
+    "syrup/legacy_native_cuda.py": {
+      "sha256": "584db1b7e4c8cf10b808433dc793a37dc7e3083d4e4ae06d2bc011bc7a12bbe9",
+      "bytes": 74615
+    },
+    "syrup/legacy_native_numba.py": {
+      "sha256": "918dd85d14e2572c4960c97116effbe52f511f7d2000324dc2b130e753abf548",
+      "bytes": 18031
+    },
+    "syrup/legacy_physics_numba.py": {
+      "sha256": "abf0c4e5044352830a8d2cbe0750afdb126abe78b849f029023a5a09149e13da",
+      "bytes": 36978
+    },
+    "syrup/legacy_transport.py": {
+      "sha256": "69f2fef5ce2a6562b48edfb3f732998b390f3a942788664bbcdc3fe775db2172",
+      "bytes": 17475
+    },
+    "syrup/legacy_water_cuda.py": {
+      "sha256": "a5d30c78f17ae576d1fe9ca2a2d7c2c6ae157ab1b08bac66e22876e70343126e",
+      "bytes": 16635
+    },
+    "syrup/lifecycle_availability.py": {
+      "sha256": "38a31d59bf4483eff8a72b8587320bfab877ed66abdf35807023f8ac2f9f91f9",
+      "bytes": 12930
+    },
+    "syrup/lifecycle_checkpoint.py": {
+      "sha256": "14a673937a4685f8b5c1dc4b42d5b1dca23a7c37a70c2f578119e48dd8883bc3",
+      "bytes": 100047
+    },
+    "syrup/lifecycle_checkpoint_cuda.py": {
+      "sha256": "195ab5353d081e083774e49c4537188c7a070e4472ffac79302c1fbbd1ea8dea",
+      "bytes": 43663
+    },
+    "syrup/lifecycle_checkpoint_cuda_calendar.py": {
+      "sha256": "ff3c28646a51221cc76f310fd00c078ab3f9410e3b955a548884e904b5e31e16",
+      "bytes": 7513
+    },
+    "syrup/lifecycle_checkpoint_cuda_load.py": {
+      "sha256": "c5716a8df776e6a90a0327490551e4af99aa70009b61e4355b1610913be94cc0",
+      "bytes": 51273
+    },
+    "syrup/lifecycle_checkpoint_cuda_load_plan.py": {
+      "sha256": "6ec1d5077becd028524c15741e25fefb6cb6733e42ff0ed19463858f38a3f581",
+      "bytes": 12632
+    },
+    "syrup/lifecycle_checkpoint_cuda_plan.py": {
+      "sha256": "2ca5f429f30563bf792151f48ed2ebd8b791b903c89ca31f87ea99364cd1cb57",
+      "bytes": 19435
+    },
+    "syrup/lifecycle_checkpoint_cuda_policy.py": {
+      "sha256": "4a693839ff83a379af844421b62e5f47fa9978038eb0bbd7304bc7191a159299",
+      "bytes": 7795
+    },
+    "syrup/lifecycle_checkpoint_cuda_v2.py": {
+      "sha256": "665776473fd3e4bc65e0c9d4264d661fcf33a7818890addbfeec4a17e2729724",
+      "bytes": 11748
+    },
+    "syrup/lifecycle_checkpoint_cuda_v2_plan.py": {
+      "sha256": "dcbfbce4e81b16e475238f9f0d1ca9aba177cd833cef9094ef9ae7b45afbec4b",
+      "bytes": 13347
+    },
+    "syrup/lifecycle_checkpoint_cuda_v3.py": {
+      "sha256": "929de2015fc73beccdef46f4b5af664fbb7d41b4edb4027bd520a0ce11247303",
+      "bytes": 6889
+    },
+    "syrup/lifecycle_checkpoint_cuda_v3_plan.py": {
+      "sha256": "740b3d02dd70874ad925afc88443b473e8ad80a1114db4c9c5de051c3dec85ec",
+      "bytes": 5623
+    },
+    "syrup/lifecycle_checkpoint_v2.py": {
+      "sha256": "9d586e946b5793bf73ed99f0a80c65f81f53a0ab8d14216c8cc917cb8367d4e7",
+      "bytes": 8463
+    },
+    "syrup/lifecycle_checkpoint_v3.py": {
+      "sha256": "28a9d756e2e4c6ccdaf8c128aa290f4dc6e85222e1c1e588f0e4d0084b14e6a5",
+      "bytes": 9040
+    },
+    "syrup/matrix_infiltration.py": {
+      "sha256": "d550f72713f3f0897c7e767678620f49b222ab5007017191eaade7a133abb43c",
+      "bytes": 71929
+    },
+    "syrup/matrix_infiltration_cuda.py": {
+      "sha256": "7347662cd1f1000a274ddb798e54057e3ba76c88ab5ee3d0be145f773e68b6e0",
+      "bytes": 22439
+    },
+    "syrup/matrix_infiltration_numba.py": {
+      "sha256": "07ee395263cb9dfd91a3ba9e5ee85169033cb311348e755d83806e1b787ddcfd",
+      "bytes": 27207
+    },
+    "syrup/native_case_profile.py": {
+      "sha256": "e12f00509b6b503155e241a8b3746da5e9811e511490587ea4db2c6387348cc1",
+      "bytes": 39283
+    },
+    "syrup/native_dense_cuda_profile.py": {
+      "sha256": "e3ca3ca91388f656ea08c0ecd2e225c670c564c8dc3430029cd75f81aad6e4b8",
+      "bytes": 35442
+    },
+    "syrup/native_dense_profile.py": {
+      "sha256": "e017d4fddd00a4a3516024948797f148097dd8bad81277485b477d9f1e286562",
+      "bytes": 33906
+    },
+    "syrup/native_floating_soil.py": {
+      "sha256": "d0080a1c0652ae776239939d9dbaaf00c1c1eb8741b5ea34315987f1dc7c6b28",
+      "bytes": 82160
+    },
+    "syrup/native_floating_soil_cuda.py": {
+      "sha256": "70c16e44b7bd377f1fa64f1a9808a1cd8d6581f894c2df96488b547575a6a376",
+      "bytes": 28995
+    },
+    "syrup/native_maple_1dca.py": {
+      "sha256": "44008661fcc75387cd74020108cc42c3c7313cfa5ca07b197aaff7b3438033b9",
+      "bytes": 2903
+    },
+    "syrup/pond_bed.py": {
+      "sha256": "02a672a08398651175d4960f38b7d6390d4a6583946827a90dd4072569f9b4a4",
+      "bytes": 19651
+    },
+    "syrup/pond_checkpoint.py": {
+      "sha256": "94cd2339566646ba44f2015dad13a67194c26a8dd3cc85b56916f62d2b4a704f",
+      "bytes": 117120
+    },
+    "syrup/pond_event.py": {
+      "sha256": "c2b65c1fab6824219db8ba5a299a6271db350aad02b8ca807c7e068a024cded9",
+      "bytes": 135105
+    },
+    "syrup/pond_hydraulics.py": {
+      "sha256": "8602dbd939812ed3a237a71677679e39dea3c7069e8919480060f441a64860ae",
+      "bytes": 31670
+    },
+    "syrup/pond_network.py": {
+      "sha256": "b3aabb8103544271c4aa0cc0cd21408e4e6dd40bf9d7e290c7e46ecc3a599708",
+      "bytes": 23554
+    },
+    "syrup/pond_transport.py": {
+      "sha256": "9da31537beb12cc8e83dc3ca707bd7c49b0f8c520511b5e5a9962afa104ce2b1",
+      "bytes": 43326
+    },
+    "syrup/preferential_infiltration.py": {
+      "sha256": "ef8f2dcc1a862f2aab485580de4b26d8aaeb4286003187894438d090883ccf8e",
+      "bytes": 75989
+    },
+    "syrup/preferential_infiltration_cuda.py": {
+      "sha256": "82ad347e51ad0f5be16eb22cae8d962bbbbbcc61444becdfad1adaf9703c86f1",
+      "bytes": 15334
+    },
+    "syrup/preferential_infiltration_numba.py": {
+      "sha256": "73904dd89358c0230e103d1197d272037f5a81a7baba75f59f354a165d56343a",
+      "bytes": 19287
+    },
+    "syrup/probe.py": {
+      "sha256": "af859fd93960d88f0ce205834b74dc906b0f5513d1a29d98c65649ee53750ef1",
+      "bytes": 19367
+    },
+    "syrup/provenance.py": {
+      "sha256": "30945a037ded51402471a2f59192144b3b44f69cf7df7088472684d60bdfcaaa",
+      "bytes": 18091
+    },
+    "syrup/rainfall.py": {
+      "sha256": "9680256608b2ca372bb88115ff5135f3bca6e350e7067968ebebb4f0b42c04b5",
+      "bytes": 19058
+    },
+    "syrup/recharge.py": {
+      "sha256": "4b2606b0da58b5b12991012d7a9965ecbeadc33298224e0df1592d115c763de0",
+      "bytes": 27961
+    },
+    "syrup/rfid_case.py": {
+      "sha256": "e7c7a60f8451941c1601f69389ebfcf324320516a9a3c985aa329802b83677bd",
+      "bytes": 62592
+    },
+    "syrup/routing.py": {
+      "sha256": "7e0952db62cc2af0c8af41bdadaff58f76061843deacdcb585eb4934b3234938",
+      "bytes": 55390
+    },
+    "syrup/routing_cuda.py": {
+      "sha256": "3dcd436abd8181482516fa6b4713d7e33fea6fbbf900216177e41d88b508350a",
+      "bytes": 35250
+    },
+    "syrup/routing_newton.py": {
+      "sha256": "5b7a8dfde8ed30637de6745f704a20631a78719902e5e7de24209567c188f297",
+      "bytes": 15591
+    },
+    "syrup/routing_newton_cuda.py": {
+      "sha256": "dc68f0667d8121203b05b412c0b9fa846355c944f7b0107eb4aab45c2855d29d",
+      "bytes": 20587
+    },
+    "syrup/routing_numba.py": {
+      "sha256": "d48ad53c766a5363ce17ff231f0bd8a0ee29aab622b788e7c76c93a61e5a26b5",
+      "bytes": 9616
+    },
+    "syrup/sediment_bed.py": {
+      "sha256": "c4cd7998c107f0df985c21bf51e5adb45d2d715109ee42b879a694ec1b218e07",
+      "bytes": 54619
+    },
+    "syrup/sediment_event.py": {
+      "sha256": "f96e195230c6db5fe6cc5150e04c7b10eae304e32b598f5aae59377b9b52ac29",
+      "bytes": 178527
+    },
+    "syrup/sediment_experiment.py": {
+      "sha256": "90a3379bfcda271c73a624ad608fd323915dd5236956f759a0d5ca9e3643d62e",
+      "bytes": 84993
+    },
+    "syrup/sediment_physics.py": {
+      "sha256": "b83ca42c0675acca72f00ad44a386ab4e8ea98f457e6a386913f667e630a85df",
+      "bytes": 54611
+    },
+    "syrup/sediment_transport.py": {
+      "sha256": "c67b3875d7f66dba4725bcd072be3fd697cb0031c85887859b23cc39b0d8b1cc",
+      "bytes": 34013
+    },
+    "syrup/soil_evaporation.py": {
+      "sha256": "c1450a07c61c093d65da7e0f483f1861f53b7e02b2ee28449af09322d3bc4fdd",
+      "bytes": 40950
+    },
+    "syrup/soil_moisture_output.py": {
+      "sha256": "48919d4346ad9c248d7569059e22e10cbe5a6db3a2c8c3c5eb7e6ee9d9273610",
+      "bytes": 71587
+    },
+    "syrup/soil_profile_texture.py": {
+      "sha256": "9fcb81ae1caa51366de83852c20db4434a357051ead6a124972402caa3da4c0f",
+      "bytes": 71640
+    },
+    "syrup/soil_profile_texture_cuda.py": {
+      "sha256": "4472c3b5507aada51b3776953a0d0bc0c4c669c0d5b6c1f7d39d1e40cbfafcb6",
+      "bytes": 9369
+    },
+    "syrup/soil_profile_texture_numba.py": {
+      "sha256": "21f09a3ef507835cd096f96041abeb3052aab28ba5027a9ae02c29160689118d",
+      "bytes": 6426
+    },
+    "syrup/soil_texture_properties.py": {
+      "sha256": "ff737938a1c3fc4c77882a335f691175f8dce6b27e077b0faa64f2c01cc20481",
+      "bytes": 46435
+    },
+    "syrup/soil_texture_properties_cuda.py": {
+      "sha256": "c6f50ddefbc9393e049a08bc4788bd637b72e456cdc8b88c518f4558a9e4225e",
+      "bytes": 12384
+    },
+    "syrup/soil_texture_properties_numba.py": {
+      "sha256": "a6a7add411858328d42d08b95aa3219a0d818e6459505ba7c7766eb337c2da60",
+      "bytes": 10112
+    },
+    "syrup/soil_water_remap.py": {
+      "sha256": "d9a269c4e139a757aa2e60d8c6e276cfcce3b7aafdf33c8ca444a94674cb2df5",
+      "bytes": 40607
+    },
+    "syrup/soil_water_remap_cuda.py": {
+      "sha256": "bacf1534e6378af43dc7588f29c94c721b4a92c0a74f65a8ec8f0d4d67602a06",
+      "bytes": 17117
+    },
+    "syrup/soil_water_remap_numba.py": {
+      "sha256": "fb9ed563b6398fe137bfc660038a2e9ab2df7aaed7d53f70973912aa05ea1f38",
+      "bytes": 8031
+    },
+    "syrup/spatial_matrix_infiltration.py": {
+      "sha256": "3b5929e0e4de26ff878794ce00d3408720c871aea343222ff5a42db8f3e6ad6c",
+      "bytes": 44626
+    },
+    "syrup/spatial_matrix_infiltration_cuda.py": {
+      "sha256": "781b86083003e098e83255f917d2336cfcde965eb67b833b54e688a5a03b6ba3",
+      "bytes": 20610
+    },
+    "syrup/spatial_preferential_infiltration.py": {
+      "sha256": "448eb8d5e69d66684e9eac656563e409da35391da5d1875b34b782487a69b7c3",
+      "bytes": 41639
+    },
+    "syrup/spatial_preferential_infiltration_cuda.py": {
+      "sha256": "8950fddc28f662ea93692eaf85f0c36eb7682b6a3b1fa72028e26ca0f829561c",
+      "bytes": 24797
+    },
+    "syrup/spatial_soil_layers.py": {
+      "sha256": "8ba0243a1112cf27fea35281608707f66790f769d340683ba7c9fd447741d5e0",
+      "bytes": 113349
+    },
+    "syrup/spatial_transpiration.py": {
+      "sha256": "7dc89a1529efad994ec405dd41e0de5e8137f3a855bbcca33eed2215b35e68d1",
+      "bytes": 36770
+    },
+    "syrup/spatial_transpiration_cuda.py": {
+      "sha256": "1babc2baea4602ed04e72470ef0f0765b5a9c0126d7d24604b28567f1406e7de",
+      "bytes": 16054
+    },
+    "syrup/splash.py": {
+      "sha256": "3a3b5697b7e28497c9f650f237e4bbe2e9f7d80bf3b2a5cdfe66fcb934e3ec33",
+      "bytes": 45611
+    },
+    "syrup/splash_cuda.py": {
+      "sha256": "6616060a3da333c1cb87bf509716b512b4ce03b312fe61a80e8f727db9288457",
+      "bytes": 10152
+    },
+    "syrup/storage_admission.py": {
+      "sha256": "092c11b9941479a525892f98434d58ea2d3d59c4b52f27b5f927dcbe1d303333",
+      "bytes": 17841
+    },
+    "syrup/storm.py": {
+      "sha256": "7f0dfb03d0176e053d83c3f52a83f711c6f6729c554b45ad23ebb0e87b756d19",
+      "bytes": 33079
+    },
+    "syrup/storm_experiment.py": {
+      "sha256": "c4d70d92f239abe5c262b5f9af8a5160d28479acd8805484cd291ba0a1b8f5f9",
+      "bytes": 34058
+    },
+    "syrup/subsurface.py": {
+      "sha256": "bd50377ed2eea80e29bbb96fe290f33af8a78427b1c0de38134f049a2cb80dfa",
+      "bytes": 95532
+    },
+    "syrup/subsurface_cuda.py": {
+      "sha256": "8c80986468e046984aacd9a768391034e5aae65b654fe543d99f90ccf2712b76",
+      "bytes": 32797
+    },
+    "syrup/subsurface_cuda_floating.py": {
+      "sha256": "fc2dbd380acd131fb2662901189b5967e3e55f0f19bfd6e79bbac0c1691d07c3",
+      "bytes": 28798
+    },
+    "syrup/subsurface_cuda_spatial.py": {
+      "sha256": "2662eb3f8e05faca2c7815b2ef669ff9969ac8c3e6ae9d92fb2cf6b8ffc33ec3",
+      "bytes": 24981
+    },
+    "syrup/subsurface_numba.py": {
+      "sha256": "d3d39ddfb71e563adb6513496ffcac6fa75d459de56632cbcb2e858fe1c85226",
+      "bytes": 45054
+    },
+    "syrup/subsurface_transpiration.py": {
+      "sha256": "7b2a53dacb3b245ff3b821337f91c385b43b46ce974bf753e7dcb950a0431e8b",
+      "bytes": 33715
+    },
+    "syrup/surface_routing.py": {
+      "sha256": "630e2901c6ab7cc260f3c7a35de80ce97605df67e94478a9651aa504e6e0983f",
+      "bytes": 36946
+    },
+    "syrup/vegetation_lifecycle.py": {
+      "sha256": "99ab27872e6ccb5eb2b026f4284ed188482ebcdabae5329468f02dcac297d61b",
+      "bytes": 48378
+    },
+    "syrup/vegetation_lifecycle_cuda.py": {
+      "sha256": "ae8dce58f0fcb04966946524b89eb809b2f376da15134a3c5dc92637b48a4177",
+      "bytes": 12981
+    },
+    "syrup/water_lifecycle.py": {
+      "sha256": "33ae320b623bb0404979655bfa0073d992988ca8309842ae4a8e7c081d8dc162",
+      "bytes": 167268
+    },
+    "syrup/water_lifecycle_cuda.py": {
+      "sha256": "07359e587a6d5ce09e578b18529ded7aa2c3efc1b134c7a707e6116e2855e15e",
+      "bytes": 18306
+    },
+    "syrup/water_vegetation_binding.py": {
+      "sha256": "79a5214f249ce2dab4ebdd2e44235fadba00d215f7e0059e40beb1837a3f46d3",
+      "bytes": 71853
+    },
+    "syrup/water_vegetation_held.py": {
+      "sha256": "f4b51ba0b308a736a6d0bf9ace711fb6fa9bb205ea228714d11446822c0340d1",
+      "bytes": 54945
+    },
+    "syrup/weather_pet.py": {
+      "sha256": "06605532eda482ad231711eaaedf185b77b72ff20b00816fbee5c50a636ec7cf",
+      "bytes": 73494
+    },
+    "syrup/windowed_case.py": {
+      "sha256": "389d6705276eadd150364b22c967a24110afb7765830cd63baef4cecc018c5dc",
+      "bytes": 28379
+    },
+    "syrup/windowed_experiment.py": {
+      "sha256": "07bdc04faf868c7a5da403ad42f78a213b0c505ea84ebb66559972a6a52c00e6",
+      "bytes": 38153
+    },
+    "syrup/windowed_shared_bed.py": {
+      "sha256": "63d64dd5c0c1cd5591a335c71b84c519a068242e93bf58303aa5c480ad3d6560",
+      "bytes": 114263
+    },
+    "syrup/windowed_shared_bed_device.py": {
+      "sha256": "83833fb97e853fcdb77f29a52f0a31092ebbea19620ffde45d0f655632438c27",
+      "bytes": 128908
+    }
+  },
+  "prompt_sha256": "dffdb64f7a425777d34436d1a17ce177d3e39dfbb22adeffb38ee35f945b1b23",
+  "allowed_tools": [
+    "Read",
+    "Glob",
+    "Grep"
+  ],
+  "saved_simulation_payloads": false
+}

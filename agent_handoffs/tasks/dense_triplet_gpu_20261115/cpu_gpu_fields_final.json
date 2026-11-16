@@ -1,0 +1,129 @@
+{
+  "passed": true,
+  "fields": {
+    "W": {
+      "shape": [
+        3,
+        160
+      ],
+      "max_abs": 3.469446951953614e-18,
+      "bit_equal": false,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "J": {
+      "shape": [
+        160
+      ],
+      "max_abs": 0.0,
+      "bit_equal": true,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "I": {
+      "shape": [
+        160
+      ],
+      "max_abs": 0.0,
+      "bit_equal": true,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "surface": {
+      "shape": [
+        4,
+        40
+      ],
+      "max_abs": 0.0,
+      "bit_equal": true,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "qx": {
+      "shape": [
+        4,
+        41
+      ],
+      "max_abs": 0.0,
+      "bit_equal": true,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "qy": {
+      "shape": [
+        5,
+        40
+      ],
+      "max_abs": 0.0,
+      "bit_equal": true,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "voxels": {
+      "shape": [
+        4,
+        40,
+        4,
+        3
+      ],
+      "max_abs": 0.0,
+      "bit_equal": true,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "active": {
+      "shape": [
+        4,
+        40,
+        3
+      ],
+      "max_abs": 6.938893903907228e-18,
+      "bit_equal": false,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "routing_source": {
+      "shape": [
+        4,
+        40
+      ],
+      "max_abs": 0.0,
+      "bit_equal": true,
+      "owning_tolerance": {
+        "rtol": 1e-09,
+        "atol": 1e-12
+      }
+    },
+    "biomass": {
+      "shape": [
+        1
+      ],
+      "max_abs": 0.0,
+      "bit_equal": true,
+      "owning_tolerance": {
+        "rtol": 1e-12,
+        "atol": 1e-15
+      }
+    }
+  },
+  "tolerance_sources": [
+    "SYRUP/tests/phase2_floating_event_daily_bridge_cuda/test_gpu_definitions.py:TOL",
+    "LEAF/tests/test_plant_session.py:479"
+  ]
+}

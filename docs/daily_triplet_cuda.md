@@ -1,5 +1,7 @@
 # Dense CUDA daily integration
 
+[Accepted sources and executed qualification](dense_triplet_cuda_qualification.md).
+
 `masy.daily_triplet_cuda.DailyCudaTripletSession` connects actual MAPLE wind,
 SYRUP rainfall/recession/daily water and LEAF demand, feedback and growth on one
 resident Dense CUDA landscape. The explicit profile is

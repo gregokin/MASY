@@ -1,0 +1,37 @@
+{
+  "utc": "2026-11-16T00:32:56.523851+00:00",
+  "scope": "Actual Dense CUDA three-model daily wind/storm/recession/interevent/E/T/growth connection, source/runtime provenance, finite host/device budgets, CPU/native controls and accepted publication; windowed/general large-domain and full combined restart separate",
+  "sources": {
+    "masy": {
+      "repo": "/home/okin/MASY",
+      "commit": "9ba89f2de995ea809f6872efb7900cc0c19b0688",
+      "tree": "53ad43b9766c1ea53423d9221bf036c5ff8ae477"
+    },
+    "maple": {
+      "repo": "/home/okin/MAPLE",
+      "commit": "1dca8539b87bf80e2b4bb72d4c6637d02013a305",
+      "tree": "c37b7ec7b1ebc645e58b96f4c75156eb378b4597"
+    },
+    "syrup": {
+      "repo": "/home/okin/MASY/agent_handoffs/tasks/latest_triplet_growth_20261114/syrup_candidate",
+      "commit": "900ff99ed4fd021cffdd0404f8c31031f2b6cea9",
+      "tree": "379f093ca92c62e8a0c7686214f1efcebda6b73d"
+    },
+    "leaf": {
+      "repo": "/home/okin/MASY/agent_handoffs/tasks/latest_triplet_growth_20261114/leaf_candidate",
+      "commit": "ef5289ad22d21db3ec1f324e06f077f14845a847",
+      "tree": "c8a429350e2c4aa78f0202564e12ed1e98fbb568"
+    }
+  },
+  "preserved": {
+    "agent_handoffs/orchestration_state.md": "ac21153658c4b4a415ce237992cdfc9f697fb39a4285bc4d36bee3e0320b3b70",
+    "Source_audit_result_01.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "agent_handoffs/ready_review_queue_20261027.json": "90204d5ec1f21e778959fab135208668b2d22225cc6abb2ec7ceba81c13940e9"
+  },
+  "gpu_scope": {
+    "authorization": "User requested implementing described Dense GPU connections in automatic Codex-Claude mode; existing permission to use free devices; fresh availability required before each launch",
+    "physical_uuid": "GPU-5c8bd3d4-2885-82c6-a0f0-ad2b7f87b871",
+    "logical_device": 0,
+    "others_untouched": true
+  }
+}

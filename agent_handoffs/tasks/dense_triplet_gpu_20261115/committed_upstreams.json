@@ -1,0 +1,12 @@
+{
+  "syrup": {
+    "commit": "56dbdc24a909e7303b8f74aab79903d9027e47c6",
+    "branch": "integration/masy-dense-gpu-20261115",
+    "status": ""
+  },
+  "leaf": {
+    "commit": "bb28d4818e596ee6373ad79ca82e411168ce05f2",
+    "branch": "integration/masy-dense-gpu-20261115",
+    "status": ""
+  }
+}

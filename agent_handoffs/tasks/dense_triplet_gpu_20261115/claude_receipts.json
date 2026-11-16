@@ -1,0 +1,471 @@
+{
+  "authorized_source_only": true,
+  "no_saved_simulation_payloads_submitted": true,
+  "sessions": [
+    {
+      "role": "binary_census_fix_review",
+      "session_id": "5e8f2348-8626-4df3-80d6-dd183f6f286d",
+      "pid": 2374664,
+      "start_ticks": "226792731",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "binary_census_fix_review_prompt_01.md": {
+          "bytes": 1096,
+          "sha256": "2354ae991c5b9b79ac04e4d776bc74ae1cbd02a04db1f5301548666202899cce"
+        },
+        "binary_census_fix_review_submitted.json": {
+          "bytes": 43014,
+          "sha256": "ebac5e419877ca3ef6364880a6d0fbf2e497dd00f22e16bb3b234ca1a8ddc98c"
+        },
+        "binary_census_fix_review_launch.json": {
+          "bytes": 1284,
+          "sha256": "54e04db6ca88afdc83ce97e2627ea406d2eb37e07d86d155930fc08b4bd389f2"
+        },
+        "binary_census_fix_review_stdout.json": {
+          "bytes": 3346,
+          "sha256": "134a6292c9c102511667215fe20b0d09ce36d8f202c18645dca625a4242cc2b2"
+        },
+        "binary_census_fix_review_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "caller_fix_review",
+      "session_id": "9e092eee-672f-424c-b566-9a5d63867977",
+      "pid": 2354178,
+      "start_ticks": "226501591",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "caller_fix_review_prompt_01.md": {
+          "bytes": 654,
+          "sha256": "721cc26680dba40c70a565832803c1a6da22fc793900180db1e3e57c292037e9"
+        },
+        "caller_fix_review_submitted.json": {
+          "bytes": 43014,
+          "sha256": "ebac21a1111587808c50ec0d64911c31970f5ede62702de42493dcb5b9fd5057"
+        },
+        "caller_fix_review_launch.json": {
+          "bytes": 1270,
+          "sha256": "b1195f8cacaabb2bdb89114d2853da1267ab417cb06c363eaee4ced8ba6c852f"
+        },
+        "caller_fix_review_stdout.json": {
+          "bytes": 3419,
+          "sha256": "33514459c946677c87ea2de3903f5fe73f40155e6c7e084cebc0514d083f6ce4"
+        },
+        "caller_fix_review_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "cold_import_fix_review",
+      "session_id": "5888cf68-da00-4882-865d-80090413d308",
+      "pid": 2366668,
+      "start_ticks": "226715877",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "cold_import_fix_review_prompt_01.md": {
+          "bytes": 1182,
+          "sha256": "5feb44caa49e4959e6c9d7abc29a6cde7ed03c63bed50fa7c8dff83ab4ca70bd"
+        },
+        "cold_import_fix_review_submitted.json": {
+          "bytes": 43014,
+          "sha256": "0f8ca76493775058e15ce92f6550eb551adc785b8460260befe9d5e6dfdc498b"
+        },
+        "cold_import_fix_review_launch.json": {
+          "bytes": 1281,
+          "sha256": "8edfed3ab966c376d4998648bf9ea338bb0ad1a730c9df092ad83d35fb5cb434"
+        },
+        "cold_import_fix_review_stdout.json": {
+          "bytes": 3979,
+          "sha256": "583334395944dff846a7de082ed1aebf27603f12a76c4c38294f8f727e1ab841"
+        },
+        "cold_import_fix_review_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "leaf_followup",
+      "session_id": "ecda6009-47e4-48ec-9def-ffa53f1140d0",
+      "pid": 2340345,
+      "start_ticks": "226231553",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "leaf_followup_prompt_01.md": {
+          "bytes": 1293,
+          "sha256": "47c7ca415f02c720dbb0be78f9f27361d3cb4c775e6085fb4b676bc11a191619"
+        },
+        "leaf_followup_submitted.json": {
+          "bytes": 417086,
+          "sha256": "624fbbd97bd7525f1f4c54269cb8f80ba0dd7e9ba5ea998fe6418341ecc414c6"
+        },
+        "leaf_followup_launch.json": {
+          "bytes": 1280,
+          "sha256": "e7777dac800edffd93f91769025e2974a014208f3cbf2677b92da19a7ac57582"
+        },
+        "leaf_followup_stdout.json": {
+          "bytes": 4029,
+          "sha256": "16044bda297c56ce85c8e0208b6c98838ebe7d2fd86c8b1bc041fc0ab7237442"
+        },
+        "leaf_followup_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "leaf",
+      "session_id": "e7996a3d-6f95-49be-849e-12fbbdaaa005",
+      "pid": 2327550,
+      "start_ticks": "226089720",
+      "exit_code": 143,
+      "termination_reason": "wall_limit",
+      "source_only": true,
+      "files": {
+        "leaf_prompt_01.md": {
+          "bytes": 4996,
+          "sha256": "5433e08191da096b320e2b2e0826a7ed1948a119a3e7b826dcc5c50113005341"
+        },
+        "leaf_submitted.json": {
+          "bytes": 416926,
+          "sha256": "dfe19b439b88cf9f3fc2124ce5976ff0659ca7385450844df5b2a5e007a76af5"
+        },
+        "leaf_launch.json": {
+          "bytes": 1191,
+          "sha256": "21f5874e1dccda80c71f4e02c1fe61dbd70e732b2c2e4fe56e37becbcfddaffe"
+        },
+        "leaf_stdout.json": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "leaf_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "leaf_runtime_final",
+      "session_id": "4b0aecb9-f8cd-42c4-b8f9-ffeee4621c47",
+      "pid": 2353871,
+      "start_ticks": "226486962",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "leaf_runtime_final_prompt_01.md": {
+          "bytes": 1028,
+          "sha256": "67b3e04ea9bb7aaeaf1095645cdf379817f7ac7c900148cbae5f0c9b8b6bd02d"
+        },
+        "leaf_runtime_final_submitted.json": {
+          "bytes": 43014,
+          "sha256": "50a762caa440296cab6e9a3506c108aa27710ef121349ffcfb31a5c4f11b627b"
+        },
+        "leaf_runtime_final_launch.json": {
+          "bytes": 1273,
+          "sha256": "96a7b665bfde8e622156cb56d9a527ac8270ea1130842978609cfbe6f972c842"
+        },
+        "leaf_runtime_final_stdout.json": {
+          "bytes": 6321,
+          "sha256": "c24651ff470b18881ed37f89b74382a1af3f99d65b6797e753df1bd7647ba7ce"
+        },
+        "leaf_runtime_final_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "leaf_runtime_review",
+      "session_id": "d9428433-5def-4319-8e8c-86f3738c60e7",
+      "pid": 2352334,
+      "start_ticks": "226414589",
+      "exit_code": 143,
+      "termination_reason": "wall_limit",
+      "source_only": true,
+      "files": {
+        "leaf_runtime_review_prompt_01.md": {
+          "bytes": 964,
+          "sha256": "ccdeba70dc37014122781bf47625926a33d706f0027bd8428e30e31853b453e7"
+        },
+        "leaf_runtime_review_submitted.json": {
+          "bytes": 43014,
+          "sha256": "13169eb1f6451504379e7cfd356e5c85475a08701be364a2982205d5de152988"
+        },
+        "leaf_runtime_review_launch.json": {
+          "bytes": 1202,
+          "sha256": "3044ac7a1f025e4cb168d72f33562517142eb329171a6d05bdc5a7fefc942745"
+        },
+        "leaf_runtime_review_stdout.json": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "leaf_runtime_review_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "native_fix_review",
+      "session_id": "1edc0200-fbb7-45f8-b878-56cb949b1084",
+      "pid": 2353629,
+      "start_ticks": "226469828",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "native_fix_review_prompt_01.md": {
+          "bytes": 1060,
+          "sha256": "b13ab1c248a84cd3be77027084f19e3993fb27ca21ea4b0f03f83fef9a1172e3"
+        },
+        "native_fix_review_submitted.json": {
+          "bytes": 104874,
+          "sha256": "1602d9da7ce1946f6c39bac640d0754752de45cdec4c6a01489bffbf291d598d"
+        },
+        "native_fix_review_launch.json": {
+          "bytes": 1264,
+          "sha256": "dd07d65b9ac24c836d26df1aa103a032bfc577e0a6d27c9041301dc16452c690"
+        },
+        "native_fix_review_stdout.json": {
+          "bytes": 4503,
+          "sha256": "ca51ed9de598fc2fca6abc92321c51f0aa084c91b3434a1b5fd37dfe6c5bc1a3"
+        },
+        "native_fix_review_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "native_review_final",
+      "session_id": "05f4bd2f-f719-431c-a34b-bbdf0dd8faae",
+      "pid": 2352610,
+      "start_ticks": "226420332",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "native_review_final_prompt_01.md": {
+          "bytes": 684,
+          "sha256": "dffdb64f7a425777d34436d1a17ce177d3e39dfbb22adeffb38ee35f945b1b23"
+        },
+        "native_review_final_submitted.json": {
+          "bytes": 104874,
+          "sha256": "2f10a25c7c889318a8df8af2e74e121ffdd3bbdf9734c15d39fe2983b6cfb091"
+        },
+        "native_review_final_launch.json": {
+          "bytes": 1268,
+          "sha256": "946883513a102e0c1af9a49b77867aa57f094af67a5277fc97c301ade7ce9fcb"
+        },
+        "native_review_final_stdout.json": {
+          "bytes": 6613,
+          "sha256": "c9de5e767d1106d2289abff33c44c1f936adb8822175e4d2f73e8e4af7fc8a1a"
+        },
+        "native_review_final_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "native_review",
+      "session_id": "03f3741f-060c-4c62-8e27-3bc0b37994cb",
+      "pid": 2348226,
+      "start_ticks": "226348501",
+      "exit_code": 143,
+      "termination_reason": "wall_limit",
+      "source_only": true,
+      "files": {
+        "native_review_prompt_01.md": {
+          "bytes": 1307,
+          "sha256": "9dc1125c96eeb0017fff62cee66ee04837768ad5a75d13ffc45672e0edf7022c"
+        },
+        "native_review_submitted.json": {
+          "bytes": 104874,
+          "sha256": "d5c3dd5979df5f489639ee55399e510ba812a61f73e0db020161ef0f1c5df499"
+        },
+        "native_review_launch.json": {
+          "bytes": 1184,
+          "sha256": "336d08aee2320f2217d99b68fee84bd5568ff24e68c25008d22049791495ca0a"
+        },
+        "native_review_stdout.json": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "native_review_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "provider_forms_fix_review",
+      "session_id": "10b56815-27a4-4892-b5d4-cdee2d7f6242",
+      "pid": 2379639,
+      "start_ticks": "226840807",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "provider_forms_fix_review_prompt_01.md": {
+          "bytes": 1250,
+          "sha256": "95a4ec0704bce28c529189012f206b748dc00c605baea2978a94d2621896f0e0"
+        },
+        "provider_forms_fix_review_submitted.json": {
+          "bytes": 43014,
+          "sha256": "6d89de5521542b951799fa78ae46671d99407e5a6decde2678b26a079850a3d1"
+        },
+        "provider_forms_fix_review_launch.json": {
+          "bytes": 1286,
+          "sha256": "075dc94d6b441ae4e5c49956cfe063e2077c183612ff53fcae686869a31b03db"
+        },
+        "provider_forms_fix_review_stdout.json": {
+          "bytes": 3895,
+          "sha256": "f14202caa327411fc2ff972589f4d50cc10324fb27e1a38e61f4337ae37dfaa1"
+        },
+        "provider_forms_fix_review_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "runtime_followup",
+      "session_id": "147d0214-33b1-4938-930b-708f99ea3da2",
+      "pid": 2343156,
+      "start_ticks": "226267841",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "runtime_followup_prompt_01.md": {
+          "bytes": 898,
+          "sha256": "3b06941af07d59cb8f7e1accc5a4cec535bd4d8a02dcce7f186da7cb0651e8f6"
+        },
+        "runtime_followup_submitted.json": {
+          "bytes": 415418,
+          "sha256": "81b127444d394e79d8f0a290691daf36ae3727c35ddb4e035b7cb93f55e15bbf"
+        },
+        "runtime_followup_launch.json": {
+          "bytes": 1290,
+          "sha256": "bc6dfc9c0f921b93fa55af00151da47036b5bb471f48c6c5e2206922c6ea6c0f"
+        },
+        "runtime_followup_stdout.json": {
+          "bytes": 4034,
+          "sha256": "1ea26ae07baaf427a4abc77cdaf64ba99e0a7a19fa21a35194b3075c1a81a264"
+        },
+        "runtime_followup_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "runtime",
+      "session_id": "0d02b5df-d374-4c5e-bb8b-776eedc36c8a",
+      "pid": 2329462,
+      "start_ticks": "226124270",
+      "exit_code": 143,
+      "termination_reason": "wall_limit",
+      "source_only": true,
+      "files": {
+        "runtime_prompt_01.md": {
+          "bytes": 5141,
+          "sha256": "db140673ee166bc1a7dc47e539ac972a1d59c9ac4e12911adf65c87fb63bd456"
+        },
+        "runtime_submitted.json": {
+          "bytes": 415264,
+          "sha256": "52fea026aa1acd1838e008a42be0fe13c50ffdb7a01e715aa76e5e585e2587e4"
+        },
+        "runtime_launch.json": {
+          "bytes": 1201,
+          "sha256": "942189f9271fbdf2d19f915bdb1a4693856dc00ff141406cef0c54a1c81a1058"
+        },
+        "runtime_stdout.json": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "runtime_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "syrup_design",
+      "session_id": "df5ba1d0-1203-4dcb-ae3d-c4d141ad8956",
+      "pid": 2343083,
+      "start_ticks": "226267477",
+      "exit_code": 0,
+      "termination_reason": null,
+      "source_only": true,
+      "files": {
+        "syrup_design_prompt_01.md": {
+          "bytes": 866,
+          "sha256": "74c8e2d583c117e15b520aa4f034c767b2c4c55e9475f4e89ad07bd0edfe3e30"
+        },
+        "syrup_design_submitted.json": {
+          "bytes": 403129,
+          "sha256": "76b8ddb7ff7f82b35bd35890cd403e085efe23042f3d3837093786b79fc8c156"
+        },
+        "syrup_design_launch.json": {
+          "bytes": 1253,
+          "sha256": "e186be72d09df228ea2e0a3931a0f118bcbc9efb1366f1749967c449e72b787d"
+        },
+        "syrup_design_stdout.json": {
+          "bytes": 10390,
+          "sha256": "cb0ed4375689b057a9433b9334daffa4dc987a7c00f0282ae2c067cc68f9635e"
+        },
+        "syrup_design_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "role": "syrup",
+      "session_id": "a2193ab0-6105-4aa0-a661-f0aa8fc2d52c",
+      "pid": 2327481,
+      "start_ticks": "226089337",
+      "exit_code": 143,
+      "termination_reason": "wall_limit",
+      "source_only": true,
+      "files": {
+        "syrup_prompt_01.md": {
+          "bytes": 6558,
+          "sha256": "c1e96268cbfc15c19079c741c111fdf65e83e572e4544565403bc46acbb05d9d"
+        },
+        "syrup_submitted.json": {
+          "bytes": 403154,
+          "sha256": "1bc18fd899adf27a115b8f5b301fb99f10aa06990f20caef8cc854d160ad25ec"
+        },
+        "syrup_launch.json": {
+          "bytes": 1194,
+          "sha256": "901120570eb151d8adac953e28e63e2648b46e86e671ba2bcf0c222bf145e177"
+        },
+        "syrup_stdout.json": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "syrup_stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    }
+  ]
+}

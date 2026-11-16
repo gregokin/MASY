@@ -1,0 +1,86 @@
+{
+  "schema": "masy.dense_triplet_cuda_acceptance.v1",
+  "accepted": true,
+  "utc": "2026-11-16T03:02:03.785557+00:00",
+  "source_profile": "masy.daily_wind_water_growth.cuda.v1",
+  "sources": {
+    "leaf": {
+      "commit": "bb28d4818e596ee6373ad79ca82e411168ce05f2",
+      "tree": "7904cc987b2e666f4f5f717f4ce78f536e1babb0",
+      "package_sha256": "b3e96519e28ad411d198658c6a8b84b5b418b74ec6d0653c3895fc6e7503a550",
+      "ref": "refs/heads/integration/masy-dense-gpu-20261115"
+    },
+    "maple": {
+      "commit": "1dca8539b87bf80e2b4bb72d4c6637d02013a305",
+      "tree": "c37b7ec7b1ebc645e58b96f4c75156eb378b4597",
+      "package_sha256": "191416153d3eca03e0b5e0817720d1365055de5b0b37391ac95454321aee7d68",
+      "ref": "refs/heads/main"
+    },
+    "masy": {
+      "commit": "9e078aeaa6da54cae1bb94e8b7ec302ba828a4ca",
+      "tree": "8b6f077e06c2cee3e23cb8e7f4aa79c932c3039a",
+      "package_sha256": "17cf608cca6e97eb5d49ebc2bb8a389fbf8db90bc88ef4ecb3cceafbf6b24bfa",
+      "ref": "refs/heads/integration/masy-dense-gpu-20261115"
+    },
+    "syrup": {
+      "commit": "56dbdc24a909e7303b8f74aab79903d9027e47c6",
+      "tree": "cb12e7ac0118c1c6ecb7a2caf96001f6896e786e",
+      "package_sha256": "96561d67a46cff571f06cbbd0a687354e438edc4a73435d6944fcec3f1f325f8",
+      "ref": "refs/heads/integration/masy-dense-gpu-20261115"
+    }
+  },
+  "qualification_sha256": "9bd839337cad156cae0ef98073dc07d06716dc8a4fab64aa79de5aa168ac3d55",
+  "lock": {
+    "path": "/home/okin/MASY/agent_handoffs/tasks/dense_triplet_gpu_20261115/committed_runtime_04/code/triplet_lock.json",
+    "sha256": "7bcd435b72a643f2ce5e5a815df00d42d2646719930a21a942f3cb674b41510b",
+    "size": 225217
+  },
+  "physical_gpu": "GPU-5c8bd3d4-2885-82c6-a0f0-ad2b7f87b871",
+  "actual_model": {
+    "days": 8,
+    "wind_occurrences": 2,
+    "full_storm_and_recession": true,
+    "daily_transpiration_debits": 8,
+    "weekly_growth_updates": 1,
+    "physical_end_s": "0x1.5182651eb851fp+19",
+    "ledger": {
+      "storage0_m3": 0.5272315168736845,
+      "rain_m3": 9.999999999999992e-05,
+      "drainage_m3": 0.0,
+      "outlet_export_m3": 1.2032226105101047e-07,
+      "bottom_export_m3": 0.0,
+      "surface_return_m3": 0.0,
+      "bound_m3": 3.624936845905738e-11,
+      "n_refreshes": 3,
+      "n_occurrences": 1,
+      "residual_m3": -1.1102230246251565e-16,
+      "residual_bound_m3": 3.6254950833174995e-11,
+      "evaporation_m3": 0.1341950448246277,
+      "transpiration_m3": 0.0003116955405310209,
+      "n_days": 8
+    },
+    "model_elapsed_s": 63.49066358571872,
+    "supervised_elapsed_s": 78.98654622258618,
+    "sampled_peak_rss_bytes": 1201381376,
+    "sampled_peak_driver_device_bytes": 200278016
+  },
+  "checks": {
+    "actual_cuda_controls": 16,
+    "leaf_cpu_bridge_tests": 13,
+    "cpu_source_lock_tests": 12,
+    "cuda_source_runtime_tests": 9,
+    "frontend_metadata_tests": 5,
+    "final_cpu_gpu_fields": true,
+    "compiled_file_hashes": 163,
+    "compiled_unique_bytes": 2048373600,
+    "compiled_inventory_sha256": "07247bc78df47883df4d32b29562e22a93112d0dc2513236e50927f90b7a813d"
+  },
+  "limits": [
+    "small Dense baseline-direct wind only",
+    "Windowed and large-domain performance unqualified",
+    "combined persisted restart and full CUDA scenario CLI unqualified",
+    "wind assumes dry soil while actual water is preserved",
+    "adverse near-saturated closed-bottom full recession exceeded300sCPUguard; only bounded genuine continuation/wind exclusion qualified"
+  ],
+  "saved_simulation_arrays": "local only; excluded from publication and all Claude submissions"
+}
