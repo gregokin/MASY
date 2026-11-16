@@ -7,6 +7,7 @@ The old three-source runtime and its locks are independent and unchanged.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import json
 import os
@@ -39,6 +40,31 @@ OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 REF = re.compile(r"refs/heads/[A-Za-z0-9_./-]+\Z")
 ENTRY = re.compile(r"masy\.[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*\Z")
 CHUNK = 1 << 20
+
+
+@dataclasses.dataclass(frozen=True)
+class _Policy:
+    """Private per-profile constants; ``_CPU`` reproduces the public v1 behavior exactly.
+
+    A separate explicit profile module constructs its own frozen instance and
+    passes it to the private helpers. Nothing here is mutated, defaulted from
+    the environment, or discovered at runtime.
+    """
+    label: str
+    qualification_schema: str
+    lock_schema: str
+    profile: str
+    python: str
+    interpretation: tuple
+    generator_files: tuple
+    extra_keys: tuple = ()
+    extra_check: object = None
+
+
+_CPU = _Policy("CPU", QUALIFICATION_SCHEMA, LOCK_SCHEMA, PROFILE, PYTHON,
+               (("code_only", True), ("transport_qualified_by_lock", False), ("combined_restart", False),
+                ("backend", "numpy"), ("immutable_upgrade", False)),
+               ("src/masy/triplet_lock.py", "src/masy/triplet_runtime.py", "tools/masy_triplet.py"))
 
 
 class TripletLockError(ValueError):
@@ -341,9 +367,9 @@ def _source_spec(name, spec, limits):
     _need(_package_digest(name, rows) == spec["package_sha256"], "source_digest", name)
 
 
-def _validate_qualification(q):
-    _keys(q, ("schema", "profile", "status", "sources", "interpreter", "maple_bundle", "limits", "entrypoints", "native_profile"), "qualification")
-    _need(q["schema"] == QUALIFICATION_SCHEMA and q["profile"] == PROFILE and q["status"] == "qualified", "unqualified_profile", "independently qualified CPU descriptor required")
+def _validate_qualification(q, policy=_CPU):
+    _keys(q, ("schema", "profile", "status", "sources", "interpreter", "maple_bundle", "limits", "entrypoints", "native_profile", *policy.extra_keys), "qualification")
+    _need(q["schema"] == policy.qualification_schema and q["profile"] == policy.profile and q["status"] == "qualified", "unqualified_profile", f"independently qualified {policy.label} descriptor required")
     _need(type(q["native_profile"]) is str and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", q["native_profile"]), "unqualified_profile", "explicit qualified native source profile required")
     limits = _limits(q["limits"])
     _keys(q["sources"], MODELS, "sources")
@@ -352,22 +378,28 @@ def _validate_qualification(q):
     _need(sum(len(s["files"]) for s in q["sources"].values()) <= limits["max_files"]
           and sum(r[1] for s in q["sources"].values() for r in s["files"]) <= limits["max_source_bytes"], "source_limit", "complete four-object frontier")
     _keys(q["interpreter"], ("path", "sha256", "version"), "interpreter")
-    _need(q["interpreter"]["path"] == PYTHON and type(q["interpreter"]["version"]) is list
-          and len(q["interpreter"]["version"]) == 3 and all(type(x) is int and x >= 0 for x in q["interpreter"]["version"]), "interpreter", "existing MAPLE CPU interpreter required")
+    _need(q["interpreter"]["path"] == policy.python and type(q["interpreter"]["version"]) is list
+          and len(q["interpreter"]["version"]) == 3 and all(type(x) is int and x >= 0 for x in q["interpreter"]["version"]), "interpreter", f"existing MAPLE {policy.label} interpreter required")
     _sha(q["interpreter"]["sha256"])
     _keys(q["maple_bundle"], ("target", "manifest"), "genuine MAPLE materialization")
     _need(type(q["entrypoints"]) is list and len(q["entrypoints"]) <= 16
           and len(set(q["entrypoints"])) == len(q["entrypoints"])
           and all(type(x) is str and ENTRY.fullmatch(x) for x in q["entrypoints"]), "entrypoint", "closed MASY entrypoint roster")
+    if policy.extra_check is not None:
+        policy.extra_check(q)
     return q
 
 
-def load_qualification(path, *, expected_sha256):
+def _load_qualification(path, expected_sha256, policy):
     _sha(expected_sha256)
     data, _, sha = _read(str(path), DEFAULT_LIMITS["max_manifest_bytes"])
     _need(sha == expected_sha256, "qualification_sha256", "external qualification SHA differs")
-    q = _validate_qualification(_json(data))
+    q = _validate_qualification(_json(data), policy)
     return q, {"path": str(path), "size": len(data), "sha256": sha}
+
+
+def load_qualification(path, *, expected_sha256):
+    return _load_qualification(path, expected_sha256, _CPU)
 
 
 def _current(q):
@@ -576,19 +608,18 @@ def import_prefix(lock):
 
 
 
-def _generator(q):
+def _generator(q, policy=_CPU):
     root = Path(__file__).absolute().parents[2]
     table = {r[0]: (r[1], r[2]) for r in q["sources"]["masy"]["files"]}
-    for rel in ("src/masy/triplet_lock.py", "src/masy/triplet_runtime.py", "tools/masy_triplet.py"):
+    for rel in policy.generator_files:
         _need(rel in table, "generator", "qualification must include actual provisioning code")
         _, n, sha = _read(root / rel, q["limits"]["max_file_bytes"], keep=False)
         _need((n, sha) == table[rel], "generator", "running provisioner differs from qualified committed code")
 
 
-def prepare(qualification_path, *, expected_sha256, destination):
-    """No-clobber snapshot from qualified committed objects; no native/runtime run."""
-    q, qref = load_qualification(qualification_path, expected_sha256=expected_sha256)
-    _generator(q); _interpreter(q); _bundle(q)
+def _prepare(qualification_path, expected_sha256, destination, policy):
+    q, qref = _load_qualification(qualification_path, expected_sha256, policy)
+    _generator(q, policy); _interpreter(q); _bundle(q)
     before = _current(q)
     dest = Path(destination)
     _need(dest.is_absolute() and str(dest) == os.path.normpath(str(dest)), "path", "absolute new destination")
@@ -611,15 +642,14 @@ def prepare(qualification_path, *, expected_sha256, destination):
             _verify_object(name, q["sources"][name], sealed[name], q["limits"])
         _bundle(q); _interpreter(q)
         _need(_json(_reference(qref, q["limits"]["max_manifest_bytes"])) == q, "qualification_sha256", "qualification changed during preparation")
-        lock = {"schema": LOCK_SCHEMA, "profile": PROFILE, "qualification": q, "qualification_ref": qref,
+        lock = {"schema": policy.lock_schema, "profile": policy.profile, "qualification": q, "qualification_ref": qref,
                 "root": str(dest), "objects": sealed, "excluded_active_work": before,
-                "interpretation": {"code_only": True, "transport_qualified_by_lock": False,
-                                   "combined_restart": False, "backend": "numpy", "immutable_upgrade": False}}
+                "interpretation": dict(policy.interpretation)}
         lock["sys_path_prefix"] = import_prefix(lock)
         path = dest / "triplet_lock.json"
         _new(path, canonical(lock))
         _fsync(objects); _fsync(dest); _fsync(dest.parent)
-        return {"lock": file_reference(path, q["limits"]["max_manifest_bytes"]), "profile": PROFILE,
+        return {"lock": file_reference(path, q["limits"]["max_manifest_bytes"]), "profile": policy.profile,
                 "scope": "source provisioning only; no model or native compatibility check executed"}
     except BaseException:
         # Keep truthful partial output; never remove or repair a previous object.
@@ -627,20 +657,24 @@ def prepare(qualification_path, *, expected_sha256, destination):
         raise
 
 
-def load(path, *, expected_sha256):
+def prepare(qualification_path, *, expected_sha256, destination):
+    """No-clobber snapshot from qualified committed objects; no native/runtime run."""
+    return _prepare(qualification_path, expected_sha256, destination, _CPU)
+
+
+def _load(path, expected_sha256, policy):
     _sha(expected_sha256)
     raw, _, sha = _read(str(path), DEFAULT_LIMITS["max_manifest_bytes"])
     _need(sha == expected_sha256, "lock_sha256", "external lock SHA differs")
     lock = _json(raw)
     _keys(lock, ("schema", "profile", "qualification", "qualification_ref", "root", "objects", "excluded_active_work", "interpretation", "sys_path_prefix"), "lock")
-    _need(lock["schema"] == LOCK_SCHEMA and lock["profile"] == PROFILE, "schema", "triplet lock required")
-    q = _validate_qualification(lock["qualification"])
+    _need(lock["schema"] == policy.lock_schema and lock["profile"] == policy.profile, "schema", "triplet lock required")
+    q = _validate_qualification(lock["qualification"], policy)
     _need(_json(_reference(lock["qualification_ref"], q["limits"]["max_manifest_bytes"])) == q, "qualification_sha256", "qualification differs from trusted original")
     _need(str(_path(lock["root"], directory=True) / "triplet_lock.json") == str(path), "path", "lock must remain in its original root")
     _keys(lock["objects"], MODELS, "objects")
     _keys(lock["excluded_active_work"], MODELS, "excluded active work")
-    _need(lock["interpretation"] == {"code_only": True, "transport_qualified_by_lock": False,
-          "combined_restart": False, "backend": "numpy", "immutable_upgrade": False}, "schema", "scope differs")
+    _need(lock["interpretation"] == dict(policy.interpretation), "schema", "scope differs")
     for name in MODELS:
         obj = _keys(lock["objects"][name], ("object_id", "path", "metadata_files"), "source object")
         identity = {k: q["sources"][name][k] for k in ("commit", "tree", "files", "package_sha256")}
@@ -648,6 +682,10 @@ def load(path, *, expected_sha256):
         _need(obj["object_id"] == oid and obj["path"] == str(Path(lock["root"]) / "objects" / oid), "path", "content-addressed source object differs")
     _need(lock["sys_path_prefix"] == import_prefix(lock), "path", "sealed prefix differs")
     return lock
+
+
+def load(path, *, expected_sha256):
+    return _load(path, expected_sha256, _CPU)
 
 
 def _verify_object(name, spec, obj, limits):
@@ -674,9 +712,8 @@ def _verify_object(name, spec, obj, limits):
     _need(actual == expected, "source_changed", name + ": missing/extra/changed snapshot file")
 
 
-def verify(path, *, expected_sha256, current_refs=True):
-    """Verify code/bundle/interpreter; default also refuses advanced selected refs."""
-    lock = load(path, expected_sha256=expected_sha256)
+def _verify(path, expected_sha256, current_refs, policy):
+    lock = _load(path, expected_sha256, policy)
     q = lock["qualification"]
     if current_refs:
         _current(q)
@@ -684,3 +721,8 @@ def verify(path, *, expected_sha256, current_refs=True):
         _verify_object(name, q["sources"][name], lock["objects"][name], q["limits"])
     _bundle(q); _interpreter(q)
     return lock
+
+
+def verify(path, *, expected_sha256, current_refs=True):
+    """Verify code/bundle/interpreter; default also refuses advanced selected refs."""
+    return _verify(path, expected_sha256, current_refs, _CPU)

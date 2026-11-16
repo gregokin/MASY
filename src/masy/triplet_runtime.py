@@ -19,7 +19,10 @@ from types import ModuleType
 
 from masy import triplet_lock as tl
 
-BOOTSTRAP = r'''
+# Shared stdlib-only head: the lock bytes and the sealed MASY object are
+# authenticated before any project import. A profile appends only its own
+# closed tail; the CPU BOOTSTRAP below is byte-identical to the v1 literal.
+_BOOTSTRAP_HEAD = r'''
 import hashlib, json, os, pathlib, stat, sys, sysconfig
 families = ('maple','maple_syrup','leaf','masy','benchmarks','numpy','numba','scipy','jax','cupy','cupy_backends')
 if not sys.flags.isolated or not sys.flags.dont_write_bytecode:
@@ -79,9 +82,38 @@ tail=[x for x in sys.path if x not in stdlib]
 if not first or not all(type(x) is str for x in tail):
     raise RuntimeError('unexpected interpreter path')
 sys.path[:]=first+[str(source/'src')]+tail
-from masy.triplet_runtime import worker_main
+'''
+BOOTSTRAP = _BOOTSTRAP_HEAD + r'''from masy.triplet_runtime import worker_main
 sys.exit(worker_main(sys.argv[1:]))
 '''
+
+_CPU_ENVIRONMENT = (("NUMBA_DISABLE_CUDA", "1"), ("CUDA_VISIBLE_DEVICES", ""), ("JAX_PLATFORMS", "cpu"), ("GIT_OPTIONAL_LOCKS", "0"))
+_CPU_CACHES = (("NUMBA_CACHE_DIR", "cache/numba"), ("MPLCONFIGDIR", "cache/matplotlib"))
+
+
+@dataclasses.dataclass(frozen=True)
+class _RuntimePolicy:
+    """Private runtime seam constants; ``_CPU`` reproduces the public v1 behavior exactly.
+
+    ``environment(lock)`` returns the exact stable pairs that ``_bootstrap_spec``
+    sets and ``_verify_imports`` requires. ``verify`` is the profile's lock
+    verifier, ``context`` builds the runtime capability handed to an entry
+    point, ``source_hook`` runs after the owning SYRUP source verification and
+    ``receipt_extra`` adds profile facts to the import receipt.
+    """
+    label: str
+    profile: str
+    python: str
+    backend: str
+    bootstrap: str
+    refused_families: tuple
+    refused_detail: str
+    caches: tuple
+    environment: object
+    verify: object
+    context: object
+    source_hook: object = None
+    receipt_extra: object = None
 
 
 def _standard_paths(path):
@@ -130,8 +162,7 @@ def _namespace(lock, path):
              "helper_namespace", "namespace must resolve only to sealed LEAF helper directory")
 
 
-def check_import_sources(lock, modules):
-    """Check actual loaded project/helper files without invoking foreign getters."""
+def _check_import_sources(lock, modules, refused, detail):
     roots, found = _roots(lock), {}
     limits = lock["qualification"]["limits"]
     tables = {}
@@ -145,7 +176,7 @@ def check_import_sources(lock, modules):
         if type(name) is not str:
             raise tl.TripletLockError("module_origin", "plain module names required")
         family = name.partition(".")[0]
-        tl._need(family not in ("cupy", "cupy_backends"), "backend", "CPU profile refuses CuPy")
+        tl._need(family not in refused, "backend", detail)
         if family not in tl.FAMILIES and family != "benchmarks":
             continue
         if module is None:
@@ -176,6 +207,11 @@ def check_import_sources(lock, modules):
     return found
 
 
+def check_import_sources(lock, modules):
+    """Check actual loaded project/helper files without invoking foreign getters."""
+    return _check_import_sources(lock, modules, ("cupy", "cupy_backends"), "CPU profile refuses CuPy")
+
+
 def _distributions(lock):
     out = {}
     prefix = tl.import_prefix(lock)
@@ -190,20 +226,19 @@ def _distributions(lock):
     return out
 
 
-def verify_imports(lock):
-    """Call genuine owning bundle/profile checks and census the actual imports."""
+def _verify_imports(lock, policy):
     tl._need(sys.flags.isolated and sys.flags.dont_write_bytecode, "interpreter", "-I -B required")
     q = lock["qualification"]
     tl._need(list(sys.version_info[:3]) == q["interpreter"]["version"]
              and sys.executable == q["interpreter"]["path"]
-             and Path(sys.prefix) == Path(tl.PYTHON).parent.parent, "interpreter", "selected interpreter differs")
-    tl._need(all(os.environ.get(k) == v for k, v in {"NUMBA_DISABLE_CUDA": "1", "CUDA_VISIBLE_DEVICES": "", "JAX_PLATFORMS": "cpu", "GIT_OPTIONAL_LOCKS": "0"}.items())
-             and "PYTHONPATH" not in os.environ, "environment", "controlled CPU environment required")
+             and Path(sys.prefix) == Path(policy.python).parent.parent, "interpreter", "selected interpreter differs")
+    tl._need(all(os.environ.get(k) == v for k, v in policy.environment(lock).items())
+             and "PYTHONPATH" not in os.environ, "environment", f"controlled {policy.label} environment required")
     prefix = tl.import_prefix(lock)
     offset = len(_standard_paths(sys.path))
     tl._need(sys.path[:offset] == _standard_paths(sys.path) and sys.path[offset:offset + len(prefix)] == prefix,
              "import_prefix", "stdlib then exact sealed roots required")
-    check_import_sources(lock, sys.modules)
+    _check_import_sources(lock, sys.modules, policy.refused_families, policy.refused_detail)
     _namespace(lock, sys.path)
     bundle = importlib.import_module("maple_syrup.dependency_bundle")
     actual_bundle = bundle.check_runtime(q["maple_bundle"]["target"])
@@ -214,6 +249,8 @@ def verify_imports(lock):
     ncp = importlib.import_module("maple_syrup.native_case_profile")
     source = ncp.verify_source_profile(q["maple_bundle"]["target"], expected_syrup_digest=q["sources"]["syrup"]["package_sha256"], profile=q["native_profile"])
     source.recheck()
+    if policy.source_hook is not None:
+        policy.source_hook(source, lock)
     # Verify with SYRUP's owning digest implementation as well as committed rows.
     provenance = importlib.import_module("maple_syrup.provenance")
     roots = _roots(lock)
@@ -221,11 +258,19 @@ def verify_imports(lock):
         model = next(n for n in tl.MODELS if tl.PACKAGE[n] == name)
         actual = provenance.source_tree_digest(root, max_files=q["limits"]["max_files"], max_bytes=q["limits"]["max_source_bytes"])
         tl._need(actual.digest_sha256 == q["sources"][model]["package_sha256"], "package_digest", name)
-    origins = check_import_sources(lock, sys.modules)
-    return source, {"schema": "masy.triplet_imports.v1", "profile": tl.PROFILE, "origins": origins,
-                    "distributions": _distributions(lock), "external_helpers": [helper_record(lock)],
-                    "bundle": actual_bundle, "python": sys.version, "backend": "numpy",
-                    "native_compatibility_checked": True, "model_executed": False}
+    origins = _check_import_sources(lock, sys.modules, policy.refused_families, policy.refused_detail)
+    receipt = {"schema": "masy.triplet_imports.v1", "profile": policy.profile, "origins": origins,
+               "distributions": _distributions(lock), "external_helpers": [helper_record(lock)],
+               "bundle": actual_bundle, "python": sys.version, "backend": policy.backend,
+               "native_compatibility_checked": True, "model_executed": False}
+    if policy.receipt_extra is not None:
+        receipt.update(policy.receipt_extra(lock, source))
+    return source, receipt
+
+
+def verify_imports(lock):
+    """Call genuine owning bundle/profile checks and census the actual imports."""
+    return _verify_imports(lock, _CPU)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -253,13 +298,7 @@ class RuntimeContext:
         return check_import_sources(lock, sys.modules)
 
 
-def bootstrap_spec(lock_path, *, expected_sha256, run_dir, entrypoint=None, argv=()):
-    """Return argv/env for Root's bounded supervisor; never spawn a model.
-
-    Entry points take ``main(argv, *, runtime=RuntimeContext)``. With None this
-    only performs native/source metadata verification, never event execution.
-    """
-    lock = tl.verify(lock_path, expected_sha256=expected_sha256)
+def _bootstrap_spec(lock, lock_path, expected_sha256, *, run_dir, entrypoint, argv, policy):
     tl._path(run_dir, directory=True)
     mode = "verify" if entrypoint is None else entrypoint
     tl._need(entrypoint is None or entrypoint in lock["qualification"]["entrypoints"], "entrypoint", "not in externally qualified roster")
@@ -270,30 +309,50 @@ def bootstrap_spec(lock_path, *, expected_sha256, run_dir, entrypoint=None, argv
     cache = base / "pycache"
     tl._need(not os.path.lexists(cache), "pycache", "fresh pycache path required; no repair/reuse")
     cache.mkdir(mode=0o700)
-    env = {"PATH": str(Path(tl.PYTHON).parent) + ":/usr/bin:/bin", "LC_ALL": "C.UTF-8",
+    env = {"PATH": str(Path(policy.python).parent) + ":/usr/bin:/bin", "LC_ALL": "C.UTF-8",
            "HOME": str(base / "home"), "TMPDIR": str(base / "tmp"), "XDG_CACHE_HOME": str(base / "cache"),
-           "NUMBA_CACHE_DIR": str(base / "cache/numba"), "MPLCONFIGDIR": str(base / "cache/matplotlib"),
-           "NUMBA_DISABLE_CUDA": "1", "CUDA_VISIBLE_DEVICES": "", "JAX_PLATFORMS": "cpu",
-           "GIT_OPTIONAL_LOCKS": "0"}
-    return {"argv": [tl.PYTHON, "-I", "-B", "-X", "pycache_prefix=" + str(cache), "-c", BOOTSTRAP, str(lock_path), expected_sha256, mode, encoded, str(cache)],
+           **{key: str(base / rel) for key, rel in policy.caches}, **policy.environment(lock)}
+    return {"argv": [policy.python, "-I", "-B", "-X", "pycache_prefix=" + str(cache), "-c", policy.bootstrap, str(lock_path), expected_sha256, mode, encoded, str(cache)],
             "env": env, "scope": "Root must impose actual process/resource bounds; no process has been launched"}
 
 
-def worker_main(argv):
+def bootstrap_spec(lock_path, *, expected_sha256, run_dir, entrypoint=None, argv=()):
+    """Return argv/env for Root's bounded supervisor; never spawn a model.
+
+    Entry points take ``main(argv, *, runtime=RuntimeContext)``. With None this
+    only performs native/source metadata verification, never event execution.
+    """
+    lock = tl.verify(lock_path, expected_sha256=expected_sha256)
+    return _bootstrap_spec(lock, lock_path, expected_sha256, run_dir=run_dir, entrypoint=entrypoint, argv=argv, policy=_CPU)
+
+
+def _worker_main(argv, policy):
     path, sha, mode, args_json, cache = argv
     tl._need(sys.pycache_prefix == cache and not any(tl._path(cache, directory=True).iterdir()), "pycache", "fresh empty redirected bytecode path required")
-    lock = tl.verify(path, expected_sha256=sha, current_refs=True)
+    lock = policy.verify(path, expected_sha256=sha, current_refs=True)
     install_prefix(tl.import_prefix(lock))
-    source, receipt = verify_imports(lock)
+    source, receipt = _verify_imports(lock, policy)
     if mode == "verify":
         print(json.dumps(receipt, sort_keys=True, allow_nan=False))
         return 0
     tl._need(mode in lock["qualification"]["entrypoints"], "entrypoint", "unknown run target")
     module, name = mode.split(":")
     target = getattr(importlib.import_module(module), name)
-    check_import_sources(lock, sys.modules)
-    runtime = RuntimeContext(path, sha, source)
+    _check_import_sources(lock, sys.modules, policy.refused_families, policy.refused_detail)
+    runtime = policy.context(path, sha, source, lock)
     result = target(tl._json(args_json), runtime=runtime)
     runtime.recheck()
     tl._need(result is None or type(result) is int, "entrypoint", "CLI entry point must return int or None")
     return 0 if result is None else result
+
+
+def worker_main(argv):
+    return _worker_main(argv, _CPU)
+
+
+def _cpu_context(lock_path, lock_sha256, source, lock):
+    return RuntimeContext(lock_path, lock_sha256, source)
+
+
+_CPU = _RuntimePolicy("CPU", tl.PROFILE, tl.PYTHON, "numpy", BOOTSTRAP, ("cupy", "cupy_backends"), "CPU profile refuses CuPy",
+                      _CPU_CACHES, lambda lock: dict(_CPU_ENVIRONMENT), tl.verify, _cpu_context)
