@@ -56,6 +56,7 @@ REFUSED_DETAIL = "device provider must not load before source verification and t
 MAX_REPORT_BYTES = 1 << 16
 MAX_REPORTS = 64
 MAX_DEVICE_MODULES = 4096
+MAX_EXTENSION_BYTES = 128 << 20  # metadata-only binary census; separate from source-body caps
 
 # Same stdlib-only head as the CPU profile (lock SHA, sealed MASY bytes, fresh
 # pycache, stdlib-first path); this tail refuses a non-CUDA lock or a process
@@ -210,7 +211,7 @@ def device_runtime_census(modules, *, provider_root=None, limits=None):
         else:
             tl._need(p.parent == root.joinpath(*parts[:-1]) and p.name.partition(".")[0] == parts[-1], "backend",
                      name + ": device provider module layout differs")
-        st = _origin(origin, cap)
+        st = _origin(origin, cap if p.suffix == ".py" else MAX_EXTENSION_BYTES)
         if p.suffix == ".py":
             n, sha = _hash(p, st, cap)
             found[name] = {"path": origin, "size": n, "sha256": sha, "kind": "source", "hashed": True}

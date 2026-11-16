@@ -177,6 +177,14 @@ class CudaTripletSourceTests(unittest.TestCase):
         census = tcr.device_runtime_census(good, provider_root=str(site))
         self.assertEqual(census["cupy"]["sha256"], tl.digest(b"# provider\n"))
         self.assertEqual((census["cupy.ext"]["kind"], census["cupy.ext"]["hashed"], census["cupy.ext"]["sha256"]), ("extension", False, None))
+        # A binary is recorded from metadata, without a source-body read. The
+        # real CuPy thrust extension is larger than the default64MiB source cap.
+        separate = tcr.device_runtime_census({"cupy.ext": good["cupy.ext"]}, provider_root=str(site),
+            limits={**tl.DEFAULT_LIMITS, "max_file_bytes": 3})
+        self.assertEqual(separate["cupy.ext"]["size"], 4)
+        with self.assertRaises(tl.TripletLockError):
+            tcr.device_runtime_census({"cupy": good["cupy"]}, provider_root=str(site),
+                limits={**tl.DEFAULT_LIMITS, "max_file_bytes": 3})
         other = self.root / "other/cupy"
         other.mkdir(parents=True)
         (other / "__init__.py").write_text("# foreign\n")
