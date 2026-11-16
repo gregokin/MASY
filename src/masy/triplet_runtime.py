@@ -114,6 +114,7 @@ class _RuntimePolicy:
     context: object
     source_hook: object = None
     receipt_extra: object = None
+    eager_helper_import: bool = True
 
 
 def _standard_paths(path):
@@ -245,7 +246,8 @@ def _verify_imports(lock, policy):
     tl._need(actual_bundle["package_source_digest"] == q["sources"]["maple"]["package_sha256"], "bundle", "native runtime differs")
     for name in tl.FAMILIES:
         importlib.import_module(name)
-    importlib.import_module("benchmarks.spatial_mapping")
+    if policy.eager_helper_import:
+        importlib.import_module("benchmarks.spatial_mapping")
     ncp = importlib.import_module("maple_syrup.native_case_profile")
     source = ncp.verify_source_profile(q["maple_bundle"]["target"], expected_syrup_digest=q["sources"]["syrup"]["package_sha256"], profile=q["native_profile"])
     source.recheck()

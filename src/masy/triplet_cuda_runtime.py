@@ -333,4 +333,4 @@ def worker_main(argv):
 
 
 _RUNTIME = tr._RuntimePolicy("CUDA", PROFILE, PYTHON, BACKEND, BOOTSTRAP, DEVICE_FAMILIES, REFUSED_DETAIL, CACHES,
-                             _environment, verify, _context, _source_hook, _receipt_extra)
+                             _environment, verify, _context, _source_hook, _receipt_extra, False)
