@@ -47,7 +47,8 @@ def main(argv=None):
     if header != bh or surface.shape != base.shape:
         raise ValueError("surface/base geometry differs")
     valid = surface != header["nodata_value"]
-    side = 64
+    thickness = surface-base
+    side = 128
     choices = []
     for row in range(1, surface.shape[0] - side - 1, 8):
         for col in range(1, surface.shape[1] - side - 1, 8):
@@ -58,6 +59,8 @@ def main(argv=None):
             z = surface[row:row+side, col:col+side][m]
             if np.ptp(z) < 0.5:
                 continue
+            if np.min(thickness[row:row+side,col:col+side][m]) <= 0.3:
+                continue  # retain all three nominal Jornada layers in this bounded case
             choices.append((abs(frac - 0.8), row, col))
     if not choices:
         raise ValueError("No admitted real crop; do not invent a footprint")
