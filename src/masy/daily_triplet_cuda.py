@@ -222,6 +222,9 @@ class DailyCudaTripletSession:
     def _prepare_after_storm_weather(self):
         return False
 
+    def _observe_water_progress(self, state, result):
+        return None
+
     def _quota(self, extra=0, *, budgets=False):
         h, d = self._held(extra)
         q = dict(available_bytes_fn=self.policy.device_available_bytes_fn,
@@ -317,6 +320,7 @@ class DailyCudaTripletSession:
                 raise TripletError('clock_limit', 'native event cannot advance', active_state=state)
             result = event.evolve(state, end, stop_when_quiet=True, max_steps=self._limits.max_native_steps_per_call)
             state = result.state
+            self._observe_water_progress(state, result)
             if result.quiet_ready:
                 retained = event.settle_retaining_water(state)
                 state = retained.state

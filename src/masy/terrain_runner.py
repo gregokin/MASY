@@ -266,11 +266,15 @@ def build_session(*, source, sources, inputs, output, policy):
         raise ValueError('wet days require positive intensity for full storm or reduced-overflow fallback')
     rain_seconds = max((3600*day.weather.precipitation_mm/day.weather.precipitation_intensity_mm_h
         for day in plan if day.weather.precipitation_mm > 0), default=0.)
-    event_calls = math.ceil(rain_seconds/100.)+32  # explicit finite3200s recession allowance
-    if event_calls > 4096:
+    event_chunk_s = 1.0  # bounded native targets permit progress reporting during long events
+    event_calls = math.ceil(rain_seconds/event_chunk_s)+3200  # unchanged 3200s physical recession allowance
+    max_event_elapsed_s = 4096 * 100.0  # preserve the earlier finite physical-duration ceiling
+    if event_calls * event_chunk_s > max_event_elapsed_s:
         raise ValueError('storm duration exceeds this bounded runner event-call cap')
-    limits = TripletLimits(100.0, event_calls, 16, 50000, 1 << 28, 1 << 20, 1 << 29,
+    limits = TripletLimits(event_chunk_s, event_calls, 16, 50000, 1 << 28, 1 << 20, 1 << 29,
         1 << 29, 1 << 29, 1 << 28, 1 << 28, 1 << 20, 1 << 20)
+    def water_progress(record):
+        (out/'water_progress.json').write_text(json.dumps(record,indent=2,allow_nan=False)+'\n')
     session = terrain.DailyTerrainCudaTripletSession(plan, wind=wind, owner=owner, bed=bed,
         initial_event_factory=initial, plant_state=population, leaf_config=plant_config,
         anchor=dt.datetime.combine(plan.scenario.settings.start_date, dt.time(), dt.timezone.utc),
@@ -281,7 +285,8 @@ def build_session(*, source, sources, inputs, output, policy):
             controls['wind_vegetation']['unsupported_policy'], controls['wind_vegetation']['drag_coefficient']), limits=limits,
         expected_leaf_package_sha256=terrain.LEAF_PACKAGE_SHA256, expected_external_helpers=terrain.gt.LEAF_EXTERNAL_HELPERS,
         policy=policy, require_receiver_traits=False, terrain_builder=terrain_builder,
-        minimum_soil_depth_m=0.3, outlet_boundary_policy=controls['outlet_boundary_policy'])
+        minimum_soil_depth_m=0.3, outlet_boundary_policy=controls['outlet_boundary_policy'],
+        water_progress_observer=water_progress)
     return session, dict(source=source, admission=admission, prepared=prepared, context=context,
         mask=mask, generation=generation, soil_diffusion=law.summary(), topology=topology,
         initial_biomass_kg=float(population.agb_dry_kg.sum()), output=out)

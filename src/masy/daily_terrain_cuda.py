@@ -213,10 +213,13 @@ class DailyTerrainCudaTripletSession(gt.DailyCudaTripletSession):
     profile = 'masy.daily_triplet.terrain_cuda.v1'
 
     def __init__(self, *args, terrain_builder=None, minimum_soil_depth_m=None,
-                 outlet_boundary_policy=None, **kwargs):
+                 outlet_boundary_policy=None, water_progress_observer=None, **kwargs):
         if terrain_builder is not None and not callable(terrain_builder):
             raise gt.TripletError('terrain', 'an explicit native terrain-input builder is required')
         self._terrain_builder = terrain_builder
+        if water_progress_observer is not None and not callable(water_progress_observer):
+            raise gt.TripletError('controls', 'water progress observer must be callable or None')
+        self._water_progress_observer = water_progress_observer
         if minimum_soil_depth_m is not None:
             import math
             if type(minimum_soil_depth_m) not in (int, float) or not math.isfinite(minimum_soil_depth_m) or minimum_soil_depth_m <= 0:
@@ -273,6 +276,13 @@ class DailyTerrainCudaTripletSession(gt.DailyCudaTripletSession):
         if len(json.dumps(self.water_event_audits, allow_nan=False).encode()) > self._limits.receipt_bytes:
             raise gt.TripletError('limits', 'native water audit receipts exceed their explicit cap')
         return result
+
+    def _observe_water_progress(self, state, result):
+        if self._water_progress_observer is not None:
+            self._water_progress_observer(dict(native_time_s=float(state.t_s),
+                accepted_steps=int(state.counters.n_accepted_steps),
+                quiet_ready=bool(result.quiet_ready), reached_target=bool(result.reached_target),
+                stop_reason=str(result.stop_reason)))
 
     def _prepare_weather_terrain(self):
         # Retained surface water can use the native router during the next day,
