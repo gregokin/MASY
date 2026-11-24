@@ -264,7 +264,12 @@ class DailyTerrainCudaTripletSession(gt.DailyCudaTripletSession):
         # includes recession; its role must remain pending until SYRUP completes it.
         boundary = self._prepare_outlet_boundary(boundary, extra)
         result = super()._complete(boundary, schedule, extra)
-        self.water_event_audits.append(result[1])  # existing native scalar/class audit, verbatim
+        # The owning audit's quiet monitor is a four-scalar native dataclass.
+        # Encode that record without retaining a native event or array payload.
+        import dataclasses
+        audit = dict(result[1])
+        audit['quiet'] = dataclasses.asdict(audit['quiet'])
+        self.water_event_audits.append(audit)
         if len(json.dumps(self.water_event_audits, allow_nan=False).encode()) > self._limits.receipt_bytes:
             raise gt.TripletError('limits', 'native water audit receipts exceed their explicit cap')
         return result
