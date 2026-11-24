@@ -242,7 +242,7 @@ def build_session(*, source, sources, inputs, output, policy):
         expected_syrup_commit=sources['syrup']['commit'], expected_maple_commit=terrain.MAPLE_COMMIT, max_bytes=1 << 28)
     cohorts = admission.compiled.config.particle_transport.max_active_cohorts
     wind = terrain.prepare_terrain_triplet_wind_cuda(plan, source, admission, context,
-        wind_limits=DailyWindLimits(16384, 140, 524288, 16, 10000, 1 << 28, 1 << 30, 1 << 20),
+        wind_limits=DailyWindLimits(16384, 140, 524288, 16, 10000, 1 << 28, 4 << 30, 1 << 20),
         handoff_limits=wh.WindHandoffLimits(max_cells=16384, max_voxels=140, max_classes=16,
             max_cohorts=cohorts, max_batch_cells=64, max_scan_bytes=1 << 28,
             max_candidate_bytes=1 << 29, max_receipt_bytes=1 << 20),
@@ -308,7 +308,7 @@ def main(argv=None, *, runtime):
     from maple_syrup.subsurface import default_host_available_bytes
     from maple_syrup.floating_soil_layers_cuda import device_reader
     from masy.gpu_contract import GpuPolicy
-    policy = GpuPolicy(0, facts['device']['physical_uuid'], 2 << 30, 2 << 30, 1 << 20, 1 << 20,
+    policy = GpuPolicy(0, facts['device']['physical_uuid'], 2 << 30, 4 << 30, 1 << 20, 1 << 20,
         default_host_available_bytes, device_reader(cp))
     policy.gate().get_default_memory_pool().set_limit(size=policy.max_device_bytes)
     session, setup = build_session(source=runtime.source_profile, sources=facts['sources'],

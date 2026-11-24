@@ -159,7 +159,8 @@ class CudaWindExecutor:
         pool_bytes = capacity * item_bytes
         work = 4 * staged_bytes + 3 * pool_bytes + 8 * g.nx * g.ny * (nv + 1) * nc + 32 * sum(p['upper'] for p in plans) + self._additional_work_bytes(config)
         if work + external_reserve_bytes > lim.max_work_bytes:
-            raise dw.DailyWindError('limits', 'native wind staging/work frontier exceeds explicit device cap')
+            raise dw.DailyWindError('limits', f'native wind staging/work frontier exceeds explicit device cap: '
+                f'work={work}, external={external_reserve_bytes}, limit={lim.max_work_bytes}')
         self.policy.admit(pool_bytes + (8 << 20), work, 'native CUDA wind', device_extra=external_reserve_bytes)
         dw._validate_native(n, bed, self._context, start_s)
         from maple.core.types.vegetation import validate_vegetation_state
