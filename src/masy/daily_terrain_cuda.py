@@ -6,6 +6,7 @@ frozen regional plane and native resource census follow MAPLE's actual APIs.
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from masy import daily_wind as dw
@@ -19,7 +20,7 @@ PROFILE = "masy.daily_triplet_wind.terrain_cuda.v1"
 MAPLE_COMMIT = "c4b9343706240d3f98e9abb9c7274958a45438cc"
 MAPLE_PACKAGE_SHA256 = "f4e4dc694dff1bbf126ddbb69a8cd0bc089d8006ebb5f4ed2ce1ac30e8e5b8bc"
 # Filled only after independent review of the exact owning source candidates.
-SYRUP_PACKAGE_SHA256 = "92f3658276b8f432c12006e42eb73235e19606cbf1feea5455517fa90363fa15"
+SYRUP_PACKAGE_SHA256 = "d20889144c5955ca6ad3b6eb064baedcf66d3958eadea1169266c3be6bdb06b8"
 LEAF_PACKAGE_SHA256 = "069f711aade205c4db3a2b044020361dfb289613bad9434e97140037be1daf25"
 
 
@@ -211,7 +212,8 @@ class DailyTerrainCudaTripletSession(gt.DailyCudaTripletSession):
     """New exact source frontier, retaining the same native daily transaction order."""
     profile = 'masy.daily_triplet.terrain_cuda.v1'
 
-    def __init__(self, *args, terrain_builder=None, minimum_soil_depth_m=None, **kwargs):
+    def __init__(self, *args, terrain_builder=None, minimum_soil_depth_m=None,
+                 outlet_boundary_policy=None, **kwargs):
         if terrain_builder is not None and not callable(terrain_builder):
             raise gt.TripletError('terrain', 'an explicit native terrain-input builder is required')
         self._terrain_builder = terrain_builder
@@ -220,6 +222,12 @@ class DailyTerrainCudaTripletSession(gt.DailyCudaTripletSession):
             if type(minimum_soil_depth_m) not in (int, float) or not math.isfinite(minimum_soil_depth_m) or minimum_soil_depth_m <= 0:
                 raise gt.TripletError('terrain', 'finite positive minimum soil depth required')
         self._minimum_soil_depth_m = minimum_soil_depth_m
+        if outlet_boundary_policy not in (None, 'close_uphill_at_water_boundary'):
+            raise gt.TripletError('terrain', 'unknown explicit outlet boundary policy')
+        self._outlet_boundary_policy = outlet_boundary_policy
+        self.outlet_boundary_receipts = []
+        self.outlet_boundary_noop_calls = 0
+        self.water_event_audits = []
         self._weather_surface = None
         super().__init__(*args, **kwargs)
 
@@ -230,9 +238,41 @@ class DailyTerrainCudaTripletSession(gt.DailyCudaTripletSession):
 
     def _held(self, extra=0):
         h, d = super()._held(extra)
-        return h + (0 if self._weather_surface is None else self._weather_surface.nbytes), d
+        # The public list is bounded below by the existing scalar receipt cap.
+        receipts = len(json.dumps(self.outlet_boundary_receipts, allow_nan=False).encode())
+        receipts += len(json.dumps(self.water_event_audits, allow_nan=False).encode())
+        return h + receipts + 64 + (0 if self._weather_surface is None else self._weather_surface.nbytes), d
+
+    def _prepare_outlet_boundary(self, boundary, extra=0):
+        if self._outlet_boundary_policy is not None:
+            from maple_syrup import floating_boundary_outlets as outlets
+            if len(json.dumps(self.outlet_boundary_receipts, allow_nan=False).encode()) + (64 << 10) > self._limits.receipt_bytes:
+                raise gt.TripletError('limits', 'no remaining outlet boundary receipt budget')
+            boundary, receipt = outlets.close_uphill_boundary_outlets(
+                self.lineage, boundary, self.wind._context, **self._quota(extra, budgets=True))
+            self._native = self._native_footprint(boundary)
+            if receipt['changed']:
+                self.outlet_boundary_receipts.append(receipt)
+            else:
+                self.outlet_boundary_noop_calls += 1
+            if len(json.dumps(self.outlet_boundary_receipts, allow_nan=False).encode()) > self._limits.receipt_bytes:
+                raise gt.TripletError('limits', 'outlet boundary receipts exceed their explicit cap')
+        return boundary
+
+    def _complete(self, boundary, schedule=None, extra=0):
+        # Every native water occurrence starts from an accepted boundary. This
+        # includes recession; its role must remain pending until SYRUP completes it.
+        boundary = self._prepare_outlet_boundary(boundary, extra)
+        result = super()._complete(boundary, schedule, extra)
+        self.water_event_audits.append(result[1])  # existing native scalar/class audit, verbatim
+        if len(json.dumps(self.water_event_audits, allow_nan=False).encode()) > self._limits.receipt_bytes:
+            raise gt.TripletError('limits', 'native water audit receipts exceed their explicit cap')
+        return result
 
     def _prepare_weather_terrain(self):
+        # Retained surface water can use the native router during the next day,
+        # even without a full storm. Apply the same boundary rule before that day.
+        self._prepare_outlet_boundary(self.lineage.head)
         if self._minimum_soil_depth_m is not None:
             import numpy as np
             host_depth = self.lineage.head.root.host_depth

@@ -144,6 +144,8 @@ def build_session(*, source, sources, inputs, output, policy):
     if (controls.get('schema') != 'masy.terrain_controls.v1' or controls.get('preferential_enabled') is not False
             or controls.get('sediment_reference') != 'native_syrup_plot1_sand'):
         raise ValueError('the bounded runner requires explicit matrix-only controls and the native sediment reference')
+    if controls.get('outlet_boundary_policy') != 'close_uphill_at_water_boundary':
+        raise ValueError('this hybrid test requires its explicit approved outlet boundary approximation')
     case = out / 'case'
     for rel in manifest['files']:
         if rel.startswith('case/'):
@@ -279,7 +281,7 @@ def build_session(*, source, sources, inputs, output, policy):
             controls['wind_vegetation']['unsupported_policy'], controls['wind_vegetation']['drag_coefficient']), limits=limits,
         expected_leaf_package_sha256=terrain.LEAF_PACKAGE_SHA256, expected_external_helpers=terrain.gt.LEAF_EXTERNAL_HELPERS,
         policy=policy, require_receiver_traits=False, terrain_builder=terrain_builder,
-        minimum_soil_depth_m=0.3)
+        minimum_soil_depth_m=0.3, outlet_boundary_policy=controls['outlet_boundary_policy'])
     return session, dict(source=source, admission=admission, prepared=prepared, context=context,
         mask=mask, generation=generation, soil_diffusion=law.summary(), topology=topology,
         initial_biomass_kg=float(population.agb_dry_kg.sum()), output=out)
@@ -339,7 +341,10 @@ def main(argv=None, *, runtime):
             print(json.dumps({'accepted_day': record['date'], 'full_storm': record['full_storm_completed']}), flush=True)
     except BaseException:
         (setup['output'] / 'failure.json').write_text(json.dumps(dict(failure=session.failure,
-            accepted_days=session.accepted_days, recoverable_combined_checkpoint=False), indent=2)+'\n')
+            accepted_days=session.accepted_days, recoverable_combined_checkpoint=False,
+            outlet_boundary_receipts=session.outlet_boundary_receipts,
+            outlet_boundary_noop_calls=session.outlet_boundary_noop_calls,
+            water_event_audits=session.water_event_audits), indent=2, allow_nan=False)+'\n')
         raise
     head = session.lineage.head
     arrays = {k: to_host(v) for k,v in dict(W=head.root.water_state.water_m,
@@ -360,6 +365,13 @@ def main(argv=None, *, runtime):
     result['wind_runtime'] = dict(native_terrain=getattr(session.wind._wind,'_terrain_execution',None),
         native_memory_census=getattr(session.wind._wind,'_last_terrain_census',None),
         source=session.wind._wind.identity())
+    result['outlet_boundary_policy'] = json.loads(
+        (setup['output']/'inputs/coupling_controls.json').read_text())['outlet_boundary_policy']
+    result['outlet_boundary_receipts'] = session.outlet_boundary_receipts
+    result['outlet_boundary_noop_calls'] = session.outlet_boundary_noop_calls
+    result['water_event_audits'] = session.water_event_audits
+    result['wind_accounting'] = session.wind.wind_accounting()
+    result['last_wind_receipt'] = session.wind.last_receipt()
     result['physical_complete'] = True
     (setup['output'] / 'physical_result.json').write_text(json.dumps(result, indent=2)+'\n')
     from masy.runtime_binary_inventory import inventory

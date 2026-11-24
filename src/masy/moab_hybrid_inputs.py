@@ -158,6 +158,7 @@ def main(argv=None):
         (target / name).write_bytes((src / rel).read_bytes())
     leaf_runtime = tomllib.loads((leaf_case/'case.toml').read_text())
     controls = dict(schema="masy.terrain_controls.v1", friction_factor=5.0, soil_property_mode="supplied_final",
+        outlet_boundary_policy="close_uphill_at_water_boundary",
         plant_session=dict(rng_seed=leaf_runtime['runtime']['rng_seed'],
             patch_size_m=leaf_runtime['reproduction']['reproduction_patch_size_m']),
         initial_relative_saturation=0.25, matrix_history=dict(initial_wetting_m=0.0, initial_cumulative_intake_m=0.0),
