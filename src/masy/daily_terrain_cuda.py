@@ -25,8 +25,8 @@ LEAF_PACKAGE_SHA256 = "069f711aade205c4db3a2b044020361dfb289613bad9434e97140037b
 
 def _sources():
     root = Path(__file__).resolve().parent
-    return {**gw._sources(), "daily_terrain_cuda.py": hashlib.sha256(
-        (root / "daily_terrain_cuda.py").read_bytes()).hexdigest()}
+    return {**gw._sources(), **{name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+                               for name in ("daily_terrain_cuda.py", "terrain_boundary.py")}}
 
 
 def _source(source, admission):
@@ -145,6 +145,15 @@ class TerrainCudaWindExecutor(gw.CudaWindExecutor):
             if (to_bool(cp.any(cp.where(invalid, physical.water.depth_m, 0.0) != 0))
                     or to_bool(cp.any(cp.where(invalid[..., None], physical.water.mobile_mass_by_cell_class_kg, 0.0) != 0))):
                 raise dw.DailyWindError("mask", "water appeared outside the physical footprint")
+
+    def _publish_boundary(self, n, config, bed, final, end, *, work, external_reserve_bytes):
+        """Terrain boundary: the authored case retains the accounting reference through the
+        native finalizer, so a present baseline is published through MAPLE's public run-ending
+        force commit at the unchanged end clock (see ``masy.terrain_boundary``). An absent
+        baseline passes through exactly as in the base profile."""
+        from masy import terrain_boundary as tb
+        return tb.publish_terrain_boundary(self, n, config, bed, final, end,
+                                           work=work, external_reserve_bytes=external_reserve_bytes)
 
 
 def prepare_terrain_wind_cuda(source, admission, context, *, limits, policy):

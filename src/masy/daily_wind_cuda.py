@@ -122,6 +122,15 @@ class CudaWindExecutor:
     def _validate_terrain(self, config, physical):
         return None
 
+    def _publish_boundary(self, n, config, bed, final, end, *, work, external_reserve_bytes):
+        """Identity boundary: the native finalized state is published as is, with no record.
+
+        A profile whose authored case policy retains an accounting reference through
+        the finalizer overrides this (see ``masy.terrain_boundary``); the static-field
+        guard that follows in ``execute_finalized`` is unchanged for every profile.
+        """
+        return final, None
+
     def execute_finalized(self, bed, occurrence, start_s, *, vegetation, external_reserve_bytes=0):
         import numpy as np
         from maple.core.backend import to_device_tree, read_transfer_counters
@@ -217,6 +226,10 @@ class CudaWindExecutor:
                 or final.state.block_index != len(record.blocks) or final.state.block_offset_s != 0.0
                 or not n.mobile_state_is_genuinely_empty(final.state.physical.mobile_state)):
             raise dw.DailyWindError('incomplete', 'native wind finalization did not produce a genuine completed empty state')
+        # The pre-wind stage is dead here; releasing it keeps the finalized state and any
+        # profile boundary publication inside the frontier admitted above.
+        del stage
+        final, boundary = self._publish_boundary(n, config, bed, final, end, work=work, external_reserve_bytes=external_reserve_bytes)
         phys = final.state.physical
         self._validate_terrain(config, phys)
         candidate = n.BedState(*(getattr(phys, name) for name in dw._SHARED_FIELDS))
@@ -263,7 +276,8 @@ class CudaWindExecutor:
             'checks': {'inventory_closure_with_boundary_export': True, 'native_block_checks': True, 'finalizer_checks': True},
             'wind_policy': {'soil_moisture_feedback_enabled': False, 'water_reset': False},
             'transfers': dataclasses.asdict(transfer), 'work_payload_device_bytes': work,
-            'scope': 'bounded Dense GPU native wind; no water physics; scalar/class packets only in adapter'}
+            'scope': 'bounded Dense GPU native wind; no water physics; scalar/class packets only in adapter',
+            **({} if boundary is None else {'native_boundary': boundary})}
         raw = dw._json(receipt)
         if len(raw.encode()) > lim.max_receipt_bytes:
             raise dw.DailyWindError('limits', 'wind scalar receipt exceeds byte cap')
