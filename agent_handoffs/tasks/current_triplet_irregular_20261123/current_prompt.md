@@ -1,0 +1,7 @@
+Resume on MAPLE79e22a8 and SYRUPmaine6fef1c. Implement and independently qualify actual integrated runner on a bounded irregular Moab DEM crop with Jornada preset and native LEAF10% grass +10% shrubs. Preserve old profiles and all unrelated work. No copied physics; actual native APIs and source-bound state. Claude source-only implementation/review required; payloads stay local.
+
+## Approved boundary test rule and owner follow-up
+User explicitly chose closing uphill faces at water-event boundaries, retaining remaining observed downhill outlets, and requested a SYRUP developer follow-up. Fixed observed ring, no new slope or ghost elevation. Native guard remains for active-storm unsupported faces. Claude source-only native architecture task6a0c187a active, packet boundary_outlets_author, one writer for three new native/test/doc files only; Root owns MASY hook/control integration. Original SYRUP checkout untouched. No whole-physics boundary extension or restart acceptance implied.
+
+## Bounded check outcome
+Source/interface implementation and owner follow-up are committed/pushed. Actual fulltargetcase isNOTcomputationallyqualified: aftertwoaccepted days, fullstorm remained inrecession when3600CPU guard stoppednormalrun07/01;13,633acceptedsteps/689seventtime. No secondwind/weeklygrowth/full8daysclaim. Stop automaticlargerbudgetretries; retain exact sources/evidence and open nativeperformance/completion investigation. Allownedprocessesreaped, GPUreleased. See docs/terrain_triplet_readiness_20261124.md and readiness_result.json.

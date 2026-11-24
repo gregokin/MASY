@@ -1,0 +1,77 @@
+{
+  "decision": "NOT computationally qualified for full target scenario",
+  "utc": "2026-11-24T03:41:35.717089+00:00",
+  "code_frontier": {
+    "leaf": {
+      "commit": "7b744951c42518e0f09bbf30304faa64a0ec5cd3",
+      "package_sha256": "069f711aade205c4db3a2b044020361dfb289613bad9434e97140037be1daf25",
+      "ref": "refs/heads/integration/masy-irregular-20261123"
+    },
+    "maple": {
+      "commit": "c4b9343706240d3f98e9abb9c7274958a45438cc",
+      "package_sha256": "f4e4dc694dff1bbf126ddbb69a8cd0bc089d8006ebb5f4ed2ce1ac30e8e5b8bc",
+      "ref": "refs/heads/integration/masy-persistent-terrain-20261123"
+    },
+    "masy": {
+      "commit": "672fb2f70a5ed0212bad1a918129454a19ed8ab0",
+      "package_sha256": "a5ae5600dfa8288406a5a72281ad96079c0c2daf359235897bb93d9adeddd9ed",
+      "ref": "refs/heads/integration/masy-irregular-20261123"
+    },
+    "syrup": {
+      "commit": "241c14fb8cb04bb74bce7775c090aeb04844424f",
+      "package_sha256": "d20889144c5955ca6ad3b6eb064baedcf66d3958eadea1169266c3be6bdb06b8",
+      "ref": "refs/heads/integration/masy-irregular-20261123"
+    }
+  },
+  "lock": {
+    "path": "/home/okin/MASY/agent_handoffs/tasks/current_triplet_irregular_20261123/runtime_07/code/triplet_lock.json",
+    "sha256": "2c868b24662d6c5aeec4b55028a51d34372b10b4b6cb55136692f4f64f988945",
+    "size": 231033
+  },
+  "input_manifest_sha256": "c9a31da51d8d1e53a76b41ab2dc6d2e32c0917c8483c96154f53be32694434ee",
+  "physical_uuid": "GPU-fcbcc375-a471-a9c3-ab1c-eed25d898ef0",
+  "cpu_budget_s": 3600,
+  "wall_limit_s": 3660,
+  "actual_elapsed_s": 3634.4446569299907,
+  "exit_code": -24,
+  "signal": "SIGXCPU",
+  "reaped": true,
+  "pid_gone": true,
+  "accepted_days": 2,
+  "accepted_boundary_time_s": 172800.5,
+  "active_water_time_s": 173489.5,
+  "active_water_elapsed_s": 689.0,
+  "rainfall_duration_s": 60,
+  "recession_elapsed_s": 629.0,
+  "active_water_accepted_steps": 13633,
+  "water_completion": false,
+  "peak_rss_bytes": 1670316032,
+  "peak_driver_device_bytes": 984612864,
+  "passed_computational_parts": [
+    "Exact cold locked source/module admission",
+    "MAPLE irregular footprint/fixed world base/regional plane/localFFT/periodic wind and closed sediment edge",
+    "Genuine native wind/finalization/accounting boundary and SYRUP adoption",
+    "Explicit closed-uphill outlet compatibility update before native water processing",
+    "Daily SYRUP water plus LEAF allocation/feedback and ET for first two days",
+    "Exactly-threshold5mm reduced rain accepted",
+    "Native full rain and physical recession executed through13633acceptedsteps without a reported solver/conservation error"
+  ],
+  "not_qualified": [
+    "Native fullstorm genuinecompletion",
+    "Secondwind after fullstorm",
+    "Entire8days/dailywaterledger closure",
+    "Coupledweeklygrowth cadence/output",
+    "Combinedrestart",
+    "Annual/windowed/large/scientificvalidation"
+  ],
+  "scientific_approximation": "User-approved boundary-only closure; fixed real ring, close-only/no reopening, zero water/sediment/time exchange, native midstorm refresh guard retained. Wind treats wet/ponded soil as dry without resetting water.",
+  "followup": "Native water/sediment runtime and completion behaviour need investigation on this terrain/forcing before operational readiness; do not relax physics or completion thresholds to force a pass. Explicit SYRUP boundary law follow-up remains open.",
+  "source_only_review_sessions": [
+    "9a2785cc-271f-4610-a779-0f382e506798",
+    "33ad8f29-323f-4233-8f7a-9e3dc3cc1c7c",
+    "4c45482d-645f-4fde-a423-9fff5a99e38f",
+    "02c90ac6-bd4f-411a-9e5e-af4bedb0bed0"
+  ],
+  "dataset_sharing": false,
+  "another_model_run_launched": false
+}

@@ -1,5 +1,7 @@
 # Irregular terrain triplet runner
 
+Current computational status and exact tested sources: [Moab/Jornada readiness result](terrain_triplet_readiness_20261124.md). The bounded target run is incomplete; source/interface qualification is separate from a completed coupled physical run.
+
 The separately selected `masy.daily_wind_water_growth.terrain_cuda.v1` profile connects actual MAPLE, SYRUP and LEAF on a Dense CUDA bed with a fixed base and irregular physical footprint. MAPLE owns the frozen regional plane, local FFT completion/padding, wind, creep, avalanching and sediment. SYRUP owns every water update. LEAF supplies daily demand/allocation/feedback and weekly growth. Wind assumes dry soil, including over wet/ponded cells, while preserving real water. Moisture suppression remains a known approximation.
 
 This bounded runner accepts one200um class, <=16384cells, an explicit matrix-only Jornada soil configuration and same-year daily scenarios. The scientific parameters and forcing are illustrative; annual vegetation orchestration, combined restart, windowed/large capacity and scientific validation are outside this qualification. Native solver substeps retain their own clocks; weather and plant-demand cadence is daily. Extra wind/rain/recession duration is added to realized elapsed time without daily E/T/growth catch-up.
