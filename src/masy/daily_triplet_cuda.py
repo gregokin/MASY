@@ -31,7 +31,7 @@ LEAF_EXTERNAL_HELPERS = ({'module': 'benchmarks.spatial_mapping', 'bytes': 47260
 class CudaTripletWind(mh.WindHandoffExecutor):
     """The shared exactly-once scalar cursor, with genuine CUDA native hooks."""
     def _profile(self):
-        return gw.PROFILE
+        return self._wind.profile
 
     def _native(self):
         from maple_syrup import floating_event_lifecycle as lc, floating_wind_handoff_cuda as wh
@@ -39,6 +39,8 @@ class CudaTripletWind(mh.WindHandoffExecutor):
                  host_reserve_bytes=self.policy.host_reserve_bytes + self._host_extra,
                  memory_budget_bytes=self.policy.max_device_bytes,
                  host_memory_budget_bytes=self.policy.max_host_bytes)
+        if getattr(self, '_terrain_source', None) is not None:
+            q['terrain_source'] = self._terrain_source
         # Thin signature-preserving delegates. They return only genuine owning
         # records; the namespace is not a physical state/capability substitute.
         return lc, SimpleNamespace(start_wind_boundary=functools.partial(wh.start_wind_boundary, **q),
@@ -105,10 +107,17 @@ class DailyCudaTripletSession:
     No whole-day atomicity or persisted combined restart is asserted. Each native
     transaction remains visible as genuine accepted/active evidence on failure.
     """
+    profile = PROFILE
+    @staticmethod
+    def _validate_leaf_source(expected_leaf_package_sha256, expected_external_helpers):
+        if (LEAF_PACKAGE_SHA256 == '0' * 64 or expected_leaf_package_sha256.removeprefix('sha256:') != LEAF_PACKAGE_SHA256
+                or tuple(expected_external_helpers) != LEAF_EXTERNAL_HELPERS):
+            raise TripletError('leaf_source', 'the exact separately qualified CUDA LEAF package and helper are required')
+
     def __init__(self, plan, *, wind, owner, bed, initial_event_factory, plant_state, leaf_config, anchor,
                  leaf_source, terrain, partition, site_controls, active_mask, event_builder,
                  day_control, wind_vegetation_policy, limits, expected_leaf_package_sha256, expected_external_helpers,
-                 policy, preferential=None):
+                 policy, preferential=None, require_receiver_traits=True):
         import numpy as np
         from leaf import floating_lifecycle_bridge_cuda as fb, plant_session as ps
         from maple_syrup import weather_pet as wp, soil_evaporation as se, water_vegetation_binding as vb
@@ -117,10 +126,11 @@ class DailyCudaTripletSession:
             raise TripletError('plan', 'matching parsed plan and genuine CUDA triplet wind required')
         if type(policy) is not GpuPolicy or wind.policy is not policy or type(limits) is not TripletLimits:
             raise TripletError('limits', 'one shared two-pool CUDA policy and finite triplet limits required')
+        if type(require_receiver_traits) is not bool or (not require_receiver_traits and preferential is not None):
+            raise TripletError('hydrology', 'missing receiving traits may only be selected for a matrix-only run')
+        self._require_receiver_traits = require_receiver_traits
         cp = policy.gate()
-        if (LEAF_PACKAGE_SHA256 == '0' * 64 or expected_leaf_package_sha256.removeprefix('sha256:') != LEAF_PACKAGE_SHA256
-                or tuple(expected_external_helpers) != LEAF_EXTERNAL_HELPERS):
-            raise TripletError('leaf_source', 'the exact separately qualified CUDA LEAF package and helper are required')
+        self._validate_leaf_source(expected_leaf_package_sha256, expected_external_helpers)
         if type(leaf_config) is not ps.SessionConfig or leaf_config.backend != 'cuda':
             raise TripletError('backend', 'a genuine CUDA PlantSession configuration is required')
         if type(wind_vegetation_policy) is not WindVegetationPolicy or not callable(event_builder) or not callable(initial_event_factory):
@@ -141,6 +151,11 @@ class DailyCudaTripletSession:
             raise TripletError('geometry', 'plant domain and actual native landscape mapping differ')
         if type(active_mask) is not np.ndarray or active_mask.dtype != np.bool_ or active_mask.shape != shape or not active_mask.flags.c_contiguous:
             raise TripletError('mask', 'explicit canonical host boolean active mask required by native GPU vegetation binding')
+        footprint = getattr(wind._context, 'domain', None)
+        if footprint is not None:
+            from maple.core.backend import to_host
+            if not np.array_equal(active_mask, to_host(footprint.valid_mask)):
+                raise TripletError('mask', 'SYRUP/LEAF active mask differs from MAPLE physical footprint')
         if (type(terrain) is not wp.TerrainFactor or terrain.backend != 'cuda' or terrain.shape != (g.ny * g.nx,)
                 or terrain.latitude_deg != wind._wind._admission.latitude_binding()['value'] or not terrain.verify_identity()):
             raise TripletError('terrain', 'genuine CUDA terrain PET mapping at the admitted latitude required')
@@ -198,6 +213,15 @@ class DailyCudaTripletSession:
         plant = self.plants.resident_bytes() + self.plants.candidate_bytes()
         return self._native[0] + plant + int(extra), self._native[1] + plant + int(extra)
 
+    def _observe_surface(self, surface):
+        return None
+
+    def _prepare_weather_terrain(self):
+        return None
+
+    def _prepare_after_storm_weather(self):
+        return False
+
     def _quota(self, extra=0, *, budgets=False):
         h, d = self._held(extra)
         q = dict(available_bytes_fn=self.policy.device_available_bytes_fn,
@@ -239,11 +263,13 @@ class DailyCudaTripletSession:
         # Existing native generation/binding API explicitly hashes host surface
         # and mask. Only the derived N-cell surface crosses this cold boundary.
         surface = to_host(committed_elevation_m(parent.bed.committed_topography))
+        self._observe_surface(surface)
         projection = lw.project_from_plant_session(self.plants, surface, active_mask=self._mask,
             max_edges=self._limits.projection_edges, max_bytes=self._limits.projection_bytes,
             reserve_bytes=self.policy.host_reserve_bytes + h, backend='cuda', device=self.policy.device_id,
             available_bytes_fn=self.policy.host_available_bytes_fn, max_device_bytes=self.policy.max_device_bytes,
-            device_reserve_bytes=self.policy.device_reserve_bytes + d, available_device_bytes_fn=self.policy.device_available_bytes_fn)
+            device_reserve_bytes=self.policy.device_reserve_bytes + d, available_device_bytes_fn=self.policy.device_available_bytes_fn,
+            **({} if self._require_receiver_traits else {'require_receiver_traits': False}))
         ident = projection.identity_record()
         binding = vb.bind_projection(projection, self._controls, expected_leaf_package_sha256=self._leaf_package,
             expected_projection_sha256=ident['content_sha256'], expected_source={k: v for k, v in ident['source'].items() if k != 'note'},
@@ -273,7 +299,8 @@ class DailyCudaTripletSession:
             statuses=self._wind_policy.statuses, height_mode='exposed', unsupported_policy=self._wind_policy.unsupported_policy,
             drag_coefficient=self._wind_policy.drag_coefficient)
         mapped = vegetation_from_leaf_view(view, g, population=st, catalog=self.plants.config.catalog,
-                                           attest_view_from_population=True)
+            attest_view_from_population=True,
+            **({} if getattr(self.wind._context, 'domain', None) is None else {'valid_mask': self._mask}))
         return to_device_tree(mapped.vegetation, self.policy.gate())
 
     def _factory(self, boundary, schedule=None):
@@ -333,6 +360,7 @@ class DailyCudaTripletSession:
             self._recession()
             self._apply_vegetation()
             stage = 'weather'
+            self._prepare_weather_terrain()
             h, d = self._held(40 * self._terrain.shape[0])
             self.policy.admit(h, d, 'CUDA daily PET')
             if d > self._limits.pet_bytes:
@@ -363,6 +391,17 @@ class DailyCudaTripletSession:
                 self._complete(pending, br.storm_schedule(pending.pending_forcing), extra=pet_live)
                 self._recession(pet_live)
                 storm = True
+                if self._prepare_after_storm_weather():
+                    # The new terrain route may have a changed physical bed.
+                    # Only rebuild derived PET inputs; the storm did no E/T.
+                    h, d = self._held(pet_live + 40 * self._terrain.shape[0])
+                    self.policy.admit(h, d, 'post-storm CUDA daily PET')
+                    if d > self._limits.pet_bytes:
+                        raise TripletError('memory', 'post-storm PET workspace exceeds explicit cap')
+                    applied = wp.apply_terrain(demand, self._terrain)
+                    reference = applied.pet_mm_day_cells.reshape(-1)
+                    pet = wp.pet_m_s(reference) if day.evaporation_enabled else cp.zeros_like(reference)
+                    pet_live = int(pet.nbytes) + int(reference.nbytes)
                 boundary = self.lineage.head
                 opening = br.open_day(self.lineage, boundary, partition=self._partition, **self._quota(pet_live, budgets=True))
                 result = br.day_after_storm(opening, plan=rain, pet_terrain_m_s=pet, cover=None,
@@ -404,7 +443,7 @@ class DailyCudaTripletSession:
             fb.commit_day(self._connection, active, closed.state, boundary, session=self.plants)
             self._ordinal += 1
             stage = 'receipt'
-            record = dict(profile=PROFILE, date=day.date.isoformat(), accepted_days=self._ordinal,
+            record = dict(profile=self.profile, date=day.date.isoformat(), accepted_days=self._ordinal,
                 scenario_sha256=self.plan.scenario.identity_sha256, run_digest=self.wind.run_digest,
                 wind_occurrences=len(day.winds), next_wind_index=self.wind.next_wind_index,
                 physical_start_s_hex=start.hex(), physical_end_s_hex=float(boundary.t_s).hex(),

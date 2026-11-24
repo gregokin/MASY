@@ -278,6 +278,9 @@ class CudaRuntimeContext:
     observations enter only through ``record_device_runtime`` and are stored
     verbatim as unverified entry-point reports.
     """
+    profile = PROFILE
+    _load = staticmethod(load)
+    _verify = staticmethod(verify)
     lock_path: str
     lock_sha256: str
     source_profile: object
@@ -285,9 +288,9 @@ class CudaRuntimeContext:
     _ledger: dict = dataclasses.field(default_factory=dict, repr=False, compare=False)
 
     def record(self):
-        lock = load(self.lock_path, expected_sha256=self.lock_sha256)
+        lock = self._load(self.lock_path, expected_sha256=self.lock_sha256)
         q = lock["qualification"]
-        return {"profile": PROFILE, "lock_sha256": self.lock_sha256, "backend": BACKEND, "native_profile": q["native_profile"],
+        return {"profile": self.profile, "lock_sha256": self.lock_sha256, "backend": BACKEND, "native_profile": q["native_profile"],
                 "device": _device(q["device"]),
                 "sources": {n: {k: q["sources"][n][k] for k in ("commit", "tree", "package_sha256")} for n in tl.MODELS},
                 "external_helpers": [tr.helper_record(lock)]}
@@ -311,7 +314,7 @@ class CudaRuntimeContext:
         # No Git subprocess during transport: sealed files, the owning source
         # capability, the device selection and the loaded provider are
         # rechecked; the parent checks branch currency at launch.
-        lock = verify(self.lock_path, expected_sha256=self.lock_sha256, current_refs=False)
+        lock = self._verify(self.lock_path, expected_sha256=self.lock_sha256, current_refs=False)
         q = lock["qualification"]
         tl._need(dict(self.device) == _device(q["device"]), "device", "runtime device record differs from the lock")
         tl._need(os.environ.get("CUDA_VISIBLE_DEVICES") == q["device"]["physical_uuid"], "device", "selected physical device changed")

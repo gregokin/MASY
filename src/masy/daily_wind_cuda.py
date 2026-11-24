@@ -84,6 +84,10 @@ def prepare_daily_wind_cuda(source, admission, context, *, limits, policy):
 
 
 class CudaWindExecutor:
+    profile = PROFILE
+    _source_identity = staticmethod(_source)
+    _wrapper_identity = staticmethod(_sources)
+
     def __init__(self, source, admission, context, limits, policy, threshold, fraction, identity):
         self._source, self._admission, self._context = source, admission, context
         self._limits, self.policy, self._threshold = limits, policy, threshold
@@ -96,7 +100,7 @@ class CudaWindExecutor:
 
     def _recheck(self):
         self.policy.gate()
-        if _source(self._source, self._admission) != self.identity()['source'] or _sources() != self.identity()['wrapper_sources']:
+        if self._source_identity(self._source, self._admission) != self.identity()['source'] or self._wrapper_identity() != self.identity()['wrapper_sources']:
             raise dw.DailyWindError('native_source', 'source/case/wrapper changed during the run')
         import numpy as np
         if dw._sha(dw._canonical(np, self._admission.compiled.config, 'config')) != self.identity()['config']:
@@ -106,6 +110,17 @@ class CudaWindExecutor:
         cp = self.policy.gate()
         if not bool(cp.array_equal(self._context.initial_available_fraction, self._fraction)):
             raise dw.DailyWindError('native_source', 'the admitted initial availability map changed')
+
+    def _scheduler_config(self, n, record):
+        effective = dw._effective_wind_config(self._admission.compiled.config, self._context)
+        return n.build_scheduler_physics_config(effective,
+            initial_available_fraction=self._context.initial_available_fraction, wind_record=record)
+
+    def _additional_work_bytes(self, config):
+        return 0
+
+    def _validate_terrain(self, config, physical):
+        return None
 
     def execute_finalized(self, bed, occurrence, start_s, *, vegetation, external_reserve_bytes=0):
         import numpy as np
@@ -132,9 +147,7 @@ class CudaWindExecutor:
             raise dw.DailyWindError('limits', 'Dense transaction copy exceeds its explicit byte cap')
         record = n.resolve_wind_forcing_record({'blocks': [dict(shear_velocity_m_s=b.shear_velocity_m_s,
             direction_deg=b.direction_deg, duration_s=b.duration_s) for b in occurrence.blocks]})
-        effective = dw._effective_wind_config(self._admission.compiled.config, self._context)
-        config = n.build_scheduler_physics_config(effective, initial_available_fraction=self._context.initial_available_fraction,
-                                                 wind_record=record)
+        config = self._scheduler_config(n, record)
         plans = dw._plan_blocks(n, record, config.outer_timestep_s, lim)
         capacity = config.particle_transport.max_active_cohorts
         if capacity > lim.max_cohorts:
@@ -144,7 +157,7 @@ class CudaWindExecutor:
         dw._bed_helpers().leaves(empty, 'pool', pool_rows)
         item_bytes = sum(int(a.dtype.itemsize) for _, a in pool_rows)
         pool_bytes = capacity * item_bytes
-        work = 4 * staged_bytes + 3 * pool_bytes + 8 * g.nx * g.ny * (nv + 1) * nc + 32 * sum(p['upper'] for p in plans)
+        work = 4 * staged_bytes + 3 * pool_bytes + 8 * g.nx * g.ny * (nv + 1) * nc + 32 * sum(p['upper'] for p in plans) + self._additional_work_bytes(config)
         if work + external_reserve_bytes > lim.max_work_bytes:
             raise dw.DailyWindError('limits', 'native wind staging/work frontier exceeds explicit device cap')
         self.policy.admit(pool_bytes + (8 << 20), work, 'native CUDA wind', device_extra=external_reserve_bytes)
@@ -160,12 +173,14 @@ class CudaWindExecutor:
         state = n.initial_scheduler_state(stage.voxel_column, stage.active_layer, pool, stage.ledger,
             stage.committed_topography, self._threshold, time_s=start_s, vegetation=vegetation,
             sediment_availability=stage.sediment_availability, water=stage.water)
+        self._validate_terrain(config, state.physical)
         accumulator = n.BlockAccountingAccumulator(nc)
         bounds, scales, blocks = [], 0.0, []
         for i, rb in enumerate(record.blocks):
             t0 = float(state.physical.time_s)
             block = n.WindBlock(rb.shear_velocity_m_s, rb.direction_deg, rb.duration_s, t0, t0 + rb.duration_s)
             result = dw._advance_wind_block(state, block, config)
+            self._validate_terrain(config, result.state.physical)
             if (not result.conservation_ok or result.process_mode != dw.SUPPORTED_WIND_MODE
                     or result.integration_path != dw.SUPPORTED_PATH
                     or result.accounting.n_accounting_steps > plans[i]['upper']
@@ -202,6 +217,7 @@ class CudaWindExecutor:
                 or not n.mobile_state_is_genuinely_empty(final.state.physical.mobile_state)):
             raise dw.DailyWindError('incomplete', 'native wind finalization did not produce a genuine completed empty state')
         phys = final.state.physical
+        self._validate_terrain(config, phys)
         candidate = n.BedState(*(getattr(phys, name) for name in dw._SHARED_FIELDS))
         dw._validate_native(n, candidate, self._context, end)
         if phys.vegetation is not vegetation or phys.threshold_modifier_state is not self._threshold or phys.ledger_reconciliation_baseline is not None:
@@ -238,7 +254,7 @@ class CudaWindExecutor:
             raise dw.DailyWindError('accounting', 'combined wind transport/finalizer identity failed')
         self._recheck()
         transfer = read_transfer_counters().delta(transfers)
-        receipt = {'profile': PROFILE, 'executor_identity_sha256': self.identity_sha256, 'occurrence': occurrence.record(),
+        receipt = {'profile': self.profile, 'executor_identity_sha256': self.identity_sha256, 'occurrence': occurrence.record(),
             'clocks': {'start_s': encode_time(start_s), 'end_s': encode_time(end), 'realized_elapsed_s': dw._fraction_text(Fraction(end) - Fraction(start_s))},
             'blocks': blocks, 'classes': {'boundary_input_hex': [v.hex() for v in inflow], 'boundary_export_hex': [v.hex() for v in export],
                 'inventory_before_hex': [v.hex() for v in before], 'inventory_after_hex': [v.hex() for v in after],

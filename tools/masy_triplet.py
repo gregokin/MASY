@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in committed-triplet code provisioning; prepare/verify launch no models."""
+"""Explicit triplet provisioning and separately selected terrain execution."""
 from __future__ import annotations
 
 import argparse
@@ -29,17 +29,39 @@ def main(argv):
     p.add_argument("--qualification", required=True)
     p.add_argument("--qualification-sha256", required=True)
     p.add_argument("--destination", required=True)
+    p.add_argument("--runtime", choices=("cpu", "cuda", "terrain-cuda"), default="cpu")
     p = sub.add_parser("verify", allow_abbrev=False)
     p.add_argument("--lock", required=True)
     p.add_argument("--lock-sha256", required=True)
+    p.add_argument("--runtime", choices=("cpu", "cuda", "terrain-cuda"), default="cpu")
+    p = sub.add_parser("run-terrain", allow_abbrev=False)
+    p.add_argument("--lock", required=True)
+    p.add_argument("--lock-sha256", required=True)
+    p.add_argument("--inputs", required=True)
+    p.add_argument("--inputs-sha256", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--run-dir", required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "prepare":
-            record = tl.prepare(args.qualification, expected_sha256=args.qualification_sha256, destination=args.destination)
+        if args.command == "run-terrain" or args.runtime == "terrain-cuda":
+            from masy import triplet_terrain_runtime as selected
+        elif args.runtime == "cuda":
+            from masy import triplet_cuda_runtime as selected
         else:
-            lock = tl.verify(args.lock, expected_sha256=args.lock_sha256)
+            selected = tl
+        if args.command == "prepare":
+            record = selected.prepare(args.qualification, expected_sha256=args.qualification_sha256, destination=args.destination)
+        elif args.command == "verify":
+            lock = selected.verify(args.lock, expected_sha256=args.lock_sha256)
             record = {"status": "source_verified", "profile": lock["profile"], "root": lock["root"],
                       "native_runtime_checked": False, "model_executed": False}
+        else:
+            spec = selected.bootstrap_spec(args.lock, expected_sha256=args.lock_sha256,
+                run_dir=args.run_dir, entrypoint="masy.terrain_runner:main",
+                argv=("--inputs", args.inputs, "--inputs-sha256", args.inputs_sha256,
+                      "--output", args.output, "--run-dir", args.run_dir))
+            # Preserve one owned PID/process group for an external resource supervisor.
+            os.execve(spec["argv"][0], spec["argv"], spec["env"])
         print(json.dumps(record, indent=2, sort_keys=True, allow_nan=False))
         return 0
     except tl.TripletLockError as exc:
